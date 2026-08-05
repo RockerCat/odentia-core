@@ -1,40 +1,47 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { RoleProvider } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { Header } from "./header";
 import { MobileNav } from "./mobile-nav";
 import { PageContainer } from "./page-container";
 import { Sidebar } from "./sidebar";
 
 type AppShellProps = {
-  title?: string;
+  // Which sidebar item to highlight — matched by label, unrelated to
+  // what's actually displayed as the page heading.
+  activeNavLabel: string;
+  // What renders as the page's <h1>. Kept separate from activeNavLabel
+  // so a personalized heading (e.g. a greeting) doesn't break nav
+  // highlighting, which still matches against the nav item's own label.
+  heading: ReactNode;
   children: ReactNode;
 };
 
-export function AppShell({ title = "Dashboard", children }: AppShellProps) {
-  const [collapsed, setCollapsed] = useState(false);
+export function AppShell({ activeNavLabel, heading, children }: AppShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-surface text-foreground">
-      <Sidebar
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed((value) => !value)}
-        activeLabel={title}
-      />
+    <RoleProvider>
+      <div className="flex h-dvh overflow-hidden bg-surface text-foreground">
+        <Sidebar activeLabel={activeNavLabel} />
 
-      <MobileNav
-        open={mobileNavOpen}
-        onClose={() => setMobileNavOpen(false)}
-        activeLabel={title}
-      />
+        <MobileNav
+          open={mobileNavOpen}
+          onClose={() => setMobileNavOpen(false)}
+          activeLabel={activeNavLabel}
+        />
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Header title={title} onOpenMobileNav={() => setMobileNavOpen(true)} />
-        <main className="flex-1 overflow-y-auto">
-          <PageContainer>{children}</PageContainer>
-        </main>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Header onOpenMobileNav={() => setMobileNavOpen(true)} />
+          <main className="flex-1 overflow-y-auto">
+            <PageContainer>
+              <h1 className="mb-6 text-[22px] font-semibold text-[#1f2937]">{heading}</h1>
+              {children}
+            </PageContainer>
+          </main>
+        </div>
       </div>
-    </div>
+    </RoleProvider>
   );
 }

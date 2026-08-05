@@ -1,16 +1,20 @@
-type LogoProps = {
-  collapsed?: boolean;
-};
+import Image from "next/image";
 
-export function Logo({ collapsed = false }: LogoProps) {
-  if (collapsed) {
-    return <span className="text-lg font-semibold text-muted-foreground">o</span>;
-  }
+// Bump this whenever /public/branding/logo.png is replaced — it busts
+// both the browser cache and Next's image-optimizer cache, which are
+// keyed on the full request URL and won't otherwise notice the file
+// on disk changed under the same path.
+const LOGO_VERSION = "2";
 
+export function Logo() {
   return (
-    <span className="text-lg font-semibold tracking-tight">
-      <span className="text-muted-foreground">odent</span>
-      <span className="text-primary">ia</span>
-    </span>
+    <Image
+      src={`/branding/logo.png?v=${LOGO_VERSION}`}
+      alt="Odentia"
+      width={200}
+      height={100}
+      priority
+      className="h-[58px] w-auto"
+    />
   );
 }

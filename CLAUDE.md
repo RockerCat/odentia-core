@@ -114,6 +114,136 @@ Never assume data can be shared between tenants.
 
 ---
 
+# Domain Model
+
+This is a permanent architectural decision. It is the source of truth for the
+system's domain and must be respected by every future implementation.
+
+Odentia is a SaaS for **dental practices (Clinics)**, not for individual dentists.
+
+## Core Entity
+
+The **Clinic** is the system's primary entity.
+
+Architecture, permissions, and the data model must be built around the Clinic.
+
+Subscription, configuration, patients, schedule, orders, reports, and team all
+belong to the Clinic.
+
+Users belong to a Clinic and get their permissions through a role.
+
+---
+
+## Roles
+
+### Superadmin
+
+Represents the Odentia team.
+
+Manages the entire platform:
+
+- Clinics
+- Plans
+- Subscriptions
+- Marketplace
+- Global operations
+
+### Clinic Admin
+
+The clinic's owner or administrator.
+
+Can manage:
+
+- Subscription and billing
+- Clinic configuration
+- Team (dentists and assistants)
+- Full schedule
+- Patients
+- Medical records
+- Orders
+- Global reports
+
+Also has all the clinical permissions of a Dentist.
+
+**The Clinic Admin never needs a second role to see patients.**
+
+### Dentist
+
+Manages only their own clinical operation.
+
+Can manage:
+
+- Their own schedule
+- Their own patients
+- Medical records
+- Treatments
+- Orders
+- Reports scoped to their own operation
+- Personal settings
+
+Does not manage users, subscriptions, or clinic-wide configuration.
+
+### Assistant
+
+Supports the clinic's operation.
+
+Can:
+
+- Manage appointments
+- Manage patients
+- View medical records, subject to permissions
+- Place orders
+- View operational reports
+
+Does not manage users, subscriptions, or administrative configuration.
+
+Initially, assistants can work with every dentist in the clinic. The model
+must stay ready to support assigning assistants to specific dentists later,
+without requiring a major refactor.
+
+---
+
+## Data Model
+
+All data belongs to the Clinic.
+
+Some records are also associated with a specific Dentist, for example:
+
+- Appointments
+- Medical records
+- Treatments
+- Production
+- Individual reports
+- Schedules
+
+Patients belong to the Clinic, not to the Dentist. The same patient can be
+seen by different dentists within the same clinic.
+
+---
+
+## Primary Use Case
+
+The system must natively support the most common scenario: an independent
+dentist working alone, with no assistants.
+
+In this case there is a single user with the Clinic Admin role, who manages
+the clinic and sees patients using the same account.
+
+Creating a second user, or assigning a second role to act as a dentist, must
+never be required.
+
+---
+
+## Implementation Rule
+
+From this point forward, every new feature must be designed to respect this
+domain model.
+
+If a future implementation conflicts with this architecture: stop, explain
+the conflict, and propose an adaptation before writing any code.
+
+---
+
 # Security
 
 Security always has priority over convenience.

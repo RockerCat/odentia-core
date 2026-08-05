@@ -160,3 +160,29 @@ export function ArrowRightIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function ChevronDownIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
+export function CheckCircleIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8.5 12.5l2.3 2.3L15.5 9.5" />
+    </svg>
+  );
+}
+
+export function ClockIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3.5 2" />
+    </svg>
+  );
+}
