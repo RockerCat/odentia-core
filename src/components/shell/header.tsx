@@ -1,4 +1,4 @@
-import { Avatar } from "@/components/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { CURRENT_USER } from "@/lib/current-user";
 import { BellIcon, ChevronDownIcon, MenuIcon, SearchIcon } from "./icons";
 
@@ -37,7 +37,11 @@ export function Header({ onOpenMobileNav }: HeaderProps) {
         </button>
 
         <button type="button" className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-foreground/5">
-          <Avatar name={CURRENT_USER.name} initials={CURRENT_USER.initials} photoUrl={CURRENT_USER.photoUrl} />
+          <UserAvatar
+            name={CURRENT_USER.name}
+            initials={CURRENT_USER.initials}
+            avatar_url={CURRENT_USER.avatar_url}
+          />
           <span className="hidden text-left sm:block">
             <span className="block text-sm leading-tight font-medium">{CURRENT_USER.name}</span>
             <span className="block text-xs leading-tight text-muted-foreground">

@@ -1,7 +1,7 @@
 "use client"; // needed for day-selection state and the useRole() gate below.
 
 import { useState } from "react";
-import { Avatar } from "@/components/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { ChevronIcon, PlusIcon } from "@/components/shell/icons";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { firstName } from "@/lib/format";
@@ -161,7 +161,11 @@ export function AppointmentsCard({
           return (
             <div key={dentist.id} className="min-w-0 rounded-lg border border-border">
               <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-                <Avatar name={dentist.name} initials={dentist.initials} photoUrl={dentist.photoUrl} />
+                <UserAvatar
+                  name={dentist.name}
+                  initials={dentist.initials}
+                  avatar_url={dentist.avatar_url}
+                />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{dentist.name}</p>
                   <p className="truncate text-xs text-muted-foreground">{dentist.specialty}</p>

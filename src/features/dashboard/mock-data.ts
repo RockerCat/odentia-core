@@ -1,21 +1,43 @@
-import { CalendarIcon, CheckCircleIcon, ClockIcon, UsersIcon } from "@/components/shell/icons";
+import { BellIcon, CalendarIcon, CheckCircleIcon, ClockIcon } from "@/components/shell/icons";
 
 export type Dentist = {
   id: string;
   name: string;
   initials: string;
   specialty: string;
-  photoUrl?: string;
+  avatar_url?: string;
 };
 
 // Only practicing dentists belong here — the Agenda's columns come
 // straight from this list. The logged-in Clinic Admin (see
 // src/lib/current-user.ts) is deliberately NOT one of these entries: she's
 // a pure administrator in this scenario and must not appear as a column.
+// avatar_url values are temporary placeholder headshots for development
+// only — swap for real profile photo URLs once the backend integration
+// exists. UserAvatar itself falls back to initials if a photo is missing
+// or fails to load.
 export const DENTISTS: Dentist[] = [
-  { id: "d1", name: "Dra. Camila Vargas", initials: "CV", specialty: "Odontología general" },
-  { id: "d2", name: "Dr. Julián Restrepo", initials: "JR", specialty: "Ortodoncia" },
-  { id: "d3", name: "Dra. Paula Escobar", initials: "PE", specialty: "Endodoncia" },
+  {
+    id: "d1",
+    name: "Dra. Camila Vargas",
+    initials: "CV",
+    specialty: "Odontología general",
+    avatar_url: "https://randomuser.me/api/portraits/women/44.jpg",
+  },
+  {
+    id: "d2",
+    name: "Dr. Julián Restrepo",
+    initials: "JR",
+    specialty: "Ortodoncia",
+    avatar_url: "https://randomuser.me/api/portraits/men/32.jpg",
+  },
+  {
+    id: "d3",
+    name: "Dra. Paula Escobar",
+    initials: "PE",
+    specialty: "Endodoncia",
+    avatar_url: "https://randomuser.me/api/portraits/women/65.jpg",
+  },
 ];
 
 export type AppointmentStatus =
@@ -106,20 +128,6 @@ export const WEEK_APPOINTMENTS: Appointment[] = [
   // Sunday — closed, no appointments
 ];
 
-export type SummaryMetric = {
-  label: string;
-  value: string;
-  subtitle: string;
-  icon: typeof CalendarIcon;
-};
-
-export const TODAY_SUMMARY: SummaryMetric[] = [
-  { label: "Citas hoy", value: "8", subtitle: "Total programadas", icon: CalendarIcon },
-  { label: "Confirmadas", value: "3", subtitle: "37.5% del total", icon: CheckCircleIcon },
-  { label: "Pendientes de confirmar", value: "2", subtitle: "25% del total", icon: ClockIcon },
-  { label: "Nuevos pacientes este mes", value: "14", subtitle: "↑ 27% vs. mes anterior", icon: UsersIcon },
-];
-
 export type OperationalAlert = {
   id: string;
   message: string;
@@ -135,5 +143,27 @@ export const OPERATIONAL_ALERTS: OperationalAlert[] = [
     message: "Tu prueba termina en 5 días.",
     description: "Actualiza tu plan para mantener acceso completo.",
     tone: "primary",
+  },
+];
+
+export type SummaryMetric = {
+  label: string;
+  value: string;
+  subtitle: string;
+  icon: typeof CalendarIcon;
+};
+
+// The 4th KPI's value is derived from OPERATIONAL_ALERTS.length rather
+// than hardcoded, so it can't silently drift out of sync with the actual
+// alert count.
+export const TODAY_SUMMARY: SummaryMetric[] = [
+  { label: "Citas hoy", value: "8", subtitle: "Total programadas", icon: CalendarIcon },
+  { label: "Confirmadas", value: "3", subtitle: "37.5% del total", icon: CheckCircleIcon },
+  { label: "Pendientes de confirmar", value: "2", subtitle: "25% del total", icon: ClockIcon },
+  {
+    label: "Alertas",
+    value: String(OPERATIONAL_ALERTS.length),
+    subtitle: "Requieren atención",
+    icon: BellIcon,
   },
 ];

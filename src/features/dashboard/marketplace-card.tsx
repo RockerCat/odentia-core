@@ -2,13 +2,16 @@ import { ArrowRightIcon, StoreIcon } from "@/components/shell/icons";
 
 export function MarketplaceCard() {
   return (
-    <div className="relative overflow-hidden rounded-xl border border-border bg-background p-6 sm:p-7">
-      <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full text-primary/[0.08]">
-        <pattern id="marketplace-pattern" width="18" height="18" patternUnits="userSpaceOnUse">
-          <circle cx="1.5" cy="1.5" r="1.5" fill="currentColor" />
-        </pattern>
-        <rect width="100%" height="100%" fill="url(#marketplace-pattern)" />
-      </svg>
+    <div
+      className="relative overflow-hidden rounded-xl bg-[url('/marketplace-background.png')] bg-[center_right] bg-cover bg-no-repeat p-6 sm:p-7"
+    >
+      {/* Legibility wash only where the text sits — fades to fully
+          transparent over the photo itself so it keeps its full clarity
+          and contrast instead of looking washed out. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/85 via-white/40 to-transparent"
+      />
 
       <div className="relative">
         <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
