@@ -11,23 +11,23 @@ export function Header({ title, onOpenMobileNav }: HeaderProps) {
       <button
         type="button"
         onClick={onOpenMobileNav}
-        aria-label="Open menu"
+        aria-label="Abrir menú"
         className="flex size-9 items-center justify-center rounded-lg text-foreground/80 hover:bg-foreground/5 md:hidden"
       >
         <MenuIcon className="size-5" />
       </button>
 
-      <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
+      <h1 className="text-base font-semibold tracking-tight">{title}</h1>
 
       <div className="ml-auto flex items-center gap-2 sm:gap-3">
-        <div className="hidden items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-muted-foreground sm:flex sm:w-56 lg:w-72">
+        <div className="hidden items-center gap-2 rounded-lg bg-surface px-3 py-1.5 text-sm text-muted-foreground sm:flex sm:w-56 lg:w-72">
           <SearchIcon className="size-4 shrink-0" />
-          <span>Search</span>
+          <span>Buscar</span>
         </div>
 
         <button
           type="button"
-          aria-label="Notifications"
+          aria-label="Notificaciones"
           className="flex size-9 items-center justify-center rounded-lg text-foreground/80 hover:bg-foreground/5"
         >
           <BellIcon className="size-5" />

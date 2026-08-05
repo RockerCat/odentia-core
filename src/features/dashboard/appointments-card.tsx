@@ -4,12 +4,12 @@ import { StatusBadge } from "./status-badge";
 
 export function AppointmentsCard({ appointments }: { appointments: Appointment[] }) {
   return (
-    <div className="rounded-xl border border-border bg-surface">
-      <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-4 sm:px-5">
+    <div className="rounded-lg border border-border bg-background">
+      <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-5">
         <div>
-          <h2 className="text-base font-semibold">Today&apos;s schedule</h2>
-          <p className="text-sm text-muted-foreground">
-            {appointments.length} appointments today
+          <h2 className="text-sm font-semibold">Agenda de hoy</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {appointments.length} citas hoy
           </p>
         </div>
 
@@ -18,13 +18,13 @@ export function AppointmentsCard({ appointments }: { appointments: Appointment[]
           className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
         >
           <PlusIcon className="size-4" />
-          <span className="hidden sm:inline">New appointment</span>
+          <span className="hidden sm:inline">Nueva cita</span>
         </button>
       </div>
 
       <ul className="divide-y divide-border">
         {appointments.map((appointment) => (
-          <li key={appointment.id} className="flex items-center gap-3 px-4 py-3 sm:gap-4 sm:px-5">
+          <li key={appointment.id} className="flex items-center gap-3 px-5 py-4 sm:gap-4">
             <span className="w-16 shrink-0 text-sm font-medium text-foreground/80 sm:w-20">
               {appointment.time}
             </span>

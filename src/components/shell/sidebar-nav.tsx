@@ -7,7 +7,7 @@ type SidebarNavProps = {
 
 export function SidebarNav({ collapsed = false, activeLabel }: SidebarNavProps) {
   return (
-    <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
+    <nav className="flex flex-1 flex-col gap-1.5 overflow-y-auto px-3 py-5">
       {NAV_ITEMS.map(({ label, icon: Icon }) => {
         const active = label === activeLabel;
         return (
@@ -15,7 +15,7 @@ export function SidebarNav({ collapsed = false, activeLabel }: SidebarNavProps) 
             key={label}
             type="button"
             title={collapsed ? label : undefined}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+            className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
               collapsed ? "justify-center px-2" : ""
             } ${
               active

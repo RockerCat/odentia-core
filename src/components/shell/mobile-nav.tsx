@@ -1,4 +1,5 @@
 import { CloseIcon } from "./icons";
+import { Logo } from "./logo";
 import { SidebarNav } from "./sidebar-nav";
 
 type MobileNavProps = {
@@ -17,16 +18,16 @@ export function MobileNav({ open, onClose, activeLabel }: MobileNavProps) {
         }`}
       />
       <div
-        className={`absolute inset-y-0 left-0 flex w-72 max-w-[80%] flex-col bg-surface shadow-lg transition-transform duration-200 ease-in-out ${
+        className={`absolute inset-y-0 left-0 flex w-72 max-w-[80%] flex-col bg-background shadow-sm transition-transform duration-200 ease-in-out ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <div className="flex h-16 items-center justify-between border-b border-border px-5">
-          <span className="text-lg font-semibold tracking-tight">Odentia</span>
+          <Logo />
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close menu"
+            aria-label="Cerrar menú"
             className="flex size-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/5"
           >
             <CloseIcon className="size-5" />

@@ -1,4 +1,5 @@
 import { ChevronIcon } from "./icons";
+import { Logo } from "./logo";
 import { SidebarNav } from "./sidebar-nav";
 
 type SidebarProps = {
@@ -10,7 +11,7 @@ type SidebarProps = {
 export function Sidebar({ collapsed, onToggleCollapse, activeLabel }: SidebarProps) {
   return (
     <aside
-      className={`hidden shrink-0 flex-col border-r border-border bg-surface transition-[width] duration-200 ease-in-out md:flex ${
+      className={`hidden shrink-0 flex-col border-r border-border bg-background transition-[width] duration-200 ease-in-out md:flex ${
         collapsed ? "md:w-[76px]" : "md:w-64"
       }`}
     >
@@ -19,13 +20,7 @@ export function Sidebar({ collapsed, onToggleCollapse, activeLabel }: SidebarPro
           collapsed ? "justify-center px-2" : "px-5"
         }`}
       >
-        {collapsed ? (
-          <span className="flex size-8 items-center justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
-            O
-          </span>
-        ) : (
-          <span className="text-lg font-semibold tracking-tight">Odentia</span>
-        )}
+        <Logo collapsed={collapsed} />
       </div>
 
       <SidebarNav collapsed={collapsed} activeLabel={activeLabel} />
@@ -34,11 +29,11 @@ export function Sidebar({ collapsed, onToggleCollapse, activeLabel }: SidebarPro
         <button
           type="button"
           onClick={onToggleCollapse}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? "Expandir barra lateral" : "Colapsar barra lateral"}
           className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-foreground/5"
         >
           <ChevronIcon className={`size-4 transition-transform ${collapsed ? "rotate-180" : ""}`} />
-          {!collapsed && <span>Collapse</span>}
+          {!collapsed && <span>Colapsar</span>}
         </button>
       </div>
     </aside>

@@ -10,12 +10,12 @@ import {
 } from "./icons";
 
 export const NAV_ITEMS = [
-  { label: "Dashboard", icon: DashboardIcon },
-  { label: "Schedule", icon: CalendarIcon },
-  { label: "Patients", icon: UserIcon },
-  { label: "Medical Records", icon: ClipboardIcon },
-  { label: "Reports", icon: BarChartIcon },
+  { label: "Inicio", icon: DashboardIcon },
+  { label: "Agenda", icon: CalendarIcon },
+  { label: "Pacientes", icon: UserIcon },
+  { label: "Historias Clínicas", icon: ClipboardIcon },
+  { label: "Reportes", icon: BarChartIcon },
   { label: "Marketplace", icon: StoreIcon },
-  { label: "Team", icon: UsersIcon },
-  { label: "Settings", icon: SlidersIcon },
+  { label: "Equipo", icon: UsersIcon },
+  { label: "Configuración", icon: SlidersIcon },
 ] as const;

@@ -2,7 +2,7 @@ import { ArrowRightIcon, StoreIcon } from "@/components/shell/icons";
 
 export function MarketplaceCard() {
   return (
-    <div className="rounded-xl border border-dashed border-border bg-surface/60 p-4 sm:p-5">
+    <div className="rounded-lg border border-dashed border-border bg-background p-5 sm:p-6">
       <div className="flex items-start gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-foreground/5 text-foreground/70">
           <StoreIcon className="size-5" />
@@ -18,7 +18,7 @@ export function MarketplaceCard() {
 
       <button
         type="button"
-        className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium transition-colors hover:bg-foreground/5 sm:w-auto"
+        className="mt-4 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/5"
       >
         Ir al Marketplace
         <ArrowRightIcon className="size-4" />

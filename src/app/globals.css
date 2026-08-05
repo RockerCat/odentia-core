@@ -2,40 +2,20 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #12181f;
+  --foreground: #14181c;
 
-  --surface: #f7f9fa;
-  --border: #e4e9ec;
+  --surface: #f7f8fa;
+  --border: #e9ebee;
 
-  --muted-foreground: #5c6b76;
+  --muted-foreground: #6b7280;
 
-  --primary: #0f6e63;
+  --primary: #0e7a83;
   --primary-foreground: #ffffff;
 
-  --success: #1a7f5a;
-  --warning: #b45309;
-  --danger: #b3261e;
-  --info: #2563a8;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0b0f13;
-    --foreground: #e9edef;
-
-    --surface: #12181e;
-    --border: #232b32;
-
-    --muted-foreground: #93a1ab;
-
-    --primary: #33a396;
-    --primary-foreground: #0b0f13;
-
-    --success: #34c98d;
-    --warning: #f2b84b;
-    --danger: #f87171;
-    --info: #7dbbf0;
-  }
+  --success: #137048;
+  --warning: #9c6112;
+  --danger: #c0392b;
+  --info: #2f6fb0;
 }
 
 @theme inline {

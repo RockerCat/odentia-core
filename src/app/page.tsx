@@ -11,8 +11,8 @@ import { SummaryCards } from "@/features/dashboard/summary-cards";
 
 export default function Home() {
   return (
-    <AppShell title="Dashboard">
-      <div className="flex flex-col gap-6">
+    <AppShell title="Inicio">
+      <div className="flex flex-col gap-8">
         <SummaryCards metrics={TODAY_SUMMARY} />
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
