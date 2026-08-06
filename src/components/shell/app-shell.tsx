@@ -32,7 +32,7 @@ export function AppShell({ activeNavLabel, heading, children }: AppShellProps) {
 
           <main className="flex-1 overflow-y-auto pt-[var(--mobile-header-h)] pb-[var(--mobile-tabbar-h)] md:pt-0 md:pb-0">
             <PageContainer>
-              <h1 className="mb-6 text-[22px] font-semibold text-[#1f2937]">{heading}</h1>
+              <h1 className="mb-6 text-[19px] font-semibold text-foreground">{heading}</h1>
               {children}
             </PageContainer>
           </main>

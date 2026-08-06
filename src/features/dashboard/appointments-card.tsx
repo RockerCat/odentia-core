@@ -1,14 +1,14 @@
 "use client"; // needed for day-selection state and the useRole() gate below.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Tooltip } from "@/components/tooltip";
 import { UserAvatar } from "@/components/user-avatar";
-import { ChevronIcon, PlusIcon } from "@/components/shell/icons";
+import { ChevronIcon, CloseIcon, PencilIcon, PlusIcon } from "@/components/shell/icons";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { firstName } from "@/lib/format";
-import { AppointmentDetailModal } from "./appointment-detail-modal";
-import type { Appointment, Dentist, WeekDay } from "./mock-data";
-import { STATUS_STYLES } from "./mock-data";
+import { AppointmentDetailModal, FIELD_CLASS } from "./appointment-detail-modal";
+import type { Appointment, AppointmentStatus, Dentist, WeekDay } from "./mock-data";
+import { STATUS_LABELS, STATUS_STYLES } from "./mock-data";
 import { NewAppointmentModal } from "./new-appointment-modal";
 import { TIME_SLOTS } from "./schedule-config";
 
@@ -116,6 +116,7 @@ export function AppointmentsCard({
   // state instead of a real backend (see PROJECT_STATUS.md).
   const [allAppointments, setAllAppointments] = useState(appointments);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
+  const [selectedDentistId, setSelectedDentistId] = useState<string | null>(null);
   const [showNewAppointment, setShowNewAppointment] = useState(false);
   // Set only when opened from an empty calendar slot; the "Nueva cita"
   // button always opens with this null, keeping that flow exactly as it
@@ -132,6 +133,19 @@ export function AppointmentsCard({
 
   const addAppointment = (created: Appointment) => {
     setAllAppointments((prev) => [...prev, created]);
+  };
+
+  // Simulates the side effect of inactivating a professional: their active
+  // upcoming appointments are cancelled automatically (see the confirmation
+  // flow in DentistProfileModal below).
+  const deactivateDentistAppointments = (dentistId: string) => {
+    setAllAppointments((prev) =>
+      prev.map((a) =>
+        a.dentistId === dentistId && (a.status === "confirmed" || a.status === "pending" || a.status === "in-progress")
+          ? { ...a, status: "cancelled" }
+          : a,
+      ),
+    );
   };
 
   const openNewAppointment = (prefill: { dentistId: string; day: string; time: string } | null) => {
@@ -167,6 +181,7 @@ export function AppointmentsCard({
 
   const dayAppointments = weekAppointments.filter((a) => a.day === selectedDay);
   const selectedAppointment = allAppointments.find((a) => a.id === selectedAppointmentId) ?? null;
+  const selectedDentist = dentists.find((d) => d.id === selectedDentistId) ?? null;
 
   const sortedDentists = [...dentists].sort(
     (a, b) =>
@@ -238,7 +253,7 @@ export function AppointmentsCard({
               >
                 <span
                   className={`text-[10px] font-medium tracking-wide uppercase ${
-                    active ? "text-primary" : "text-muted-foreground"
+                    active ? "text-primary" : "text-label-foreground"
                   }`}
                 >
                   {day.shortLabel}
@@ -283,7 +298,11 @@ export function AppointmentsCard({
 
           return (
             <div key={dentist.id} className="min-w-0 rounded-lg border border-border">
-              <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setSelectedDentistId(dentist.id)}
+                className="flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left transition-colors hover:bg-foreground/[0.03]"
+              >
                 <UserAvatar
                   name={dentist.name}
                   initials={dentist.initials}
@@ -296,7 +315,7 @@ export function AppointmentsCard({
                 <span className="shrink-0 text-xs font-medium text-muted-foreground">
                   {occupied}/{TIME_SLOTS.length}
                 </span>
-              </div>
+              </button>
 
               <div className="grid grid-cols-3 gap-1.5 p-3">
                 {TIME_SLOTS.map((slot) => {
@@ -371,6 +390,885 @@ export function AppointmentsCard({
           onCreate={addAppointment}
         />
       )}
+
+      {selectedDentist && (
+        <DentistProfileModal
+          dentist={selectedDentist}
+          allAppointments={allAppointments}
+          onClose={() => setSelectedDentistId(null)}
+          onDeactivate={() => deactivateDentistAppointments(selectedDentist.id)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Number used by the "WhatsApp" action below, via the official wa.me link.
+const WHATSAPP_NUMBER = "573173672033";
+
+const DAY_ORDER = ["L", "M", "X", "J", "V", "S", "D"];
+const DAY_SHORT_LABELS: Record<string, string> = {
+  L: "Lun",
+  M: "Mar",
+  X: "Mié",
+  J: "Jue",
+  V: "Vie",
+  S: "Sáb",
+  D: "Dom",
+};
+const SCHEDULE_TIME_OPTIONS = [
+  "7:00 AM",
+  "8:00 AM",
+  "9:00 AM",
+  "10:00 AM",
+  "11:00 AM",
+  "12:00 PM",
+  "1:00 PM",
+  "2:00 PM",
+  "3:00 PM",
+  "4:00 PM",
+  "5:00 PM",
+  "6:00 PM",
+  "7:00 PM",
+  "8:00 PM",
+];
+
+function formatScheduleLabel(days: string[], start: string, end: string): string {
+  if (days.length === 0) return "Sin horario definido";
+  const sorted = DAY_ORDER.filter((day) => days.includes(day));
+  const isContiguous = sorted.every(
+    (day, i) => i === 0 || DAY_ORDER.indexOf(day) === DAY_ORDER.indexOf(sorted[i - 1]) + 1,
+  );
+  const daysLabel =
+    sorted.length > 1 && isContiguous
+      ? `${DAY_SHORT_LABELS[sorted[0]]} - ${DAY_SHORT_LABELS[sorted[sorted.length - 1]]}`
+      : sorted.map((day) => DAY_SHORT_LABELS[day]).join(", ");
+  return `${daysLabel} · ${start} - ${end}`;
+}
+
+type TodayAgendaItem = {
+  time: string;
+  patient: string;
+  treatment: string;
+  status: AppointmentStatus;
+  isNext?: boolean;
+};
+
+type SeenPatient = { name: string; initials: string; lastVisit: string };
+
+type MonthAppointmentItem = {
+  date: string;
+  time: string;
+  patient: string;
+  treatment: string;
+  status: AppointmentStatus;
+};
+
+type DentistStatus = "active" | "inactive";
+
+type DentistProfileMock = {
+  registrationNumber: string;
+  phone: string;
+  email: string;
+  mainRoom: string;
+  scheduleDays: string[];
+  scheduleStart: string;
+  scheduleEnd: string;
+  appointmentsToday: number;
+  patientsSeenToday: number;
+  activePatients: number;
+  appointmentsThisMonth: number;
+  patientsSeenTodayList: SeenPatient[];
+  todayAgenda: TodayAgendaItem[];
+  // Representative samples, not exhaustive listings of the full counts
+  // above — same simplification this prototype already applies elsewhere
+  // (e.g. HISTORY_LIMIT for the patient history timeline).
+  activePatientsList: SeenPatient[];
+  monthAppointments: MonthAppointmentItem[];
+};
+
+// Placeholder profile details for the modal below, while it connects to
+// real dentist records (see PROJECT_STATUS.md's mock-data-only phase) —
+// keyed by id, with a generic fallback for any dentist not listed here.
+const DENTIST_PROFILE_MOCK: Record<string, DentistProfileMock> = {
+  d1: {
+    registrationNumber: "T.P. 45231",
+    phone: "+57 300 123 4567",
+    email: "camila.vargas@odentia.com",
+    mainRoom: "Consultorio 1",
+    scheduleDays: ["L", "M", "X", "J", "V"],
+    scheduleStart: "8:00 AM",
+    scheduleEnd: "5:00 PM",
+    appointmentsToday: 6,
+    patientsSeenToday: 3,
+    activePatients: 128,
+    appointmentsThisMonth: 42,
+    patientsSeenTodayList: [
+      { name: "Laura Gómez", initials: "LG", lastVisit: "22 Jul 2026" },
+      { name: "Andrés Pineda", initials: "AP", lastVisit: "15 Jul 2026" },
+      { name: "Sofía Ramírez", initials: "SR", lastVisit: "30 Jun 2026" },
+    ],
+    todayAgenda: [
+      { time: "08:00", patient: "Laura Gómez", treatment: "Limpieza dental", status: "completed" },
+      { time: "09:00", patient: "Andrés Pineda", treatment: "Control ortodóncico", status: "completed" },
+      { time: "10:00", patient: "Sofía Ramírez", treatment: "Resina", status: "completed" },
+      { time: "11:00", patient: "Diego Morales", treatment: "Valoración general", status: "confirmed", isNext: true },
+      { time: "12:30", patient: "Mariana Duarte", treatment: "Extracción", status: "pending" },
+      { time: "15:00", patient: "Esteban Correa", treatment: "Blanqueamiento", status: "cancelled" },
+    ],
+    activePatientsList: [
+      { name: "Laura Gómez", initials: "LG", lastVisit: "22 Jul 2026" },
+      { name: "Andrés Pineda", initials: "AP", lastVisit: "15 Jul 2026" },
+      { name: "Sofía Ramírez", initials: "SR", lastVisit: "30 Jun 2026" },
+      { name: "Camilo Rueda", initials: "CR", lastVisit: "28 Jun 2026" },
+      { name: "Valentina Cruz", initials: "VC", lastVisit: "20 Jun 2026" },
+      { name: "Diego Morales", initials: "DM", lastVisit: "12 Jun 2026" },
+      { name: "Mariana Duarte", initials: "MD", lastVisit: "5 Jun 2026" },
+      { name: "Paula Jiménez", initials: "PJ", lastVisit: "30 May 2026" },
+    ],
+    monthAppointments: [
+      { date: "3 Ago", time: "09:00", patient: "Valentina Cruz", treatment: "Limpieza dental", status: "completed" },
+      { date: "4 Ago", time: "10:30", patient: "Camilo Rueda", treatment: "Control", status: "completed" },
+      { date: "5 Ago", time: "08:00", patient: "Laura Gómez", treatment: "Limpieza dental", status: "completed" },
+      { date: "5 Ago", time: "11:00", patient: "Diego Morales", treatment: "Valoración general", status: "confirmed" },
+      { date: "7 Ago", time: "09:00", patient: "Mariana Duarte", treatment: "Extracción", status: "pending" },
+      { date: "10 Ago", time: "14:00", patient: "Esteban Correa", treatment: "Blanqueamiento", status: "pending" },
+      { date: "14 Ago", time: "10:00", patient: "Paula Jiménez", treatment: "Resina", status: "pending" },
+      { date: "20 Ago", time: "11:30", patient: "Sebastián Rojas", treatment: "Control ortodóncico", status: "pending" },
+    ],
+  },
+  d2: {
+    registrationNumber: "T.P. 51890",
+    phone: "+57 301 456 7890",
+    email: "julian.restrepo@odentia.com",
+    mainRoom: "Consultorio 2",
+    scheduleDays: ["L", "M", "X", "J", "V", "S"],
+    scheduleStart: "9:00 AM",
+    scheduleEnd: "6:00 PM",
+    appointmentsToday: 5,
+    patientsSeenToday: 2,
+    activePatients: 96,
+    appointmentsThisMonth: 37,
+    patientsSeenTodayList: [
+      { name: "Valentina Ríos", initials: "VR", lastVisit: "18 Jul 2026" },
+      { name: "Santiago Nieto", initials: "SN", lastVisit: "10 Jul 2026" },
+    ],
+    todayAgenda: [
+      { time: "08:30", patient: "Valentina Ríos", treatment: "Ajuste de brackets", status: "completed" },
+      { time: "09:30", patient: "Santiago Nieto", treatment: "Control ortodóncico", status: "completed" },
+      { time: "11:00", patient: "Camila Herrera", treatment: "Instalación de brackets", status: "confirmed", isNext: true },
+      { time: "13:00", patient: "Felipe Cárdenas", treatment: "Retiro de brackets", status: "pending" },
+      { time: "16:00", patient: "Isabella Cortés", treatment: "Valoración", status: "cancelled" },
+    ],
+    activePatientsList: [
+      { name: "Valentina Ríos", initials: "VR", lastVisit: "18 Jul 2026" },
+      { name: "Santiago Nieto", initials: "SN", lastVisit: "10 Jul 2026" },
+      { name: "Camila Herrera", initials: "CH", lastVisit: "2 Jul 2026" },
+      { name: "Felipe Cárdenas", initials: "FC", lastVisit: "25 Jun 2026" },
+      { name: "Isabella Cortés", initials: "IC", lastVisit: "18 Jun 2026" },
+      { name: "Juliana Poveda", initials: "JP", lastVisit: "10 Jun 2026" },
+    ],
+    monthAppointments: [
+      { date: "3 Ago", time: "09:00", patient: "Isabella Cortés", treatment: "Valoración", status: "completed" },
+      { date: "4 Ago", time: "11:00", patient: "Felipe Cárdenas", treatment: "Retiro de brackets", status: "completed" },
+      { date: "5 Ago", time: "08:30", patient: "Valentina Ríos", treatment: "Ajuste de brackets", status: "completed" },
+      { date: "5 Ago", time: "11:00", patient: "Camila Herrera", treatment: "Instalación de brackets", status: "confirmed" },
+      { date: "8 Ago", time: "10:00", patient: "Santiago Nieto", treatment: "Control ortodóncico", status: "pending" },
+      { date: "13 Ago", time: "09:30", patient: "Juliana Poveda", treatment: "Instalación de brackets", status: "pending" },
+      { date: "18 Ago", time: "15:00", patient: "Andrés Salcedo", treatment: "Ajuste de brackets", status: "pending" },
+    ],
+  },
+  d3: {
+    registrationNumber: "T.P. 48765",
+    phone: "+57 302 789 1234",
+    email: "paula.escobar@odentia.com",
+    mainRoom: "Consultorio 3",
+    scheduleDays: ["M", "X", "J", "V", "S"],
+    scheduleStart: "8:00 AM",
+    scheduleEnd: "4:00 PM",
+    appointmentsToday: 4,
+    patientsSeenToday: 1,
+    activePatients: 74,
+    appointmentsThisMonth: 29,
+    patientsSeenTodayList: [{ name: "Mateo Salazar", initials: "MS", lastVisit: "5 Jul 2026" }],
+    todayAgenda: [
+      { time: "08:00", patient: "Mateo Salazar", treatment: "Conducto radicular", status: "completed" },
+      { time: "10:00", patient: "Daniela Ortiz", treatment: "Endodoncia", status: "confirmed", isNext: true },
+      { time: "13:30", patient: "Nicolás Vega", treatment: "Retratamiento", status: "pending" },
+      { time: "15:30", patient: "Gabriela Muñoz", treatment: "Valoración", status: "cancelled" },
+    ],
+    activePatientsList: [
+      { name: "Mateo Salazar", initials: "MS", lastVisit: "5 Jul 2026" },
+      { name: "Daniela Ortiz", initials: "DO", lastVisit: "28 Jun 2026" },
+      { name: "Nicolás Vega", initials: "NV", lastVisit: "20 Jun 2026" },
+      { name: "Gabriela Muñoz", initials: "GM", lastVisit: "12 Jun 2026" },
+    ],
+    monthAppointments: [
+      { date: "3 Ago", time: "09:00", patient: "Nicolás Vega", treatment: "Retratamiento", status: "completed" },
+      { date: "5 Ago", time: "08:00", patient: "Mateo Salazar", treatment: "Conducto radicular", status: "completed" },
+      { date: "5 Ago", time: "10:00", patient: "Daniela Ortiz", treatment: "Endodoncia", status: "confirmed" },
+      { date: "11 Ago", time: "13:00", patient: "Gabriela Muñoz", treatment: "Valoración", status: "pending" },
+      { date: "19 Ago", time: "09:00", patient: "Camilo Vargas", treatment: "Endodoncia", status: "pending" },
+    ],
+  },
+};
+
+const DEFAULT_DENTIST_PROFILE_MOCK: DentistProfileMock = {
+  registrationNumber: "T.P. 00000",
+  phone: "+57 300 000 0000",
+  email: "contacto@odentia.com",
+  mainRoom: "Consultorio 1",
+  scheduleDays: ["L", "M", "X", "J", "V"],
+  scheduleStart: "8:00 AM",
+  scheduleEnd: "5:00 PM",
+  appointmentsToday: 0,
+  patientsSeenToday: 0,
+  activePatients: 0,
+  appointmentsThisMonth: 0,
+  patientsSeenTodayList: [],
+  todayAgenda: [],
+  activePatientsList: [],
+  monthAppointments: [],
+};
+
+// Matches the pencil-trigger convention already used in
+// appointment-detail-modal.tsx's inline field editors.
+function FieldPencilButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button type="button" onClick={onClick} aria-label={label} className="text-muted-foreground/50 hover:text-primary">
+      <PencilIcon className="size-3" />
+    </button>
+  );
+}
+
+function EditableProfileRow({
+  label,
+  value,
+  editable,
+  isEditing,
+  draftValue,
+  onDraftChange,
+  onStartEdit,
+  onSave,
+  onCancel,
+}: {
+  label: string;
+  value: string;
+  editable: boolean;
+  isEditing: boolean;
+  draftValue: string;
+  onDraftChange: (value: string) => void;
+  onStartEdit: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  if (isEditing) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <dt className="text-label-foreground">{label}</dt>
+        <input
+          autoFocus
+          value={draftValue}
+          onChange={(e) => onDraftChange(e.target.value)}
+          className={FIELD_CLASS}
+        />
+        <div className="flex justify-end gap-1.5">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg px-2.5 py-1 text-xs font-medium text-foreground/70 hover:bg-foreground/5"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            className="rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
+          >
+            Guardar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <dt className="text-label-foreground">{label}</dt>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <dd className="truncate font-medium">{value}</dd>
+        {editable && <FieldPencilButton label={`Editar ${label}`} onClick={onStartEdit} />}
+      </div>
+    </div>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  value: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={`flex flex-col items-center rounded-lg border px-3 py-2.5 text-center transition-colors ${
+        selected
+          ? "border-primary/40 bg-primary/10"
+          : "border-border hover:border-primary/30 hover:bg-primary/[0.03]"
+      }`}
+    >
+      <p className={`text-2xl font-bold tracking-tight ${selected ? "text-primary" : ""}`}>{value}</p>
+      <p
+        className={`mt-1 truncate text-[10px] leading-tight font-medium ${selected ? "text-primary" : "text-label-foreground"}`}
+      >
+        {label}
+      </p>
+    </button>
+  );
+}
+
+function EmptyDetailState({ message }: { message: string }) {
+  return (
+    <p className="mt-3 rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+      {message}
+    </p>
+  );
+}
+
+function SeenPatientRow({ patient }: { patient: SeenPatient }) {
+  return (
+    <li className="flex items-center gap-2.5 rounded-lg border border-border px-3 py-2">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+        {patient.initials}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{patient.name}</span>
+        <span className="block truncate text-xs text-muted-foreground">Última visita: {patient.lastVisit}</span>
+      </span>
+    </li>
+  );
+}
+
+function MonthAppointmentRow({ item }: { item: MonthAppointmentItem }) {
+  return (
+    <li className="flex items-start justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm">
+      <div className="min-w-0">
+        <p className="truncate font-medium">
+          {item.date} · {item.time} · {item.patient}
+        </p>
+        <p className="truncate text-xs text-muted-foreground">{item.treatment}</p>
+      </div>
+      <span
+        className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLES[item.status]}`}
+      >
+        {STATUS_LABELS[item.status]}
+      </span>
+    </li>
+  );
+}
+
+function TodayAgendaRow({ item }: { item: TodayAgendaItem }) {
+  return (
+    <li
+      className={`flex items-start justify-between gap-2 rounded-lg border px-3 py-2 text-sm ${
+        item.isNext
+          ? "border-primary/40 bg-primary/[0.07] shadow-sm"
+          : item.status === "cancelled"
+            ? "border-border opacity-60"
+            : "border-border"
+      }`}
+    >
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5">
+          <p className="truncate font-medium">
+            {item.time} · {item.patient}
+          </p>
+          {item.isNext && (
+            <span className="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-semibold text-primary-foreground">
+              Próxima
+            </span>
+          )}
+        </div>
+        <p className="truncate text-xs text-muted-foreground">{item.treatment}</p>
+      </div>
+      <span
+        className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLES[item.status]}`}
+      >
+        {STATUS_LABELS[item.status]}
+      </span>
+    </li>
+  );
+}
+
+type EditableFieldKey = "name" | "specialty" | "registrationNumber" | "phone" | "email" | "mainRoom";
+type KpiDetailKey = "citas-hoy" | "pacientes-atendidos" | "pacientes-activos" | "citas-mes";
+
+const KPI_HEADINGS: Record<KpiDetailKey, string> = {
+  "citas-hoy": "Agenda del día",
+  "pacientes-atendidos": "Pacientes atendidos hoy",
+  "pacientes-activos": "Pacientes activos",
+  "citas-mes": "Citas este mes",
+};
+
+function DentistProfileModal({
+  dentist,
+  allAppointments,
+  onClose,
+  onDeactivate,
+}: {
+  dentist: Dentist;
+  allAppointments: Appointment[];
+  onClose: () => void;
+  onDeactivate: () => void;
+}) {
+  const { role } = useRole();
+  // DEV TOOL — see src/dev/role.ts. Editing a professional's own record is
+  // an admin-only action; other roles keep the read-only view.
+  const isAdminView = role === "clinic-admin";
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  const baseProfile = DENTIST_PROFILE_MOCK[dentist.id] ?? DEFAULT_DENTIST_PROFILE_MOCK;
+  const [profile, setProfile] = useState({
+    ...baseProfile,
+    name: dentist.name,
+    specialty: dentist.specialty,
+    status: "active" as DentistStatus,
+  });
+
+  const [editingField, setEditingField] = useState<EditableFieldKey | null>(null);
+  const [draftValue, setDraftValue] = useState("");
+  const [editingStatus, setEditingStatus] = useState(false);
+  const [pendingDeactivation, setPendingDeactivation] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState(false);
+  const [draftDays, setDraftDays] = useState<string[]>([]);
+  const [draftStart, setDraftStart] = useState("");
+  const [draftEnd, setDraftEnd] = useState("");
+  const [selectedKpi, setSelectedKpi] = useState<KpiDetailKey>("citas-hoy");
+
+  const startEditing = (field: EditableFieldKey, currentValue: string) => {
+    setEditingField(field);
+    setDraftValue(currentValue);
+  };
+
+  const saveField = () => {
+    if (!editingField) return;
+    const trimmed = draftValue.trim();
+    if (trimmed) setProfile((prev) => ({ ...prev, [editingField]: trimmed }));
+    setEditingField(null);
+  };
+
+  const cancelEditing = () => setEditingField(null);
+
+  // This prototype's mock data only models a single week — "citas futuras"
+  // is approximated as this dentist's appointments that haven't already
+  // completed or been cancelled (see PROJECT_STATUS.md's mock-data phase).
+  const hasActiveUpcomingAppointments = allAppointments.some(
+    (a) =>
+      a.dentistId === dentist.id &&
+      (a.status === "confirmed" || a.status === "pending" || a.status === "in-progress"),
+  );
+
+  const requestStatusChange = (next: DentistStatus) => {
+    setEditingStatus(false);
+    if (next === "inactive" && hasActiveUpcomingAppointments) {
+      setPendingDeactivation(true);
+      return;
+    }
+    setProfile((prev) => ({ ...prev, status: next }));
+  };
+
+  const confirmDeactivation = () => {
+    setProfile((prev) => ({ ...prev, status: "inactive" }));
+    onDeactivate();
+    setPendingDeactivation(false);
+  };
+
+  const startEditingSchedule = () => {
+    setDraftDays(profile.scheduleDays);
+    setDraftStart(profile.scheduleStart);
+    setDraftEnd(profile.scheduleEnd);
+    setEditingSchedule(true);
+  };
+
+  const toggleDraftDay = (day: string) => {
+    setDraftDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
+  };
+
+  const saveSchedule = () => {
+    setProfile((prev) => ({ ...prev, scheduleDays: draftDays, scheduleStart: draftStart, scheduleEnd: draftEnd }));
+    setEditingSchedule(false);
+  };
+
+  const kpiTiles: { key: KpiDetailKey; label: string; value: string }[] = [
+    { key: "citas-hoy", label: "Citas programadas hoy", value: String(profile.appointmentsToday) },
+    { key: "pacientes-atendidos", label: "Pacientes atendidos hoy", value: String(profile.patientsSeenToday) },
+    { key: "pacientes-activos", label: "Pacientes activos", value: String(profile.activePatients) },
+    { key: "citas-mes", label: "Citas este mes", value: String(profile.appointmentsThisMonth) },
+  ];
+
+  // "Ver agenda de hoy" isn't wired to a real view yet — left ready for
+  // that navigation to be implemented later.
+  const handleViewTodayAgenda = () => {};
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={dentist.name}
+        onClick={(e) => e.stopPropagation()}
+        className="relative z-10 flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-background shadow-xl sm:max-h-[80vh] sm:w-full sm:max-w-2xl sm:rounded-xl md:max-w-4xl"
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3">
+          <p className="text-sm font-semibold">Perfil del profesional</p>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar"
+            className="flex size-8 items-center justify-center rounded-lg text-foreground/60 hover:bg-foreground/5"
+          >
+            <CloseIcon className="size-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto md:grid md:grid-cols-[1fr_1.15fr_1.15fr] md:overflow-hidden">
+          {/* Left — Datos personales */}
+          <div className="border-b border-border p-5 md:min-h-0 md:overflow-y-auto md:border-r md:border-b-0">
+            <div className="flex flex-col items-center gap-2 text-center md:items-start md:text-left">
+              <UserAvatar
+                name={dentist.name}
+                initials={dentist.initials}
+                avatar_url={dentist.avatar_url}
+                sizeClassName="size-16"
+              />
+
+              {isAdminView ? (
+                editingStatus ? (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => requestStatusChange("active")}
+                      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                        profile.status === "active"
+                          ? "border-primary/25 bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:bg-foreground/5"
+                      }`}
+                    >
+                      Activo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => requestStatusChange("inactive")}
+                      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                        profile.status === "inactive"
+                          ? "border-danger/25 bg-danger/10 text-danger"
+                          : "border-border text-muted-foreground hover:bg-foreground/5"
+                      }`}
+                    >
+                      Inactivo
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setEditingStatus(true)}
+                    className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                      profile.status === "active"
+                        ? "border-primary/25 bg-primary/10 text-primary hover:bg-primary/15"
+                        : "border-danger/25 bg-danger/10 text-danger hover:bg-danger/15"
+                    }`}
+                  >
+                    {profile.status === "active" ? "Activo" : "Inactivo"}
+                    <PencilIcon className="size-3" />
+                  </button>
+                )
+              ) : (
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                    profile.status === "active"
+                      ? "border-primary/25 bg-primary/10 text-primary"
+                      : "border-danger/25 bg-danger/10 text-danger"
+                  }`}
+                >
+                  {profile.status === "active" ? "Activo" : "Inactivo"}
+                </span>
+              )}
+            </div>
+
+            {pendingDeactivation && (
+              <div className="mt-3 rounded-lg border border-warning/25 bg-warning/10 p-3 text-xs text-warning">
+                <p className="font-medium">Este profesional tiene citas activas próximas.</p>
+                <p className="mt-1">Al inactivarlo, esas citas se cancelarán automáticamente.</p>
+                <div className="mt-2.5 flex justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPendingDeactivation(false)}
+                    className="rounded-lg px-2.5 py-1 text-xs font-medium text-warning/80 hover:bg-warning/15"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmDeactivation}
+                    className="rounded-lg bg-warning px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
+                  >
+                    Inactivar y cancelar citas
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <dl className="mt-5 flex flex-col gap-3 text-sm">
+              <EditableProfileRow
+                label="Nombre"
+                value={profile.name}
+                editable={isAdminView}
+                isEditing={editingField === "name"}
+                draftValue={draftValue}
+                onDraftChange={setDraftValue}
+                onStartEdit={() => startEditing("name", profile.name)}
+                onSave={saveField}
+                onCancel={cancelEditing}
+              />
+              <EditableProfileRow
+                label="Especialidad"
+                value={profile.specialty}
+                editable={isAdminView}
+                isEditing={editingField === "specialty"}
+                draftValue={draftValue}
+                onDraftChange={setDraftValue}
+                onStartEdit={() => startEditing("specialty", profile.specialty)}
+                onSave={saveField}
+                onCancel={cancelEditing}
+              />
+              <EditableProfileRow
+                label="Registro profesional"
+                value={profile.registrationNumber}
+                editable={isAdminView}
+                isEditing={editingField === "registrationNumber"}
+                draftValue={draftValue}
+                onDraftChange={setDraftValue}
+                onStartEdit={() => startEditing("registrationNumber", profile.registrationNumber)}
+                onSave={saveField}
+                onCancel={cancelEditing}
+              />
+              <EditableProfileRow
+                label="Teléfono"
+                value={profile.phone}
+                editable={isAdminView}
+                isEditing={editingField === "phone"}
+                draftValue={draftValue}
+                onDraftChange={setDraftValue}
+                onStartEdit={() => startEditing("phone", profile.phone)}
+                onSave={saveField}
+                onCancel={cancelEditing}
+              />
+              <EditableProfileRow
+                label="Correo electrónico"
+                value={profile.email}
+                editable={isAdminView}
+                isEditing={editingField === "email"}
+                draftValue={draftValue}
+                onDraftChange={setDraftValue}
+                onStartEdit={() => startEditing("email", profile.email)}
+                onSave={saveField}
+                onCancel={cancelEditing}
+              />
+              <EditableProfileRow
+                label="Consultorio principal"
+                value={profile.mainRoom}
+                editable={isAdminView}
+                isEditing={editingField === "mainRoom"}
+                draftValue={draftValue}
+                onDraftChange={setDraftValue}
+                onStartEdit={() => startEditing("mainRoom", profile.mainRoom)}
+                onSave={saveField}
+                onCancel={cancelEditing}
+              />
+            </dl>
+          </div>
+
+          {/* Center — Disponibilidad y métricas */}
+          <div className="border-b border-border p-5 md:min-h-0 md:overflow-y-auto md:border-r md:border-b-0">
+            <h3 className="text-sm font-semibold">Disponibilidad</h3>
+            <div className="mt-3">
+              {editingSchedule ? (
+                <div className="flex flex-col gap-2.5 text-sm">
+                  <div className="flex flex-wrap gap-1.5">
+                    {DAY_ORDER.map((day) => (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => toggleDraftDay(day)}
+                        className={`flex size-7 items-center justify-center rounded-full border text-xs font-medium transition-colors ${
+                          draftDays.includes(day)
+                            ? "border-primary/30 bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground hover:bg-foreground/5"
+                        }`}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select value={draftStart} onChange={(e) => setDraftStart(e.target.value)} className={FIELD_CLASS}>
+                      {SCHEDULE_TIME_OPTIONS.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-muted-foreground">-</span>
+                    <select value={draftEnd} onChange={(e) => setDraftEnd(e.target.value)} className={FIELD_CLASS}>
+                      {SCHEDULE_TIME_OPTIONS.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditingSchedule(false)}
+                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-foreground/70 hover:bg-foreground/5"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveSchedule}
+                      className="rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
+                    >
+                      Guardar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <dt className="text-label-foreground">Horario de atención</dt>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <dd className="truncate font-medium">
+                      {formatScheduleLabel(profile.scheduleDays, profile.scheduleStart, profile.scheduleEnd)}
+                    </dd>
+                    {isAdminView && (
+                      <FieldPencilButton label="Editar horario de atención" onClick={startEditingSchedule} />
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              {kpiTiles.map((tile) => (
+                <MiniStat
+                  key={tile.key}
+                  label={tile.label}
+                  value={tile.value}
+                  selected={selectedKpi === tile.key}
+                  onSelect={() => setSelectedKpi(tile.key)}
+                />
+              ))}
+            </div>
+
+            <div className="mt-5">
+              <h3 className="text-sm font-semibold">Pacientes atendidos hoy</h3>
+              {profile.patientsSeenTodayList.length === 0 ? (
+                <EmptyDetailState message="Aún no hay pacientes atendidos hoy." />
+              ) : (
+                <ul className="mt-3 flex flex-col gap-1.5">
+                  {profile.patientsSeenTodayList.map((patient) => (
+                    <SeenPatientRow key={patient.name} patient={patient} />
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          {/* Right — detalle del KPI seleccionado */}
+          <div className="p-5 md:min-h-0 md:overflow-y-auto">
+            <h3 className="text-sm font-semibold">{KPI_HEADINGS[selectedKpi]}</h3>
+
+            {selectedKpi === "citas-hoy" &&
+              (profile.todayAgenda.length === 0 ? (
+                <EmptyDetailState message="No hay citas programadas para hoy." />
+              ) : (
+                <ul className="mt-3 flex flex-col gap-2">
+                  {profile.todayAgenda.map((item) => (
+                    <TodayAgendaRow key={`${item.time}-${item.patient}`} item={item} />
+                  ))}
+                </ul>
+              ))}
+
+            {selectedKpi === "pacientes-atendidos" &&
+              (profile.patientsSeenTodayList.length === 0 ? (
+                <EmptyDetailState message="Aún no hay pacientes atendidos hoy." />
+              ) : (
+                <ul className="mt-3 flex flex-col gap-1.5">
+                  {profile.patientsSeenTodayList.map((patient) => (
+                    <SeenPatientRow key={patient.name} patient={patient} />
+                  ))}
+                </ul>
+              ))}
+
+            {selectedKpi === "pacientes-activos" &&
+              (profile.activePatientsList.length === 0 ? (
+                <EmptyDetailState message="Sin pacientes activos registrados." />
+              ) : (
+                <ul className="mt-3 flex flex-col gap-1.5">
+                  {profile.activePatientsList.map((patient) => (
+                    <SeenPatientRow key={patient.name} patient={patient} />
+                  ))}
+                </ul>
+              ))}
+
+            {selectedKpi === "citas-mes" &&
+              (profile.monthAppointments.length === 0 ? (
+                <EmptyDetailState message="Sin citas registradas este mes." />
+              ) : (
+                <ul className="mt-3 flex flex-col gap-2">
+                  {profile.monthAppointments.map((item) => (
+                    <MonthAppointmentRow key={`${item.date}-${item.time}-${item.patient}`} item={item} />
+                  ))}
+                </ul>
+              ))}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 gap-2 border-t border-border px-5 py-3.5">
+          <a
+            href={`https://wa.me/${WHATSAPP_NUMBER}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex flex-1 items-center justify-center rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            WhatsApp
+          </a>
+          <button
+            type="button"
+            onClick={handleViewTodayAgenda}
+            className="flex-1 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground/80 transition-colors hover:bg-foreground/5"
+          >
+            Abrir agenda
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

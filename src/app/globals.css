@@ -2,12 +2,16 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #14181c;
+  /* Títulos y texto principal — gris oscuro moderno, no negro casi puro. */
+  --foreground: #2b303b;
 
   --surface: #f7f8fa;
   --border: #e9ebee;
 
+  /* Texto secundario — gris medio. */
   --muted-foreground: #6b7280;
+  /* Labels y ayudas — gris claro. */
+  --label-foreground: #9ca3af;
 
   --primary: #3eb0a0;
   --primary-foreground: #ffffff;
@@ -37,6 +41,7 @@
   --color-border: var(--border);
 
   --color-muted-foreground: var(--muted-foreground);
+  --color-label-foreground: var(--label-foreground);
 
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
@@ -50,6 +55,13 @@
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Card/modal titles, form values, profile info, list rows and KPI
+     numbers all render at these steps — trimmed ~10-15% so they read
+     lighter without touching layout, spacing or text-xs/label sizes. */
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-xl: 1.09375rem;
 }
 
 body {

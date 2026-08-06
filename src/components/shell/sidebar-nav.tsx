@@ -40,7 +40,7 @@ export function SidebarNav({ activeLabel }: SidebarNavProps) {
           className={index > 0 ? "mt-4 border-t border-border pt-4" : undefined}
         >
           {GROUP_LABELS[section.group] && (
-            <p className="mb-2 px-3 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            <p className="mb-2 px-3 text-[11px] font-semibold tracking-wide text-label-foreground uppercase">
               {GROUP_LABELS[section.group]}
             </p>
           )}

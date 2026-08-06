@@ -202,7 +202,7 @@ export function AppointmentDetailModal({
         className="relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-background shadow-xl outline-none sm:max-h-[85vh] sm:w-full sm:max-w-2xl sm:rounded-xl"
       >
         {/* Header */}
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-3">
           <div className="flex items-center gap-3">
             <UserAvatar name={appointment.patientName} initials={appointment.initials} sizeClassName="size-10" />
             <div>
@@ -479,7 +479,7 @@ function ViewDetails({
             <NoteIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <p className="text-[11px] text-muted-foreground">Observaciones</p>
+                <p className="text-[11px] text-label-foreground">Observaciones</p>
                 {editingField !== "notes" && (
                   <button
                     type="button"
@@ -533,7 +533,7 @@ function FieldRow({
       <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <dt className="text-[11px] text-muted-foreground">{label}</dt>
+          <dt className="text-[11px] text-label-foreground">{label}</dt>
           {onEdit && !editing && (
             <button
               type="button"
@@ -586,7 +586,7 @@ export function PopoverFieldRow({
       <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <dt className="text-[11px] text-muted-foreground">{label}</dt>
+          <dt className="text-[11px] text-label-foreground">{label}</dt>
           <button
             ref={triggerRef}
             type="button"
@@ -781,7 +781,7 @@ export function TimePopoverContent({
   return (
     <div className="flex flex-col gap-2">
       <div>
-        <label className="text-[11px] text-muted-foreground" htmlFor="time-popover-start">
+        <label className="text-[11px] text-label-foreground" htmlFor="time-popover-start">
           Hora de inicio
         </label>
         <select
@@ -798,7 +798,7 @@ export function TimePopoverContent({
         </select>
       </div>
       <div>
-        <label className="text-[11px] text-muted-foreground" htmlFor="time-popover-duration">
+        <label className="text-[11px] text-label-foreground" htmlFor="time-popover-duration">
           Duración
         </label>
         <select
@@ -1231,7 +1231,7 @@ function HistoryEntry({
           className="w-full rounded-lg px-2 py-1 text-left leading-tight transition-colors hover:bg-foreground/5"
         >
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-medium text-muted-foreground">
+            <span className="text-[11px] font-medium text-label-foreground">
               {dayLabel} · {item.time}
             </span>
             <span
@@ -1240,7 +1240,7 @@ function HistoryEntry({
               {STATUS_LABELS[item.status]}
             </span>
           </div>
-          <p className="mt-0.5 text-[10px] text-muted-foreground">{dentistName}</p>
+          <p className="mt-0.5 text-[10px] text-label-foreground">{dentistName}</p>
         </button>
       </Tooltip>
     </li>

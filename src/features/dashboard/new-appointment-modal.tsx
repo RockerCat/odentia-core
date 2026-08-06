@@ -151,7 +151,7 @@ export function NewAppointmentModal({
         onClick={(e) => e.stopPropagation()}
         className="relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-background shadow-xl sm:max-h-[85vh] sm:w-full sm:max-w-2xl sm:rounded-xl"
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3.5">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3">
           <p className="text-sm font-semibold">Nueva cita</p>
           <button
             type="button"
@@ -167,12 +167,12 @@ export function NewAppointmentModal({
           <div className="sm:grid sm:grid-cols-[220px_1fr] sm:gap-5">
             {/* Personas */}
             <div className="flex flex-col gap-3">
-              <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+              <p className="text-[11px] font-semibold tracking-wide text-label-foreground uppercase">
                 Personas
               </p>
 
               <div>
-                <label className="text-[11px] text-muted-foreground">Paciente</label>
+                <label className="text-[11px] text-label-foreground">Paciente</label>
                 <div className="mt-1">
                   <Combobox
                     items={patientOptions}
@@ -202,7 +202,7 @@ export function NewAppointmentModal({
               </div>
 
               <div>
-                <label className="text-[11px] text-muted-foreground">Profesional</label>
+                <label className="text-[11px] text-label-foreground">Profesional</label>
                 <div className="mt-1">
                   <Combobox
                     items={dentists}
@@ -244,7 +244,7 @@ export function NewAppointmentModal({
 
             {/* Cita */}
             <div className="mt-4 flex flex-col gap-2.5 sm:mt-0">
-              <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+              <p className="text-[11px] font-semibold tracking-wide text-label-foreground uppercase">
                 Cita
               </p>
 
@@ -369,7 +369,7 @@ function Field({
     <div className="flex items-start gap-3">
       <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
-        <label className="text-[11px] text-muted-foreground">{label}</label>
+        <label className="text-[11px] text-label-foreground">{label}</label>
         <div className="mt-1">{children}</div>
       </div>
     </div>
