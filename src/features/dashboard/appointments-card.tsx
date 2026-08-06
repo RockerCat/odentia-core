@@ -20,6 +20,74 @@ const LEGEND = [
   { label: "Cancelada", className: "bg-danger/60" },
 ];
 
+// Monday of the one real week this prototype's mock data models (see
+// WEEK_DAYS/CURRENT_WEEK_LABEL in mock-data.ts — August 3–9, 2026).
+const REFERENCE_MONDAY = new Date(2026, 7, 3);
+
+const DAY_META = [
+  { key: "monday", label: "Lunes", shortLabel: "Lun" },
+  { key: "tuesday", label: "Martes", shortLabel: "Mar" },
+  { key: "wednesday", label: "Miércoles", shortLabel: "Mié" },
+  { key: "thursday", label: "Jueves", shortLabel: "Jue" },
+  { key: "friday", label: "Viernes", shortLabel: "Vie" },
+  { key: "saturday", label: "Sábado", shortLabel: "Sáb" },
+  { key: "sunday", label: "Domingo", shortLabel: "Dom" },
+];
+
+const MONTH_NAMES = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
+
+function addDays(date: Date, days: number): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+function isSameCalendarDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+// This prototype's mock data only models the one real week above —
+// browsing to any other week still navigates for real (real dates, real
+// header range), it just correctly shows no appointments rather than
+// fabricating data that was never modeled.
+function buildWeekDaysForOffset(offset: number, baseWeekDays: WeekDay[]): WeekDay[] {
+  if (offset === 0) return baseWeekDays;
+  const today = addDays(REFERENCE_MONDAY, 2); // Wednesday of the reference week
+  const monday = addDays(REFERENCE_MONDAY, offset * 7);
+  return DAY_META.map((meta, i) => {
+    const date = addDays(monday, i);
+    return {
+      key: `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      dateNumber: String(date.getDate()),
+      dateLabel: `${date.getDate()} ${MONTH_NAMES[date.getMonth()].slice(0, 3)}`,
+      isToday: isSameCalendarDay(date, today),
+    };
+  });
+}
+
+function buildWeekLabelForOffset(offset: number, baseWeekLabel: string): string {
+  if (offset === 0) return baseWeekLabel;
+  const monday = addDays(REFERENCE_MONDAY, offset * 7);
+  const sunday = addDays(monday, 6);
+  if (monday.getMonth() === sunday.getMonth()) {
+    return `${monday.getDate()} – ${sunday.getDate()} ${MONTH_NAMES[sunday.getMonth()]} ${sunday.getFullYear()}`;
+  }
+  return `${monday.getDate()} ${MONTH_NAMES[monday.getMonth()]} – ${sunday.getDate()} ${MONTH_NAMES[sunday.getMonth()]} ${sunday.getFullYear()}`;
+}
+
 export function AppointmentsCard({
   appointments,
   dentists,
@@ -38,6 +106,10 @@ export function AppointmentsCard({
   const [selectedDay, setSelectedDay] = useState(
     weekDays.find((day) => day.isToday)?.key ?? weekDays[0]?.key,
   );
+  // 0 = the one real week this prototype models (weekDays/weekLabel props,
+  // unchanged); any other offset is navigated for real but has no
+  // appointment data behind it (see buildWeekDaysForOffset above).
+  const [weekOffset, setWeekOffset] = useState(0);
 
   // Owns the list locally so edits made in the detail modal show up in the
   // board immediately — this prototype phase simulates CRUD with local
@@ -72,10 +144,28 @@ export function AppointmentsCard({
     setNewAppointmentPrefill(null);
   };
 
-  const countForDay = (dayKey: string) => allAppointments.filter((a) => a.day === dayKey).length;
-  const maxDayCount = Math.max(...weekDays.map((day) => countForDay(day.key)), 1);
+  const currentWeekDays = buildWeekDaysForOffset(weekOffset, weekDays);
+  const currentWeekLabel = buildWeekLabelForOffset(weekOffset, weekLabel);
+  // Only the real week (offset 0) has appointment data at all — see
+  // buildWeekDaysForOffset's comment.
+  const weekAppointments = weekOffset === 0 ? allAppointments : [];
 
-  const dayAppointments = allAppointments.filter((a) => a.day === selectedDay);
+  const changeWeek = (nextOffset: number) => {
+    const nextWeekDays = buildWeekDaysForOffset(nextOffset, weekDays);
+    const previousIndex = currentWeekDays.findIndex((day) => day.key === selectedDay);
+    setWeekOffset(nextOffset);
+    setSelectedDay(nextWeekDays[previousIndex >= 0 ? previousIndex : 0]?.key ?? nextWeekDays[0]?.key);
+  };
+
+  const goToToday = () => {
+    setWeekOffset(0);
+    setSelectedDay(weekDays.find((day) => day.isToday)?.key ?? weekDays[0]?.key);
+  };
+
+  const countForDay = (dayKey: string) => weekAppointments.filter((a) => a.day === dayKey).length;
+  const maxDayCount = Math.max(...currentWeekDays.map((day) => countForDay(day.key)), 1);
+
+  const dayAppointments = weekAppointments.filter((a) => a.day === selectedDay);
   const selectedAppointment = allAppointments.find((a) => a.id === selectedAppointmentId) ?? null;
 
   const sortedDentists = [...dentists].sort(
@@ -87,21 +177,22 @@ export function AppointmentsCard({
   return (
     <div className="rounded-xl border border-border bg-background">
       <div className="border-b border-border px-5 py-5">
-        {/* Week navigation — UI only, no logic wired up yet. */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-1">
             <button
               type="button"
+              onClick={() => changeWeek(weekOffset - 1)}
               aria-label="Semana anterior"
               className="flex size-8 items-center justify-center rounded-lg text-foreground/70 hover:bg-foreground/5"
             >
               <ChevronIcon className="size-4" />
             </button>
             <span className="min-w-[11rem] px-1 text-center text-base font-semibold tracking-tight">
-              {weekLabel}
+              {currentWeekLabel}
             </span>
             <button
               type="button"
+              onClick={() => changeWeek(weekOffset + 1)}
               aria-label="Semana siguiente"
               className="flex size-8 items-center justify-center rounded-lg text-foreground/70 hover:bg-foreground/5"
             >
@@ -109,6 +200,7 @@ export function AppointmentsCard({
             </button>
             <button
               type="button"
+              onClick={goToToday}
               className="ml-2 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-foreground/5"
             >
               Hoy
@@ -130,7 +222,7 @@ export function AppointmentsCard({
         {/* Day selector — picks which day's board is shown below. Spans the
             full width so the first/last day align with the card's edges. */}
         <div className="mt-4 grid grid-cols-7 gap-2">
-          {weekDays.map((day) => {
+          {currentWeekDays.map((day) => {
             const active = day.key === selectedDay;
             const level = Math.round((countForDay(day.key) / maxDayCount) * 6);
             return (
@@ -215,7 +307,7 @@ export function AppointmentsCard({
                         key={slot}
                         type="button"
                         onClick={
-                          canCreateAppointments
+                          canCreateAppointments && weekOffset === 0
                             ? () => openNewAppointment({ dentistId: dentist.id, day: selectedDay, time: slot })
                             : undefined
                         }

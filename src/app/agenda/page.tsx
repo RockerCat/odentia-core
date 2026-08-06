@@ -4,6 +4,7 @@ import { MarketplaceCard } from "@/features/dashboard/marketplace-card";
 import {
   CURRENT_WEEK_LABEL,
   DENTISTS,
+  OPERATIONAL_ALERTS,
   TODAY_SUMMARY,
   WEEK_APPOINTMENTS,
   WEEK_DAYS,
@@ -26,7 +27,19 @@ export default function AgendaPage() {
         </div>
 
         <div className="flex flex-col gap-7">
-          <SummaryCards metrics={TODAY_SUMMARY} />
+          <SummaryCards
+            // SummaryCards is a Client Component (needs state for the KPI
+            // detail modal); a Server Component can only hand it already-
+            // rendered JSX, not the raw icon component reference.
+            metrics={TODAY_SUMMARY.map((metric) => ({
+              ...metric,
+              icon: <metric.icon className="size-4" />,
+            }))}
+            appointments={WEEK_APPOINTMENTS}
+            weekDays={WEEK_DAYS}
+            dentists={DENTISTS}
+            alerts={OPERATIONAL_ALERTS}
+          />
           <MarketplaceCard />
         </div>
       </div>
