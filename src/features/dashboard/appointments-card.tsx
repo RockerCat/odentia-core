@@ -1,12 +1,12 @@
 "use client"; // needed for day-selection state and the useRole() gate below.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Tooltip } from "@/components/tooltip";
 import { UserAvatar } from "@/components/user-avatar";
-import { ChevronIcon, CloseIcon, PencilIcon, PlusIcon } from "@/components/shell/icons";
+import { ChevronDownIcon, ChevronIcon, CloseIcon, PencilIcon, PlusIcon } from "@/components/shell/icons";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { firstName } from "@/lib/format";
-import { AppointmentDetailModal, FIELD_CLASS } from "./appointment-detail-modal";
+import { AnchoredPopover, AppointmentDetailModal, FIELD_CLASS } from "./appointment-detail-modal";
 import type { Appointment, AppointmentStatus, Dentist, WeekDay } from "./mock-data";
 import { STATUS_LABELS, STATUS_STYLES } from "./mock-data";
 import { NewAppointmentModal } from "./new-appointment-modal";
@@ -88,6 +88,175 @@ function buildWeekLabelForOffset(offset: number, baseWeekLabel: string): string 
   return `${monday.getDate()} ${MONTH_NAMES[monday.getMonth()]} – ${sunday.getDate()} ${MONTH_NAMES[sunday.getMonth()]} ${sunday.getFullYear()}`;
 }
 
+type FilterOption<T extends string> = { value: T; label: string };
+
+// Active-filter chip: reuses AnchoredPopover (the same positioned-dropdown
+// component the detail modal's Fecha/Horario editors use) for its option
+// list, rendered as a pill instead of a traditional <select>.
+function FilterChip<T extends string>({
+  label,
+  value,
+  options,
+  onSelect,
+  onClear,
+}: {
+  label: string;
+  value: T;
+  options: FilterOption<T>[];
+  onSelect: (value: T) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const isActive = value !== "all";
+  // No "Label: " prefix — the chip shows its own name as a placeholder
+  // when unset, and just the picked value once a filter is active.
+  const displayValue = isActive ? (options.find((o) => o.value === value)?.label ?? label) : label;
+
+  return (
+    <div
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full border py-1 pr-1 pl-2.5 text-xs font-medium transition-colors ${
+        isActive ? "border-primary/30 bg-primary/10 text-primary" : "border-border text-foreground/70"
+      }`}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="flex items-center gap-1 py-0.5 hover:opacity-80"
+      >
+        <span>{displayValue}</span>
+        {!isActive && <ChevronDownIcon className="size-3 text-muted-foreground" />}
+      </button>
+      {isActive && (
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label={`Quitar filtro de ${label}`}
+          className="flex size-4 items-center justify-center rounded-full hover:bg-primary/20"
+        >
+          <CloseIcon className="size-2.5" />
+        </button>
+      )}
+
+      <AnchoredPopover open={open} anchorRef={triggerRef} onClose={() => setOpen(false)} widthClass="w-48">
+        <ul className="flex flex-col gap-0.5">
+          {options.map((opt) => (
+            <li key={opt.value}>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelect(opt.value);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-foreground/5 ${
+                  opt.value === value ? "font-medium text-primary" : ""
+                }`}
+              >
+                {opt.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </AnchoredPopover>
+    </div>
+  );
+}
+
+// Multi-select variant of the filter chip above, used only for Profesional:
+// each picked dentist renders as its own removable chip, and a small
+// chevron trigger (re)opens the same AnchoredPopover dropdown to keep
+// adding or removing dentists without closing after every pick.
+function ProfessionalFilterChips({
+  dentists,
+  selectedIds,
+  onToggle,
+}: {
+  dentists: Dentist[];
+  selectedIds: string[];
+  onToggle: (dentistId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const selectedDentists = dentists.filter((d) => selectedIds.includes(d.id));
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 md:flex-nowrap">
+      {selectedDentists.length === 0 ? (
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border py-1 pr-1 pl-2.5 text-xs font-medium text-foreground/70 hover:opacity-80"
+        >
+          <span>Profesional</span>
+          <ChevronDownIcon className="size-3 text-muted-foreground" />
+        </button>
+      ) : (
+        <>
+          {selectedDentists.map((dentist) => (
+            <span
+              key={dentist.id}
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/10 py-1 pr-1 pl-2.5 text-xs font-medium text-primary"
+            >
+              {dentist.name}
+              <button
+                type="button"
+                onClick={() => onToggle(dentist.id)}
+                aria-label={`Quitar ${dentist.name}`}
+                className="flex size-4 items-center justify-center rounded-full hover:bg-primary/20"
+              >
+                <CloseIcon className="size-2.5" />
+              </button>
+            </span>
+          ))}
+          <button
+            ref={triggerRef}
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            aria-label="Agregar profesional al filtro"
+            className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+          >
+            <ChevronDownIcon className="size-3" />
+          </button>
+        </>
+      )}
+
+      <AnchoredPopover open={open} anchorRef={triggerRef} onClose={() => setOpen(false)} widthClass="w-48">
+        <ul className="flex flex-col gap-0.5">
+          {dentists.map((dentist) => {
+            const checked = selectedIds.includes(dentist.id);
+            return (
+              <li key={dentist.id}>
+                <button
+                  type="button"
+                  onClick={() => onToggle(dentist.id)}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-foreground/5 ${
+                    checked ? "font-medium text-primary" : ""
+                  }`}
+                >
+                  <span
+                    className={`size-3.5 shrink-0 rounded border ${
+                      checked ? "border-primary bg-primary" : "border-border"
+                    }`}
+                  />
+                  {dentist.name}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </AnchoredPopover>
+    </div>
+  );
+}
+
 export function AppointmentsCard({
   appointments,
   dentists,
@@ -117,6 +286,10 @@ export function AppointmentsCard({
   const [allAppointments, setAllAppointments] = useState(appointments);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
   const [selectedDentistId, setSelectedDentistId] = useState<string | null>(null);
+  // Empty array means no filter applied (shown as "Todos") — doesn't
+  // affect selectedDay/weekOffset. Multi-select: 0..N dentist ids.
+  const [professionalFilter, setProfessionalFilter] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<AppointmentStatus | "all">("all");
   const [showNewAppointment, setShowNewAppointment] = useState(false);
   // Set only when opened from an empty calendar slot; the "Nueva cita"
   // button always opens with this null, keeping that flow exactly as it
@@ -133,6 +306,24 @@ export function AppointmentsCard({
 
   const addAppointment = (created: Appointment) => {
     setAllAppointments((prev) => [...prev, created]);
+  };
+
+  // "Abrir agenda" from the profile modal: close it and filter the board
+  // that's already showing behind it — doesn't touch selectedDay/weekOffset.
+  const openAgendaForDentist = (dentistId: string) => {
+    setSelectedDentistId(null);
+    setProfessionalFilter([dentistId]);
+  };
+
+  const toggleProfessionalFilter = (dentistId: string) => {
+    setProfessionalFilter((prev) =>
+      prev.includes(dentistId) ? prev.filter((id) => id !== dentistId) : [...prev, dentistId],
+    );
+  };
+
+  const clearFilters = () => {
+    setProfessionalFilter([]);
+    setStatusFilter("all");
   };
 
   // Simulates the side effect of inactivating a professional: their active
@@ -183,11 +374,43 @@ export function AppointmentsCard({
   const selectedAppointment = allAppointments.find((a) => a.id === selectedAppointmentId) ?? null;
   const selectedDentist = dentists.find((d) => d.id === selectedDentistId) ?? null;
 
+  // Estado filter thins out which appointments show in each dentist's slot
+  // grid (non-matching slots simply render as free); Profesional filter
+  // hides other dentists' cards entirely instead of leaving them empty.
+  const statusFilteredDayAppointments = dayAppointments.filter(
+    (a) => statusFilter === "all" || a.status === statusFilter,
+  );
+  const hasActiveFilters = professionalFilter.length > 0 || statusFilter !== "all";
+
   const sortedDentists = [...dentists].sort(
     (a, b) =>
-      dayAppointments.filter((appt) => appt.dentistId === b.id).length -
-      dayAppointments.filter((appt) => appt.dentistId === a.id).length,
+      statusFilteredDayAppointments.filter((appt) => appt.dentistId === b.id).length -
+      statusFilteredDayAppointments.filter((appt) => appt.dentistId === a.id).length,
   );
+  const visibleDentists =
+    professionalFilter.length === 0
+      ? sortedDentists
+      : sortedDentists.filter((d) => professionalFilter.includes(d.id));
+
+  // Adaptive time-slot grid: fewer visible dentist cards means each one
+  // can afford more columns without shrinking the row height — only the
+  // column count changes, everything else about the slot grid stays as is.
+  // Mobile always stays at 3 columns regardless of count; the adaptive
+  // 8/4/3 behavior only kicks in at the md: breakpoint (desktop).
+  const slotGridColsClass =
+    visibleDentists.length === 1
+      ? "grid-cols-3 md:grid-cols-8"
+      : visibleDentists.length === 2
+        ? "grid-cols-3 md:grid-cols-4"
+        : "grid-cols-3";
+
+  const statusFilterOptions: FilterOption<AppointmentStatus | "all">[] = [
+    { value: "all", label: "Todos" },
+    ...(Object.keys(STATUS_LABELS) as AppointmentStatus[]).map((status) => ({
+      value: status,
+      label: STATUS_LABELS[status],
+    })),
+  ];
 
   return (
     <div className="rounded-xl border border-border bg-background">
@@ -277,14 +500,31 @@ export function AppointmentsCard({
           })}
         </div>
 
-        {/* Legend */}
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          {LEGEND.map((item) => (
-            <span key={item.label} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className={`size-2.5 shrink-0 rounded-full ${item.className}`} />
-              {item.label}
-            </span>
-          ))}
+        {/* Filtros — esta fila queda exclusivamente para Profesional y
+            Estado; la leyenda de convenciones vive debajo de la grilla. */}
+        <div className="mt-3 flex flex-wrap items-center justify-start gap-2 md:flex-nowrap md:justify-end md:gap-3">
+          <ProfessionalFilterChips
+            dentists={dentists}
+            selectedIds={professionalFilter}
+            onToggle={toggleProfessionalFilter}
+          />
+          <FilterChip
+            label="Estado"
+            value={statusFilter}
+            options={statusFilterOptions}
+            onSelect={setStatusFilter}
+            onClear={() => setStatusFilter("all")}
+          />
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              aria-label="Limpiar filtros"
+              className="flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+            >
+              <CloseIcon className="size-3" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -292,8 +532,8 @@ export function AppointmentsCard({
           grid. Cards wrap onto new rows instead of overflowing sideways;
           the page itself scrolls, nothing scrolls internally. */}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4 p-5">
-        {sortedDentists.map((dentist) => {
-          const dentistAppointments = dayAppointments.filter((a) => a.dentistId === dentist.id);
+        {visibleDentists.map((dentist) => {
+          const dentistAppointments = statusFilteredDayAppointments.filter((a) => a.dentistId === dentist.id);
           const occupied = dentistAppointments.length;
 
           return (
@@ -317,7 +557,7 @@ export function AppointmentsCard({
                 </span>
               </button>
 
-              <div className="grid grid-cols-3 gap-1.5 p-3">
+              <div className={`grid ${slotGridColsClass} gap-1.5 p-3`}>
                 {TIME_SLOTS.map((slot) => {
                   const appointment = dentistAppointments.find((a) => a.time === slot);
                   if (!appointment) {
@@ -369,6 +609,17 @@ export function AppointmentsCard({
         })}
       </div>
 
+      {/* Convenciones — debajo de la grilla completa de profesionales y
+          horarios, en una sola línea centrada y compacta. */}
+      <div className="flex flex-nowrap items-center justify-center gap-x-3 border-t border-border px-5 py-3">
+        {LEGEND.map((item) => (
+          <span key={item.label} className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span className={`size-2 shrink-0 rounded-full ${item.className}`} />
+            {item.label}
+          </span>
+        ))}
+      </div>
+
       {selectedAppointment && (
         <AppointmentDetailModal
           appointment={selectedAppointment}
@@ -397,6 +648,7 @@ export function AppointmentsCard({
           allAppointments={allAppointments}
           onClose={() => setSelectedDentistId(null)}
           onDeactivate={() => deactivateDentistAppointments(selectedDentist.id)}
+          onOpenAgenda={() => openAgendaForDentist(selectedDentist.id)}
         />
       )}
     </div>
@@ -823,11 +1075,13 @@ function DentistProfileModal({
   allAppointments,
   onClose,
   onDeactivate,
+  onOpenAgenda,
 }: {
   dentist: Dentist;
   allAppointments: Appointment[];
   onClose: () => void;
   onDeactivate: () => void;
+  onOpenAgenda: () => void;
 }) {
   const { role } = useRole();
   // DEV TOOL — see src/dev/role.ts. Editing a professional's own record is
@@ -921,9 +1175,6 @@ function DentistProfileModal({
     { key: "citas-mes", label: "Citas este mes", value: String(profile.appointmentsThisMonth) },
   ];
 
-  // "Ver agenda de hoy" isn't wired to a real view yet — left ready for
-  // that navigation to be implemented later.
-  const handleViewTodayAgenda = () => {};
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4" onClick={onClose}>
@@ -1262,7 +1513,7 @@ function DentistProfileModal({
           </a>
           <button
             type="button"
-            onClick={handleViewTodayAgenda}
+            onClick={onOpenAgenda}
             className="flex-1 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground/80 transition-colors hover:bg-foreground/5"
           >
             Abrir agenda

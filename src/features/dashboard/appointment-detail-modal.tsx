@@ -609,8 +609,9 @@ export function PopoverFieldRow({
 
 // Positions a floating panel just below (or above, if that runs off-screen)
 // the given anchor element, clamped to stay fully within the viewport, and
-// closes on any click/tap outside itself and the anchor.
-function AnchoredPopover({
+// closes on any click/tap outside itself and the anchor. Exported so other
+// features (e.g. the Agenda's filter chips) can reuse the same positioning.
+export function AnchoredPopover({
   open,
   anchorRef,
   onClose,

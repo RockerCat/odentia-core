@@ -20,7 +20,7 @@ export const DEFAULT_ROLE: Role = "clinic-admin";
 
 export const ROLE_LABELS: Record<Role, string> = {
   superadmin: "Superadmin",
-  "clinic-admin": "Administrador del consultorio",
+  "clinic-admin": "Administrador de Clínica",
   dentist: "Odontólogo",
   assistant: "Asistente",
 };
