@@ -16,6 +16,7 @@
   --warning: #9c6112;
   --danger: #c0392b;
   --info: #2f6fb0;
+  --noshow: #c2660c;
 
   /* Fixed mobile chrome heights, safe-area inclusive. Content zone stays
      a fixed size; the extra env() slice is pure inset padding. */
@@ -39,6 +40,7 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --color-info: var(--info);
+  --color-noshow: var(--noshow);
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);

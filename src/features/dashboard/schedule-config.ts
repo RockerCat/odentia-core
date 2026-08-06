@@ -22,6 +22,25 @@ function formatSlot(totalMinutes: number): string {
   return `${hour12}:${minute === 0 ? "00" : minute} ${period}`;
 }
 
+// Parses a "H:MM AM/PM" slot label (as produced by formatSlot) back into
+// minutes since midnight, so appointment durations can be added to a start
+// time to derive an end time.
+function parseSlotToMinutes(slot: string): number {
+  const match = /^(\d{1,2}):(\d{2}) (AM|PM)$/.exec(slot);
+  if (!match) return 0;
+  const [, hourStr, minuteStr, period] = match;
+  let hour = Number(hourStr) % 12;
+  if (period === "PM") hour += 12;
+  return hour * 60 + Number(minuteStr);
+}
+
+export function addMinutesToSlot(slot: string, minutesToAdd: number): string {
+  return formatSlot(parseSlotToMinutes(slot) + minutesToAdd);
+}
+
+// Default appointment length when one hasn't been set explicitly.
+export const DEFAULT_APPOINTMENT_DURATION = CLINIC_HOURS.intervalMinutes;
+
 export function generateTimeSlots(hours: ClinicHours = CLINIC_HOURS): string[] {
   const slots: string[] = [];
   for (

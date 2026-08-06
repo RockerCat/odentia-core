@@ -1,20 +1,15 @@
 "use client"; // needed for day-selection state and the useRole() gate below.
 
 import { useState } from "react";
+import { Tooltip } from "@/components/tooltip";
 import { UserAvatar } from "@/components/user-avatar";
 import { ChevronIcon, PlusIcon } from "@/components/shell/icons";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { firstName } from "@/lib/format";
-import type { Appointment, AppointmentStatus, Dentist, WeekDay } from "./mock-data";
+import { AppointmentDetailModal } from "./appointment-detail-modal";
+import type { Appointment, Dentist, WeekDay } from "./mock-data";
+import { STATUS_STYLES } from "./mock-data";
 import { TIME_SLOTS } from "./schedule-config";
-
-const STATUS_STYLES: Record<AppointmentStatus, string> = {
-  confirmed: "border-success/25 bg-success/10 text-success",
-  pending: "border-warning/25 bg-warning/10 text-warning",
-  "in-progress": "border-info/25 bg-info/10 text-info",
-  cancelled: "border-danger/20 bg-danger/5 text-danger/70 opacity-70",
-  completed: "border-border bg-foreground/[0.03] text-muted-foreground",
-};
 
 const LEGEND = [
   { label: "Libre", className: "border border-dashed border-border" },
@@ -43,10 +38,21 @@ export function AppointmentsCard({
     weekDays.find((day) => day.isToday)?.key ?? weekDays[0]?.key,
   );
 
-  const countForDay = (dayKey: string) => appointments.filter((a) => a.day === dayKey).length;
+  // Owns the list locally so edits made in the detail modal show up in the
+  // board immediately — this prototype phase simulates CRUD with local
+  // state instead of a real backend (see PROJECT_STATUS.md).
+  const [allAppointments, setAllAppointments] = useState(appointments);
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
+
+  const updateAppointment = (updated: Appointment) => {
+    setAllAppointments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+  };
+
+  const countForDay = (dayKey: string) => allAppointments.filter((a) => a.day === dayKey).length;
   const maxDayCount = Math.max(...weekDays.map((day) => countForDay(day.key)), 1);
 
-  const dayAppointments = appointments.filter((a) => a.day === selectedDay);
+  const dayAppointments = allAppointments.filter((a) => a.day === selectedDay);
+  const selectedAppointment = allAppointments.find((a) => a.id === selectedAppointmentId) ?? null;
 
   const sortedDentists = [...dentists].sort(
     (a, b) =>
@@ -190,16 +196,30 @@ export function AppointmentsCard({
                     );
                   }
                   return (
-                    <button
+                    <Tooltip
                       key={slot}
-                      type="button"
-                      className={`flex h-12 flex-col items-center justify-center rounded-md border px-1 text-center ${STATUS_STYLES[appointment.status]}`}
+                      content={
+                        <>
+                          <span className="block font-semibold">{appointment.patientName}</span>
+                          {appointment.type && (
+                            <span className="block text-background/75">{appointment.type}</span>
+                          )}
+                        </>
+                      }
                     >
-                      <span className="text-[9px] font-medium opacity-80">{slot}</span>
-                      <span className="max-w-full truncate text-[11px] font-semibold">
-                        {firstName(appointment.patientName)}
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAppointmentId(appointment.id)}
+                        className={`flex h-12 flex-col items-center justify-center rounded-md border px-1 text-center transition-opacity ${STATUS_STYLES[appointment.status]} ${
+                          appointment.status === "cancelled" ? "opacity-70" : ""
+                        }`}
+                      >
+                        <span className="text-[9px] font-medium opacity-80">{slot}</span>
+                        <span className="max-w-full truncate text-[11px] font-semibold">
+                          {firstName(appointment.patientName)}
+                        </span>
+                      </button>
+                    </Tooltip>
                   );
                 })}
               </div>
@@ -207,6 +227,17 @@ export function AppointmentsCard({
           );
         })}
       </div>
+
+      {selectedAppointment && (
+        <AppointmentDetailModal
+          appointment={selectedAppointment}
+          allAppointments={allAppointments}
+          dentists={dentists}
+          weekDays={weekDays}
+          onClose={() => setSelectedAppointmentId(null)}
+          onUpdate={updateAppointment}
+        />
+      )}
     </div>
   );
 }

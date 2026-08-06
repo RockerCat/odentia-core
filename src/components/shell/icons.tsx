@@ -219,3 +219,89 @@ export function LogOutIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function PencilIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+    </svg>
+  );
+}
+
+export function RefreshIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M20 11a8 8 0 0 0-14.9-3.5" />
+      <path d="M4 4v5h5" />
+      <path d="M4 13a8 8 0 0 0 14.9 3.5" />
+      <path d="M20 20v-5h-5" />
+    </svg>
+  );
+}
+
+export function FlagIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M5 3v18" />
+      <path d="M5 4h11l-2.5 3.5L16 11H5" />
+    </svg>
+  );
+}
+
+export function XCircleIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <line x1="9.5" y1="9.5" x2="14.5" y2="14.5" />
+      <line x1="14.5" y1="9.5" x2="9.5" y2="14.5" />
+    </svg>
+  );
+}
+
+export function PhoneIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M5 4h3l1.5 4.5-2 1.5a11 11 0 0 0 5.5 5.5l1.5-2 4.5 1.5v3a2 2 0 0 1-2.2 2 17 17 0 0 1-14.3-14.3A2 2 0 0 1 5 4z" />
+    </svg>
+  );
+}
+
+export function NoteIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M6 3h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+      <path d="M15 3v4h4" />
+      <line x1="8" y1="12" x2="15" y2="12" />
+      <line x1="8" y1="15.5" x2="13" y2="15.5" />
+    </svg>
+  );
+}
+
+export function PlayCircleIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M10.5 8.5l5 3.5-5 3.5v-7z" />
+    </svg>
+  );
+}
+
+export function MapPinIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M12 21s-6.5-5.6-6.5-11A6.5 6.5 0 0 1 18.5 10c0 5.4-6.5 11-6.5 11z" />
+      <circle cx="12" cy="10" r="2.3" />
+    </svg>
+  );
+}
+
+export function AlertTriangleIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M12 3.5 21.5 20h-19L12 3.5z" />
+      <line x1="12" y1="9.5" x2="12" y2="14" />
+      <line x1="12" y1="16.8" x2="12" y2="16.8" />
+    </svg>
+  );
+}
