@@ -29,7 +29,10 @@ const OUTSIDE_MIN_VIEWPORT_WIDTH = 640; // matches Tailwind's `sm:` breakpoint
 
 const VARIANT_CLASS = {
   dark: "bg-foreground text-background shadow-lg",
-  light: "border border-primary/15 bg-primary/10 text-foreground shadow-md",
+  // Fully opaque fill (bg-tooltip-tint, not bg-primary/10) — an alpha
+  // tint let whatever sits behind the tooltip bleed through and hurt
+  // legibility, since this renders `fixed` above arbitrary page content.
+  light: "border border-primary/15 bg-tooltip-tint text-foreground shadow-md",
 };
 
 export function Tooltip({

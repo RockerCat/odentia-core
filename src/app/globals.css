@@ -13,10 +13,15 @@
   --primary-foreground: #ffffff;
 
   --success: #137048;
-  --warning: #9c6112;
+  --warning: #ff9200;
   --danger: #c0392b;
   --info: #2f6fb0;
   --noshow: #c2660c;
+
+  /* Fully opaque light-green tooltip fill — same hue as --primary, but a
+     flat solid color rather than an alpha tint, so page content never
+     bleeds through and legibility never depends on what's behind it. */
+  --tooltip-tint: #e9f7f4;
 
   /* Fixed mobile chrome heights, safe-area inclusive. Content zone stays
      a fixed size; the extra env() slice is pure inset padding. */
@@ -41,6 +46,7 @@
   --color-danger: var(--danger);
   --color-info: var(--info);
   --color-noshow: var(--noshow);
+  --color-tooltip-tint: var(--tooltip-tint);
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);

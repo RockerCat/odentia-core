@@ -58,7 +58,7 @@ export const STATUS_LABELS: Record<AppointmentStatus, string> = {
 };
 
 export const STATUS_STYLES: Record<AppointmentStatus, string> = {
-  confirmed: "border-success/25 bg-success/10 text-success",
+  confirmed: "border-primary/25 bg-primary/10 text-primary",
   pending: "border-warning/25 bg-warning/10 text-warning",
   "in-progress": "border-info/25 bg-info/10 text-info",
   cancelled: "border-danger/20 bg-danger/5 text-danger/70",
@@ -69,13 +69,14 @@ export const STATUS_STYLES: Record<AppointmentStatus, string> = {
 // The patient-history timeline's badge reads as an outcome log (was this
 // visit resolved well or not?) rather than a live schedule, so it uses its
 // own status→color mapping instead of STATUS_STYLES above: Completada is
-// the "good" green outcome, Cancelada fades to neutral gray, etc. The
-// timeline's dots are deliberately kept neutral gray, not status-colored
-// (see HistoryEntry in appointment-detail-modal.tsx) — the badge is the
-// only status color cue there. Everywhere else (the header badge, the
-// agenda grid, "Cambiar estado") keeps STATUS_STYLES.
+// the "good" outcome (the brand's primary color), Cancelada fades to
+// neutral gray, etc. The timeline's dots are deliberately kept neutral
+// gray, not status-colored (see HistoryEntry in
+// appointment-detail-modal.tsx) — the badge is the only status color cue
+// there. Everywhere else (the header badge, the agenda grid, "Cambiar
+// estado") keeps STATUS_STYLES.
 export const HISTORY_STATUS_BADGE_CLASS: Record<AppointmentStatus, string> = {
-  completed: "border-success/25 bg-success/10 text-success",
+  completed: "border-primary/25 bg-primary/10 text-primary",
   confirmed: "border-info/25 bg-info/10 text-info",
   pending: "border-warning/25 bg-warning/10 text-warning",
   "no-show": "border-noshow/25 bg-noshow/10 text-noshow",
@@ -97,6 +98,8 @@ export const TREATMENT_OPTIONS = [
   "Consulta de ortodoncia",
   "Control de ortodoncia",
 ];
+
+export const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
 
 export type WeekDay = {
   key: string;

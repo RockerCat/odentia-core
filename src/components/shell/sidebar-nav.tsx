@@ -62,7 +62,7 @@ export function SidebarNav({ activeLabel }: SidebarNavProps) {
                     <Icon className="size-5 shrink-0 text-primary" />
                     <span className="flex-1 text-left">{label}</span>
                     <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
-                      Nuevo
+                      Promo
                     </span>
                   </button>
                 );

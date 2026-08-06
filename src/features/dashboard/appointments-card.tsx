@@ -9,11 +9,12 @@ import { firstName } from "@/lib/format";
 import { AppointmentDetailModal } from "./appointment-detail-modal";
 import type { Appointment, Dentist, WeekDay } from "./mock-data";
 import { STATUS_STYLES } from "./mock-data";
+import { NewAppointmentModal } from "./new-appointment-modal";
 import { TIME_SLOTS } from "./schedule-config";
 
 const LEGEND = [
   { label: "Libre", className: "border border-dashed border-border" },
-  { label: "Confirmada", className: "bg-success" },
+  { label: "Confirmada", className: "bg-primary" },
   { label: "Pendiente", className: "bg-warning" },
   { label: "En curso", className: "bg-info" },
   { label: "Cancelada", className: "bg-danger/60" },
@@ -43,9 +44,32 @@ export function AppointmentsCard({
   // state instead of a real backend (see PROJECT_STATUS.md).
   const [allAppointments, setAllAppointments] = useState(appointments);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
+  const [showNewAppointment, setShowNewAppointment] = useState(false);
+  // Set only when opened from an empty calendar slot; the "Nueva cita"
+  // button always opens with this null, keeping that flow exactly as it
+  // was before this change.
+  const [newAppointmentPrefill, setNewAppointmentPrefill] = useState<{
+    dentistId: string;
+    day: string;
+    time: string;
+  } | null>(null);
 
   const updateAppointment = (updated: Appointment) => {
     setAllAppointments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+  };
+
+  const addAppointment = (created: Appointment) => {
+    setAllAppointments((prev) => [...prev, created]);
+  };
+
+  const openNewAppointment = (prefill: { dentistId: string; day: string; time: string } | null) => {
+    setNewAppointmentPrefill(prefill);
+    setShowNewAppointment(true);
+  };
+
+  const closeNewAppointment = () => {
+    setShowNewAppointment(false);
+    setNewAppointmentPrefill(null);
   };
 
   const countForDay = (dayKey: string) => allAppointments.filter((a) => a.day === dayKey).length;
@@ -94,6 +118,7 @@ export function AppointmentsCard({
           {canCreateAppointments && (
             <button
               type="button"
+              onClick={() => openNewAppointment(null)}
               className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
             >
               <PlusIcon className="size-4" />
@@ -189,6 +214,11 @@ export function AppointmentsCard({
                       <button
                         key={slot}
                         type="button"
+                        onClick={
+                          canCreateAppointments
+                            ? () => openNewAppointment({ dentistId: dentist.id, day: selectedDay, time: slot })
+                            : undefined
+                        }
                         className="flex h-12 flex-col items-center justify-center rounded-md border border-dashed border-border text-muted-foreground/70 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
                       >
                         <span className="text-[10px] font-medium">{slot}</span>
@@ -236,6 +266,17 @@ export function AppointmentsCard({
           weekDays={weekDays}
           onClose={() => setSelectedAppointmentId(null)}
           onUpdate={updateAppointment}
+        />
+      )}
+
+      {showNewAppointment && (
+        <NewAppointmentModal
+          dentists={dentists}
+          weekDays={weekDays}
+          existingAppointments={allAppointments}
+          prefill={newAppointmentPrefill ?? undefined}
+          onClose={closeNewAppointment}
+          onCreate={addAppointment}
         />
       )}
     </div>
