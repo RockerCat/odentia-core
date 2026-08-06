@@ -1,23 +1,11 @@
 import { UserAvatar } from "@/components/user-avatar";
 import { CURRENT_USER } from "@/lib/current-user";
-import { BellIcon, ChevronDownIcon, MenuIcon, SearchIcon } from "./icons";
+import { BellIcon, ChevronDownIcon, SearchIcon } from "./icons";
 
-type HeaderProps = {
-  onOpenMobileNav: () => void;
-};
-
-export function Header({ onOpenMobileNav }: HeaderProps) {
+// Desktop only — mobile uses MobileHeader + BottomTabBar instead.
+export function Header() {
   return (
-    <header className="sticky top-0 z-10 flex h-20 shrink-0 items-center gap-4 border-b border-border bg-surface px-4 sm:px-6">
-      <button
-        type="button"
-        onClick={onOpenMobileNav}
-        aria-label="Abrir menú"
-        className="flex size-9 items-center justify-center rounded-lg text-foreground/80 hover:bg-foreground/5 md:hidden"
-      >
-        <MenuIcon className="size-5" />
-      </button>
-
+    <header className="sticky top-0 z-10 hidden h-20 shrink-0 items-center gap-4 border-b border-border bg-surface px-4 sm:px-6 md:flex">
       <div className="ml-auto flex items-center gap-3 sm:gap-4">
         <div className="hidden items-center gap-2 rounded-full bg-background px-4 py-2.5 text-sm text-muted-foreground md:flex md:w-64 lg:w-96">
           <SearchIcon className="size-4 shrink-0" />

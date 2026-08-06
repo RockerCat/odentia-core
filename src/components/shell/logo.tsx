@@ -6,7 +6,11 @@ import Image from "next/image";
 // on disk changed under the same path.
 const LOGO_VERSION = "2";
 
-export function Logo() {
+type LogoProps = {
+  className?: string;
+};
+
+export function Logo({ className = "h-[58px] w-auto" }: LogoProps) {
   return (
     <Image
       src={`/branding/logo.png?v=${LOGO_VERSION}`}
@@ -14,7 +18,7 @@ export function Logo() {
       width={200}
       height={100}
       priority
-      className="h-[58px] w-auto"
+      className={className}
     />
   );
 }

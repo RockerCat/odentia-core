@@ -16,6 +16,11 @@
   --warning: #9c6112;
   --danger: #c0392b;
   --info: #2f6fb0;
+
+  /* Fixed mobile chrome heights, safe-area inclusive. Content zone stays
+     a fixed size; the extra env() slice is pure inset padding. */
+  --mobile-header-h: calc(56px + env(safe-area-inset-top, 0px));
+  --mobile-tabbar-h: calc(64px + env(safe-area-inset-bottom, 0px));
 }
 
 @theme inline {

@@ -186,3 +186,36 @@ export function ClockIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function BuildingIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <rect x="5" y="3" width="14" height="18" rx="1.5" />
+      <rect x="8" y="7" width="2" height="2" rx="0.4" />
+      <rect x="14" y="7" width="2" height="2" rx="0.4" />
+      <rect x="8" y="11" width="2" height="2" rx="0.4" />
+      <rect x="14" y="11" width="2" height="2" rx="0.4" />
+      <rect x="9.5" y="15" width="5" height="6" rx="0.5" />
+    </svg>
+  );
+}
+
+export function CreditCardIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+      <line x1="7" y1="15" x2="11" y2="15" />
+    </svg>
+  );
+}
+
+export function LogOutIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
