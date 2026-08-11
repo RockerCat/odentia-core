@@ -87,34 +87,36 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div className="mt-8">
-          <div className="mb-3 flex items-center gap-3">
-            <div className="h-px flex-1 bg-border" />
-            <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-              Acceso de demostración
-            </p>
-            <div className="h-px flex-1 bg-border" />
-          </div>
+        <div className="mt-8 border-t border-border/50 pt-4">
+          <p className="mb-2 text-center text-[10px] font-medium tracking-wide text-muted-foreground/70 uppercase">
+            Cuentas demo
+          </p>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
             {DEMO_USERS.map((user) => (
               <button
                 key={user.role}
                 type="button"
                 onClick={() => selectDemoUser(user)}
-                className="flex items-center gap-3 rounded-xl border border-border bg-background p-3 text-left hover:border-primary/40 hover:bg-primary/[0.03]"
+                className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/60 px-2.5 py-1.5 text-left opacity-70 transition-all hover:border-primary/30 hover:bg-primary/5 hover:opacity-100"
               >
-                <UserAvatar name={user.name} initials={user.initials} avatar_url={user.avatar_url} />
+                <UserAvatar
+                  name={user.name}
+                  initials={user.initials}
+                  avatar_url={user.avatar_url}
+                  sizeClassName="size-6"
+                  textClassName="text-[10px]"
+                />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-foreground">{user.name}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
+                  <span className="block truncate text-xs font-medium text-foreground">{user.name}</span>
+                  <span className="block truncate text-[11px] text-muted-foreground/70">
                     {user.roleLabel} · {user.contextLabel}
                   </span>
                 </span>
               </button>
             ))}
           </div>
-          <p className="mt-3 text-center text-xs text-muted-foreground">
+          <p className="mt-2 text-center text-[10px] text-muted-foreground/60">
             Selecciona un perfil para completar el formulario y luego pulsa &quot;Iniciar sesión&quot;.
           </p>
         </div>
