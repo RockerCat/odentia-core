@@ -77,3 +77,22 @@ h4 {
   font-weight: 600;
   letter-spacing: -0.01em;
 }
+
+/* Mobile browsers (iOS Safari, Chrome on Android, etc.) auto-zoom the
+   viewport on focus when a form control's rendered font-size is under
+   16px. Most of this app's inputs/selects/textareas use text-xs/text-sm
+   (13-14px) for a compact look, which triggers it. Floors every editable
+   control to 16px on touch/narrow viewports only — desktop sizing (and
+   manual pinch-zoom, never disabled here) is untouched. Global on purpose:
+   fixes every current and future field in one place instead of per-screen
+   overrides. `md` (768px) matches this app's own mobile/desktop split
+   (see the shell's Header vs MobileHeader). */
+@media (max-width: 767.98px), (pointer: coarse) {
+  input,
+  textarea,
+  select,
+  [contenteditable="true"],
+  [role="combobox"] {
+    font-size: 16px !important;
+  }
+}
