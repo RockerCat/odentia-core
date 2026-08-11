@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Logo } from "@/components/shell/logo";
@@ -38,8 +39,17 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-surface px-4 py-10">
       <div className="w-full max-w-md">
+        <Link
+          href="/"
+          className="mb-4 inline-flex items-center text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          ← Volver al inicio
+        </Link>
+
         <div className="flex flex-col items-center gap-3 text-center">
-          <Logo className="h-12 w-auto" />
+          <Link href="/" aria-label="Ir al inicio de Odentia">
+            <Logo className="h-12 w-auto" />
+          </Link>
           <h1 className="text-xl font-semibold text-foreground">Bienvenido a Odentia</h1>
           <p className="text-sm text-muted-foreground">Inicia sesión para gestionar tu clínica.</p>
         </div>
