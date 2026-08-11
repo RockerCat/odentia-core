@@ -67,6 +67,7 @@ export function NewAppointmentModal({
   weekDays,
   existingAppointments,
   prefill,
+  lockedDentist,
   onClose,
   onCreate,
 }: {
@@ -79,13 +80,19 @@ export function NewAppointmentModal({
   // optional and, when a date/time/professional is included, highlights
   // that value in the primary color until the user changes it.
   prefill?: { dentistId?: string; day?: string; time?: string; patientName?: string; type?: string };
+  // DEV TOOL — set when a Dentist opens "Nueva cita" from their own Agenda
+  // (see src/dev/role.ts): the Profesional field renders as a fixed
+  // read-only value instead of the searchable Combobox below, and always
+  // wins over prefill.dentistId. Undefined for every other caller/role,
+  // which keeps the normal searchable picker exactly as it was.
+  lockedDentist?: Dentist;
   onClose: () => void;
   onCreate: (appointment: Appointment) => void;
 }) {
   const patientOptions = derivePatientOptions(existingAppointments, weekDays);
 
   const [patientName, setPatientName] = useState(prefill?.patientName ?? "");
-  const [dentistId, setDentistId] = useState(prefill?.dentistId ?? "");
+  const [dentistId, setDentistId] = useState(lockedDentist?.id ?? prefill?.dentistId ?? "");
   // Empty unless prefilled from a calendar slot click — no default
   // day/time otherwise, per this refinement's spec. The date/time
   // popovers still need *some* starting point to display internally the
@@ -207,40 +214,57 @@ export function NewAppointmentModal({
               <div>
                 <label className="text-[11px] text-label-foreground">Profesional</label>
                 <div className="mt-1">
-                  <Combobox
-                    items={dentists}
-                    getKey={(dentist) => dentist.id}
-                    getSearchText={(dentist) => `${dentist.name} ${dentist.specialty}`}
-                    selectedItem={dentists.find((d) => d.id === dentistId) ?? null}
-                    onSelect={(dentist) => {
-                      setDentistId(dentist.id);
-                      setDentistFromCalendar(false);
-                    }}
-                    placeholder="Buscar profesional…"
-                    emptyText="Sin resultados"
-                    renderItem={(dentist, isCard) => (
-                      <>
-                        <UserAvatar
-                          name={dentist.name}
-                          initials={dentist.initials}
-                          avatar_url={dentist.avatar_url}
-                          sizeClassName="size-8"
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span
-                            className={`block truncate text-sm font-medium ${
-                              isCard && dentistFromCalendar ? "text-primary" : ""
-                            }`}
-                          >
-                            {dentist.name}
-                          </span>
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {dentist.specialty}
-                          </span>
+                  {lockedDentist ? (
+                    <div className="flex w-full items-center gap-2.5 rounded-lg border border-border bg-foreground/[0.02] px-3 py-2">
+                      <UserAvatar
+                        name={lockedDentist.name}
+                        initials={lockedDentist.initials}
+                        avatar_url={lockedDentist.avatar_url}
+                        sizeClassName="size-8"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{lockedDentist.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {lockedDentist.specialty}
                         </span>
-                      </>
-                    )}
-                  />
+                      </span>
+                    </div>
+                  ) : (
+                    <Combobox
+                      items={dentists}
+                      getKey={(dentist) => dentist.id}
+                      getSearchText={(dentist) => `${dentist.name} ${dentist.specialty}`}
+                      selectedItem={dentists.find((d) => d.id === dentistId) ?? null}
+                      onSelect={(dentist) => {
+                        setDentistId(dentist.id);
+                        setDentistFromCalendar(false);
+                      }}
+                      placeholder="Buscar profesional…"
+                      emptyText="Sin resultados"
+                      renderItem={(dentist, isCard) => (
+                        <>
+                          <UserAvatar
+                            name={dentist.name}
+                            initials={dentist.initials}
+                            avatar_url={dentist.avatar_url}
+                            sizeClassName="size-8"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span
+                              className={`block truncate text-sm font-medium ${
+                                isCard && dentistFromCalendar ? "text-primary" : ""
+                              }`}
+                            >
+                              {dentist.name}
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {dentist.specialty}
+                            </span>
+                          </span>
+                        </>
+                      )}
+                    />
+                  )}
                 </div>
               </div>
             </div>

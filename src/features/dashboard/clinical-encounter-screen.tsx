@@ -32,6 +32,7 @@ import { OdontogramModal } from "./odontogram-modal";
 import type { OdontogramData } from "./odontogram-teeth";
 import { OdontogramPreview } from "./odontogram-teeth";
 import { addMinutesToSlot, DEFAULT_APPOINTMENT_DURATION } from "./schedule-config";
+import { formatClockLabel, formatElapsed } from "@/lib/format";
 
 type ProcedureRow = { id: string; name: string; note: string };
 
@@ -43,21 +44,6 @@ const MOCK_NEXT_PATIENT_NAME = "Andrés Bermúdez";
 // testing, instead of requiring a wait tied to a real future appointment.
 const NEXT_APPOINTMENT_OFFSET_MINUTES = 5;
 const NEXT_APPOINTMENT_ALERT_THRESHOLD_MS = 5 * 60_000;
-
-function formatClockLabel(date: Date): string {
-  const hour24 = date.getHours();
-  const minute = date.getMinutes();
-  const period = hour24 >= 12 ? "PM" : "AM";
-  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
-  return `${hour12}:${String(minute).padStart(2, "0")} ${period}`;
-}
-
-function formatElapsed(totalSeconds: number): string {
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return [hours, minutes, seconds].map((n) => String(n).padStart(2, "0")).join(":");
-}
 
 export function ClinicalEncounterScreen({
   appointment,

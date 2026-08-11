@@ -1,7 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { RoleProvider } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
+import { readSession } from "@/features/auth/session";
 import { BottomTabBar } from "./bottom-tab-bar";
 import { Header } from "./header";
 import { MobileHeader } from "./mobile-header";
@@ -20,7 +22,25 @@ type AppShellProps = {
   children: ReactNode;
 };
 
+// No cross-tab/live updates needed — a session change always comes with a
+// navigation (login/logout), so a plain snapshot read is enough here.
+const noopSubscribe = () => () => {};
+const noSessionOnServer = () => false;
+
 export function AppShell({ activeNavLabel, heading, children }: AppShellProps) {
+  const router = useRouter();
+  const hasSession = useSyncExternalStore(noopSubscribe, () => readSession() !== null, noSessionOnServer);
+  // In production, only a /login demo session unlocks the app. In
+  // development, the DEV · CAMBIAR ROL switcher still works without ever
+  // logging in — see src/dev/role.ts.
+  const authorized = process.env.NODE_ENV === "development" || hasSession;
+
+  useEffect(() => {
+    if (!authorized) router.replace("/login");
+  }, [authorized, router]);
+
+  if (!authorized) return null;
+
   return (
     <RoleProvider>
       <div className="flex h-dvh overflow-hidden bg-surface text-foreground">

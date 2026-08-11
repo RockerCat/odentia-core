@@ -1,13 +1,57 @@
 "use client"; // needed for the user menu's open/close state below.
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { UserAvatar } from "@/components/user-avatar";
-import { CURRENT_USER } from "@/lib/current-user";
+import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
+import { AdminProfileModal } from "@/features/dashboard/admin-profile-modal";
+import { DentistProfileModal } from "@/features/dashboard/appointments-card";
+import { AssistantProfileModal } from "@/features/dashboard/assistant-profile-modal";
+import { useAuthenticatedIdentity } from "@/features/dashboard/use-authenticated-identity";
 import { BellIcon, ChevronDownIcon, LogOutIcon, SearchIcon, UserIcon } from "./icons";
 
 // Desktop only — mobile uses MobileHeader + BottomTabBar instead.
 export function Header() {
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [showAdminProfile, setShowAdminProfile] = useState(false);
+  const [showAssistantProfile, setShowAssistantProfile] = useState(false);
+  // DEV TOOL — see src/dev/role.ts. useAuthenticatedIdentity() is the same
+  // "who's logged in" derivation the Agenda's greeting reads too; useRole()
+  // is only needed here for the setters the profile modals write back through.
+  const {
+    role,
+    setSelfDentistOverride,
+    adminIdentityOverride,
+    setAdminIdentityOverride,
+    adminProfessionalProfile,
+    setAdminProfessionalProfile,
+    assistantIdentityOverride,
+    setAssistantIdentityOverride,
+    logout,
+  } = useRole();
+  const identity = useAuthenticatedIdentity();
+  const isDentistRole = role === "dentist";
+  const isClinicAdmin = role === "clinic-admin";
+  const isAssistant = role === "assistant";
+  const dentistToShow = identity.professionalRecord;
+
+  // Routes DentistProfileModal's name/specialty/avatar edits back to the
+  // right place when it's the admin's own professional record: name/avatar
+  // are also "Mi perfil" identity fields, specialty lives on the
+  // professional profile itself.
+  const handleAdminDentistProfileChange = (patch: { name?: string; specialty?: string; avatar_url?: string }) => {
+    if (patch.name !== undefined || patch.avatar_url !== undefined) {
+      setAdminIdentityOverride({
+        ...(patch.name !== undefined ? { name: patch.name } : {}),
+        ...(patch.avatar_url !== undefined ? { avatar_url: patch.avatar_url } : {}),
+      });
+    }
+    if (patch.specialty !== undefined && adminProfessionalProfile) {
+      setAdminProfessionalProfile({ ...adminProfessionalProfile, specialty: patch.specialty });
+    }
+  };
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -46,16 +90,10 @@ export function Header() {
             aria-expanded={menuOpen}
             className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-foreground/5"
           >
-            <UserAvatar
-              name={CURRENT_USER.name}
-              initials={CURRENT_USER.initials}
-              avatar_url={CURRENT_USER.avatar_url}
-            />
+            <UserAvatar name={identity.name} initials={identity.initials} avatar_url={identity.avatar_url} />
             <span className="hidden text-left sm:block">
-              <span className="block text-sm leading-tight font-medium">{CURRENT_USER.name}</span>
-              <span className="block text-xs leading-tight text-muted-foreground">
-                {CURRENT_USER.clinicName}
-              </span>
+              <span className="block text-sm leading-tight font-medium">{identity.name}</span>
+              <span className="block text-xs leading-tight text-muted-foreground">{identity.secondaryLabel}</span>
             </span>
             <ChevronDownIcon className="hidden size-4 shrink-0 text-muted-foreground sm:block" />
           </button>
@@ -70,7 +108,18 @@ export function Header() {
                 <button
                   type="button"
                   role="menuitem"
-                  onClick={() => setMenuOpen(false)}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    // DEV TOOL — Dentist, or a Clinic Admin who has already
+                    // configured "Perfil profesional", opens the shared
+                    // DentistProfileModal directly. A Clinic Admin with no
+                    // professional profile yet opens "Mi perfil" instead. An
+                    // Assistant opens their own simple, non-clinical profile.
+                    // Every other role keeps the previous no-op behavior.
+                    if (dentistToShow) setShowProfile(true);
+                    else if (isClinicAdmin) setShowAdminProfile(true);
+                    else if (isAssistant) setShowAssistantProfile(true);
+                  }}
                   className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-foreground/80 hover:bg-foreground/5"
                 >
                   <UserIcon className="size-4 shrink-0" />
@@ -80,7 +129,11 @@ export function Header() {
                 <button
                   type="button"
                   role="menuitem"
-                  onClick={() => setMenuOpen(false)}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    logout();
+                    router.push("/login");
+                  }}
                   className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-danger hover:bg-danger/5"
                 >
                   <LogOutIcon className="size-4 shrink-0" />
@@ -91,6 +144,48 @@ export function Header() {
           )}
         </div>
       </div>
+
+      {showProfile && dentistToShow && (
+        <DentistProfileModal
+          dentist={dentistToShow}
+          allAppointments={[]}
+          onClose={() => setShowProfile(false)}
+          onDeactivate={() => {}}
+          onSelfProfileChange={isDentistRole ? setSelfDentistOverride : handleAdminDentistProfileChange}
+          initialProfile={
+            !isDentistRole && adminProfessionalProfile
+              ? {
+                  registrationNumber: adminProfessionalProfile.registrationNumber,
+                  mainRoom: adminProfessionalProfile.mainRoom,
+                  scheduleDays: adminProfessionalProfile.scheduleDays,
+                  scheduleStart: adminProfessionalProfile.scheduleStart,
+                  scheduleEnd: adminProfessionalProfile.scheduleEnd,
+                }
+              : undefined
+          }
+        />
+      )}
+
+      {showAdminProfile && (
+        <AdminProfileModal
+          onClose={() => setShowAdminProfile(false)}
+          onProfessionalProfileConfigured={() => {
+            setShowAdminProfile(false);
+            setShowProfile(true);
+          }}
+          adminIdentityOverride={adminIdentityOverride}
+          setAdminIdentityOverride={setAdminIdentityOverride}
+          setAdminProfessionalProfile={setAdminProfessionalProfile}
+        />
+      )}
+
+      {showAssistantProfile && (
+        <AssistantProfileModal
+          onClose={() => setShowAssistantProfile(false)}
+          assistantIdentityOverride={assistantIdentityOverride}
+          setAssistantIdentityOverride={setAssistantIdentityOverride}
+        />
+      )}
     </header>
   );
 }

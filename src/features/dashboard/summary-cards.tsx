@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { CloseIcon } from "@/components/shell/icons";
+import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { AppointmentDetailModal } from "./appointment-detail-modal";
 import { ClinicalEncounterScreen } from "./clinical-encounter-screen";
 import type { Appointment, Dentist, OperationalAlert, WeekDay } from "./mock-data";
@@ -45,6 +46,18 @@ export function SummaryCards({
   dentists: Dentist[];
   alerts: OperationalAlert[];
 }) {
+  const { role, dentistId: currentDentistId } = useRole();
+  // DEV TOOL — see src/dev/role.ts. A Dentist's KPIs/alerts must represent
+  // only their own operation, same scoping AppointmentsCard applies to the
+  // board itself.
+  const isDentist = role === "dentist";
+  const scopedDentists = isDentist ? dentists.filter((d) => d.id === currentDentistId) : dentists;
+  // OPERATIONAL_ALERTS is clinic-wide (billing/administrative) data with no
+  // per-dentist ownership in the current mocks — a Dentist doesn't manage
+  // subscriptions/clinic-wide config (see CLAUDE.md Domain Model), so none
+  // of it applies to their scoped view rather than guessing which do.
+  const scopedAlerts = isDentist ? [] : alerts;
+
   const [openKpi, setOpenKpi] = useState<KpiKey | null>(null);
   // Local copy so a row's detail modal can simulate edits (see
   // AppointmentsCard's identical pattern) — this prototype phase simulates
@@ -58,8 +71,11 @@ export function SummaryCards({
   const todayDay = weekDays.find((day) => day.isToday);
   // Same filter that already produces TODAY_SUMMARY's "Citas hoy"/
   // "Confirmadas"/"Pendientes de confirmar" totals — not a new definition,
-  // just the record list behind those existing numbers.
-  const todayAppointments = allAppointments.filter((a) => a.day === todayDay?.key);
+  // just the record list behind those existing numbers. Scoped to just this
+  // dentist's own appointments when role is "dentist".
+  const todayAppointments = allAppointments.filter(
+    (a) => a.day === todayDay?.key && (!isDentist || a.dentistId === currentDentistId),
+  );
 
   const updateAppointment = (updated: Appointment) => {
     setAllAppointments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
@@ -92,15 +108,40 @@ export function SummaryCards({
           items: todayAppointments.filter((a) => a.status === "pending"),
         };
       case "alertas":
-        return { kind: "alerts" as const, items: alerts };
+        return { kind: "alerts" as const, items: scopedAlerts };
     }
   };
 
-  const openMetric = metrics.find((m) => kpiKeyForLabel(m.label) === openKpi);
+  // For the dentist role, the 4 headline numbers can't stay the clinic-wide
+  // TODAY_SUMMARY values passed in from AgendaPage — they're recomputed
+  // here from the already-scoped todayAppointments/scopedAlerts instead.
+  const confirmedToday = todayAppointments.filter((a) => a.status === "confirmed").length;
+  const pendingToday = todayAppointments.filter((a) => a.status === "pending").length;
+  const percentOfToday = (count: number) =>
+    todayAppointments.length > 0 ? `${Math.round((count / todayAppointments.length) * 100)}% del total` : "0% del total";
+
+  const displayMetrics: DisplayMetric[] = isDentist
+    ? metrics.map((m) => {
+        switch (m.label) {
+          case "Citas hoy":
+            return { ...m, value: String(todayAppointments.length), subtitle: "Total programadas" };
+          case "Confirmadas":
+            return { ...m, value: String(confirmedToday), subtitle: percentOfToday(confirmedToday) };
+          case "Pendientes de confirmar":
+            return { ...m, value: String(pendingToday), subtitle: percentOfToday(pendingToday) };
+          case "Alertas":
+            return { ...m, value: String(scopedAlerts.length), subtitle: "Sin alertas pendientes" };
+          default:
+            return m;
+        }
+      })
+    : metrics;
+
+  const openMetric = displayMetrics.find((m) => kpiKeyForLabel(m.label) === openKpi);
 
   return (
     <div className="grid grid-cols-2 gap-3">
-      {metrics.map((metric) => {
+      {displayMetrics.map((metric) => {
         const kpiKey = kpiKeyForLabel(metric.label);
         return (
           <button
@@ -128,7 +169,7 @@ export function SummaryCards({
         <KpiDetailModal
           title={openMetric.label}
           records={recordsForKey(openKpi)}
-          dentists={dentists}
+          dentists={scopedDentists}
           todayDateLabel={todayDay?.dateLabel ?? ""}
           onClose={() => setOpenKpi(null)}
           onOpenPending={() => setOpenKpi("pendientes")}
@@ -140,7 +181,7 @@ export function SummaryCards({
         <AppointmentDetailModal
           appointment={selectedAppointment}
           allAppointments={allAppointments}
-          dentists={dentists}
+          dentists={scopedDentists}
           weekDays={weekDays}
           onClose={() => setSelectedAppointmentId(null)}
           onUpdate={updateAppointment}
@@ -154,7 +195,7 @@ export function SummaryCards({
       {encounterAppointment && (
         <ClinicalEncounterScreen
           appointment={encounterAppointment}
-          dentists={dentists}
+          dentists={scopedDentists}
           allAppointments={allAppointments}
           weekDays={weekDays}
           onExit={() => setEncounterAppointmentId(null)}

@@ -16,6 +16,12 @@ export type Dentist = {
 // only — swap for real profile photo URLs once the backend integration
 // exists. UserAvatar itself falls back to initials if a photo is missing
 // or fails to load.
+// Synthetic id for a Clinic Admin who has also configured a "Perfil
+// profesional" for themselves (see AdminProfileModal / RoleContext's
+// adminProfessionalProfile) — never one of DENTISTS' own entries, since
+// those model practicing-only professionals seeded ahead of time.
+export const ADMIN_DENTIST_ID = "admin-self";
+
 export const DENTISTS: Dentist[] = [
   {
     id: "d1",
@@ -152,6 +158,12 @@ export type Appointment = {
   room?: string;
   patientPhone?: string;
   notes?: string;
+  // Operational "front desk" flag — the patient has physically checked in
+  // ("Paciente llegó" → "En sala de espera"). Deliberately independent of
+  // `status` (the clinical/scheduling state machine): marking someone as
+  // arrived never changes their clinical status, and finishing/cancelling
+  // an appointment doesn't clear this either — see appointment-detail-modal.tsx.
+  waitingRoom?: boolean;
 };
 
 // TEMPORARY — stands in for a patient's real appointment history so the

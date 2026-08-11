@@ -1,6 +1,8 @@
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { UserAvatar } from "@/components/user-avatar";
-import { CURRENT_USER } from "@/lib/current-user";
+import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
+import { useAuthenticatedIdentity } from "@/features/dashboard/use-authenticated-identity";
 import { firstName } from "@/lib/format";
 import { CreditCardIcon, LogOutIcon, SlidersIcon, UserIcon } from "./icons";
 import { Logo } from "./logo";
@@ -12,7 +14,10 @@ const USER_MENU_ITEMS = [
 ];
 
 export function MobileHeader() {
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
+  const { logout } = useRole();
+  const identity = useAuthenticatedIdentity();
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 h-[var(--mobile-header-h)] border-b border-border bg-surface pt-[env(safe-area-inset-top)] md:hidden">
@@ -29,12 +34,12 @@ export function MobileHeader() {
             className="flex items-center gap-2 rounded-full py-1 pr-1 pl-2 hover:bg-foreground/5"
           >
             <span className="hidden max-w-24 truncate text-sm font-medium min-[380px]:block">
-              {firstName(CURRENT_USER.name)}
+              {firstName(identity.name)}
             </span>
             <UserAvatar
-              name={CURRENT_USER.name}
-              initials={CURRENT_USER.initials}
-              avatar_url={CURRENT_USER.avatar_url}
+              name={identity.name}
+              initials={identity.initials}
+              avatar_url={identity.avatar_url}
               sizeClassName="size-8"
             />
           </button>
@@ -65,6 +70,11 @@ export function MobileHeader() {
                 <button
                   type="button"
                   role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    logout();
+                    router.push("/login");
+                  }}
                   className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-danger hover:bg-danger/5"
                 >
                   <LogOutIcon className="size-4 shrink-0" />

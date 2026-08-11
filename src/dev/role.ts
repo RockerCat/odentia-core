@@ -18,6 +18,12 @@ export const ROLES: Role[] = ["superadmin", "clinic-admin", "dentist", "assistan
 
 export const DEFAULT_ROLE: Role = "clinic-admin";
 
+// The mock dentist this dev role-switcher impersonates whenever Role =
+// Odontólogo — matches DENTISTS[0].id in mock-data.ts. Hardcoded (rather
+// than imported) since src/dev/ is a disposable dev shim with no access to
+// feature mock data (see file header).
+export const DEV_DENTIST_ID = "d1";
+
 export const ROLE_LABELS: Record<Role, string> = {
   superadmin: "Superadmin",
   "clinic-admin": "Administrador de Clínica",

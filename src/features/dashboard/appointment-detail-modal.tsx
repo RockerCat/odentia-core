@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Tooltip } from "@/components/tooltip";
 import { UserAvatar } from "@/components/user-avatar";
+import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import {
   AlertTriangleIcon,
   CalendarIcon,
@@ -16,6 +17,7 @@ import {
   UserIcon,
   XCircleIcon,
 } from "@/components/shell/icons";
+import { formatClockLabel, formatElapsed } from "@/lib/format";
 import type { Appointment, AppointmentStatus, Dentist, WeekDay } from "./mock-data";
 import {
   DURATION_OPTIONS,
@@ -27,6 +29,16 @@ import {
   TREATMENT_OPTIONS,
 } from "./mock-data";
 import { addMinutesToSlot, DEFAULT_APPOINTMENT_DURATION, TIME_SLOTS } from "./schedule-config";
+
+// DEV TOOL — Assistant's read-only "operational monitoring" for an
+// in-progress appointment (see showAttentionTimer below). Same mocked
+// "next appointment ~5 min out" trick as ClinicalEncounterScreen, kept
+// short so the alert is reachable while testing instead of requiring a
+// wait tied to a real future appointment — see that file's identical
+// comment for the full rationale.
+const MOCK_NEXT_PATIENT_NAME = "Andrés Bermúdez";
+const NEXT_APPOINTMENT_OFFSET_MINUTES = 5;
+const NEXT_APPOINTMENT_ALERT_THRESHOLD_MS = 5 * 60_000;
 
 // Which single field (if any) is currently expanded into its inline
 // editor. Only one at a time — keeps the interaction simple and
@@ -132,8 +144,25 @@ export function AppointmentDetailModal({
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [reactivating, setReactivating] = useState(false);
+  const [markingArrived, setMarkingArrived] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const leftColumnRef = useRef<HTMLDivElement>(null);
+  // DEV TOOL — see src/dev/role.ts. An Assistant handles scheduling/front
+  // desk work but never clinical attention (see CLAUDE.md Domain Model).
+  const { role } = useRole();
+  const isAssistant = role === "assistant";
+
+  // DEV TOOL — Assistant's read-only operational timer (see
+  // showAttentionTimer below). This modal has no access to the clinical
+  // encounter's real start time (that state lives only inside
+  // ClinicalEncounterScreen and isn't persisted anywhere shared), so — like
+  // that screen's own next-appointment mock — "now" at mount stands in for
+  // it; harmless for this iteration since it's purely informational.
+  const [attentionStartedAt] = useState(() => new Date());
+  const [nextAppointmentAt] = useState(
+    () => new Date(attentionStartedAt.getTime() + NEXT_APPOINTMENT_OFFSET_MINUTES * 60_000),
+  );
+  const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
     panelRef.current?.focus();
@@ -163,27 +192,88 @@ export function AppointmentDetailModal({
     onUpdate(updated);
   };
 
-  // The footer's main CTA: for a cancelled appointment it reactivates it
-  // (back to confirmed); otherwise it opens the clinical encounter screen.
-  const isCancelled = appointment.status === "cancelled";
-  const primaryCtaLabel = reactivating ? "Reactivando…" : isCancelled ? "Reactivar cita" : "Iniciar atención";
-  const handlePrimaryCta = async () => {
-    if (!isCancelled) {
-      onStartEncounter();
-      return;
-    }
-    setReactivating(true);
-    try {
-      await handleSave({ status: "confirmed" });
-    } finally {
-      setReactivating(false);
-    }
-  };
-
   const dentist = dentists.find((d) => d.id === appointment.dentistId);
   const day = weekDays.find((d) => d.key === appointment.day);
   const duration = appointment.durationMinutes ?? DEFAULT_APPOINTMENT_DURATION;
   const endTime = addMinutesToSlot(appointment.time, duration);
+  const dentistName = dentist?.name ?? "Sin asignar";
+
+  // The footer's single CTA slot is exactly one of three things, depending
+  // on state/role — never more than one at a time:
+  //  1. Reactivate a cancelled appointment — an operational action anyone
+  //     can do (Assistant included).
+  //  2. "Paciente llegó" — Assistant's own operational check-in action,
+  //     shown once the appointment is confirmed and not yet arrived. This
+  //     only ever sets `waitingRoom` (see mock-data.ts), never `status` —
+  //     the clinical/scheduling state machine stays untouched.
+  //  3. Open the clinical encounter screen — every role except Assistant,
+  //     who never gets clinical actions (see CLAUDE.md Domain Model).
+  const isCancelled = appointment.status === "cancelled";
+  const isInProgress = appointment.status === "in-progress";
+  const canMarkArrived = appointment.status === "confirmed" && !appointment.waitingRoom;
+  const showReactivate = isCancelled;
+  const showMarkArrived = !isCancelled && isAssistant && canMarkArrived;
+  const showStartEncounter = !isCancelled && !isAssistant;
+  const showPrimaryCta = showReactivate || showMarkArrived || showStartEncounter;
+  // An Assistant can't cancel an appointment that already started clinical
+  // attention — everyone else's ability to cancel is unchanged.
+  const showCancelCta = !(isAssistant && isInProgress);
+  const footerButtonCount = (showCancelCta ? 1 : 0) + 1 + (showPrimaryCta ? 1 : 0);
+  const footerGridClass =
+    footerButtonCount === 3 ? "grid-cols-3" : footerButtonCount === 2 ? "grid-cols-2" : "grid-cols-1";
+
+  const primaryCtaLabel = showReactivate
+    ? reactivating
+      ? "Reactivando…"
+      : "Reactivar cita"
+    : showMarkArrived
+      ? markingArrived
+        ? "Registrando…"
+        : "Paciente llegó"
+      : "Iniciar atención";
+
+  const handlePrimaryCta = async () => {
+    if (showReactivate) {
+      setReactivating(true);
+      try {
+        await handleSave({ status: "confirmed" });
+      } finally {
+        setReactivating(false);
+      }
+      return;
+    }
+    if (showMarkArrived) {
+      setMarkingArrived(true);
+      try {
+        await handleSave({ waitingRoom: true });
+        setInfoMessage(`Paciente en sala de espera. Profesional: ${dentistName} · Hora: ${appointment.time}.`);
+      } finally {
+        setMarkingArrived(false);
+      }
+      return;
+    }
+    onStartEncounter();
+  };
+
+  // Assistant's own compact, read-only "operational monitoring" — kept
+  // completely separate from the clinical flow above (see CLAUDE.md Domain
+  // Model): no pause/reset/edit controls, just a live clock and, if the
+  // same dentist's next appointment is close, the same alert already used
+  // in the clinical encounter screen.
+  const showAttentionTimer = isAssistant && isInProgress;
+  const elapsedSeconds = Math.max(0, Math.floor((now.getTime() - attentionStartedAt.getTime()) / 1000));
+  const remainingMs = nextAppointmentAt.getTime() - now.getTime();
+  const remainingMinutes = Math.max(0, Math.ceil(remainingMs / 60_000));
+  const nextAppointmentDue = remainingMs <= NEXT_APPOINTMENT_ALERT_THRESHOLD_MS;
+  const nextAppointmentMessage =
+    remainingMs <= 0 ? "La próxima cita comienza ahora." : `Próxima cita en ${remainingMinutes} min`;
+
+  useEffect(() => {
+    if (!showAttentionTimer) return;
+    const interval = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(interval);
+  }, [showAttentionTimer]);
+
   const realHistory = getPatientHistory(allAppointments, appointment, weekDays);
   // TEMPORARY fallback to mock data while real history is empty — see the
   // MOCK_PATIENT_HISTORY comment in mock-data.ts for how to remove this.
@@ -236,6 +326,19 @@ export function AppointmentDetailModal({
                   </div>
                 )}
               </div>
+
+              {/* Operational "front desk" state — deliberately separate from
+                  the clinical status pill above (see waitingRoom on
+                  Appointment in mock-data.ts). The action that sets it lives
+                  in the footer's primary CTA (Assistant's "Paciente llegó");
+                  this badge is just the always-visible read of that state,
+                  for every role — e.g. the assigned Dentist sees it too. */}
+              {appointment.waitingRoom && (
+                <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-2.5 py-1 text-[11px] font-medium text-success">
+                  <span className="size-1.5 rounded-full bg-success" aria-hidden="true" />
+                  En sala de espera
+                </span>
+              )}
             </div>
           </div>
           <button
@@ -247,6 +350,36 @@ export function AppointmentDetailModal({
             <CloseIcon className="size-4" />
           </button>
         </div>
+
+        {/* Assistant's operational monitoring — read-only, separate from
+            the clinical status pill above (see showAttentionTimer). */}
+        {showAttentionTimer && (
+          <div className="shrink-0 border-b border-border bg-surface px-5 py-3.5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold text-foreground/80">Tiempo de atención</h3>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[10px] font-medium text-info">
+                <span className="size-1.5 rounded-full bg-info" aria-hidden="true" />
+                En curso
+              </span>
+            </div>
+            <p className="mt-1.5 font-mono text-xl font-semibold tabular-nums text-foreground">
+              {formatElapsed(elapsedSeconds)}
+            </p>
+            <p className="text-[11px] text-muted-foreground">Iniciada a las {formatClockLabel(attentionStartedAt)}</p>
+
+            {nextAppointmentDue && (
+              <div className="mt-2.5 flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/10 px-3 py-2.5 text-xs text-warning">
+                <ClockIcon className="mt-0.5 size-3.5 shrink-0" />
+                <div>
+                  <p className="font-medium">{nextAppointmentMessage}</p>
+                  <p className="mt-0.5 text-warning/80">
+                    {MOCK_NEXT_PATIENT_NAME} · {formatClockLabel(nextAppointmentAt)}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto">
@@ -309,15 +442,17 @@ export function AppointmentDetailModal({
         {/* Footer — only the actions that genuinely need a dedicated step;
             everything else is now edited inline above. */}
         <div className="shrink-0 border-t border-border p-4">
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={() => setShowCancelConfirm(true)}
-              className="flex flex-col items-center gap-1 rounded-lg border border-danger/20 px-2 py-2.5 text-center text-[11px] font-medium text-danger transition-colors hover:bg-danger/5"
-            >
-              <XCircleIcon className="size-[18px]" />
-              Cancelar cita
-            </button>
+          <div className={`grid gap-2 ${footerGridClass}`}>
+            {showCancelCta && (
+              <button
+                type="button"
+                onClick={() => setShowCancelConfirm(true)}
+                className="flex flex-col items-center gap-1 rounded-lg border border-danger/20 px-2 py-2.5 text-center text-[11px] font-medium text-danger transition-colors hover:bg-danger/5"
+              >
+                <XCircleIcon className="size-[18px]" />
+                Cancelar cita
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setInfoMessage("La ficha del paciente estará disponible próximamente.")}
@@ -326,15 +461,17 @@ export function AppointmentDetailModal({
               <UserIcon className="size-[18px]" />
               Ver paciente
             </button>
-            <button
-              type="button"
-              onClick={handlePrimaryCta}
-              disabled={reactivating}
-              className="flex flex-col items-center gap-1 rounded-lg bg-primary px-2 py-2.5 text-center text-[11px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-            >
-              <PlayCircleIcon className="size-[18px]" />
-              {primaryCtaLabel}
-            </button>
+            {showPrimaryCta && (
+              <button
+                type="button"
+                onClick={handlePrimaryCta}
+                disabled={reactivating || markingArrived}
+                className="flex flex-col items-center gap-1 rounded-lg bg-primary px-2 py-2.5 text-center text-[11px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+              >
+                <PlayCircleIcon className="size-[18px]" />
+                {primaryCtaLabel}
+              </button>
+            )}
           </div>
         </div>
 
@@ -1005,9 +1142,13 @@ function InlineStatusEditor({
       <button
         type="button"
         onClick={onCancel}
-        className="self-start text-[11px] font-medium text-muted-foreground hover:text-foreground"
+        aria-label="Cerrar selección de estado"
+        // Icon-only on purpose — a text "Cancelar" here reads as the same
+        // action as the footer's "Cancelar cita" button, which it isn't:
+        // this just closes the inline status picker without changing anything.
+        className="self-start text-muted-foreground/60 hover:text-foreground"
       >
-        Cancelar
+        <CloseIcon className="size-3.5" />
       </button>
     </div>
   );

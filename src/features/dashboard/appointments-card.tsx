@@ -1,15 +1,16 @@
 "use client"; // needed for day-selection state and the useRole() gate below.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Tooltip } from "@/components/tooltip";
 import { UserAvatar } from "@/components/user-avatar";
-import { ChevronDownIcon, ChevronIcon, CloseIcon, PencilIcon, PlusIcon } from "@/components/shell/icons";
+import { ChevronDownIcon, ChevronIcon, CloseIcon, PencilIcon, PhoneIcon, PlusIcon } from "@/components/shell/icons";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { firstName } from "@/lib/format";
+import { CURRENT_USER } from "@/lib/current-user";
 import { AnchoredPopover, AppointmentDetailModal, FIELD_CLASS } from "./appointment-detail-modal";
 import { ClinicalEncounterScreen } from "./clinical-encounter-screen";
 import type { Appointment, AppointmentStatus, Dentist, WeekDay } from "./mock-data";
-import { STATUS_LABELS, STATUS_STYLES } from "./mock-data";
+import { ADMIN_DENTIST_ID, STATUS_LABELS, STATUS_STYLES } from "./mock-data";
 import { NewAppointmentModal } from "./new-appointment-modal";
 import { TIME_SLOTS } from "./schedule-config";
 
@@ -269,9 +270,47 @@ export function AppointmentsCard({
   weekDays: WeekDay[];
   weekLabel: string;
 }) {
-  const { role } = useRole();
+  const {
+    role,
+    dentistId: currentDentistId,
+    selfDentistOverride,
+    setSelfDentistOverride,
+    adminIdentityOverride,
+    adminProfessionalProfile,
+  } = useRole();
   // DEV TOOL — Superadmin doesn't do clinical scheduling (see CLAUDE.md Domain Model).
   const canCreateAppointments = process.env.NODE_ENV !== "development" || role !== "superadmin";
+  // DEV TOOL — a Dentist only manages their own clinical operation (see
+  // CLAUDE.md Domain Model): the board, filters and KPIs all scope down to
+  // this one dentist instead of the whole clinic.
+  const isDentist = role === "dentist";
+  // DEV TOOL — a Dentist changing their own name/specialty/photo (see
+  // DentistProfileModal's onSelfProfileChange below) has nowhere real to
+  // persist to yet, so selfDentistOverride (shared via RoleContext with the
+  // shell Header) stands in for those fields of the mock DENTISTS record —
+  // applied wherever this dentist is rendered for the rest of the session
+  // (board columns, filters, modals), same as a real save would.
+  const dentistsWithPhotoOverride = dentists.map((d) =>
+    d.id === currentDentistId ? { ...d, ...selfDentistOverride } : d,
+  );
+  // DEV TOOL — once the Clinic Admin configures "Perfil profesional" from
+  // "Mi perfil" (see AdminProfileModal), they should visually show up as a
+  // professional too — a synthetic Dentist entry, additive to DENTISTS,
+  // never replacing the admin's actual role.
+  const adminDentistEntry: Dentist | null = adminProfessionalProfile
+    ? {
+        id: ADMIN_DENTIST_ID,
+        name: adminIdentityOverride.name ?? CURRENT_USER.name,
+        initials: CURRENT_USER.initials,
+        specialty: adminProfessionalProfile.specialty,
+        avatar_url: adminIdentityOverride.avatar_url ?? CURRENT_USER.avatar_url,
+      }
+    : null;
+  const effectiveDentists = adminDentistEntry
+    ? [...dentistsWithPhotoOverride, adminDentistEntry]
+    : dentistsWithPhotoOverride;
+  const currentDentist = effectiveDentists.find((d) => d.id === currentDentistId) ?? null;
+  const scopedDentists = isDentist && currentDentist ? [currentDentist] : effectiveDentists;
 
   const [selectedDay, setSelectedDay] = useState(
     weekDays.find((day) => day.isToday)?.key ?? weekDays[0]?.key,
@@ -313,13 +352,6 @@ export function AppointmentsCard({
     setAllAppointments((prev) => [...prev, created]);
   };
 
-  // "Abrir agenda" from the profile modal: close it and filter the board
-  // that's already showing behind it — doesn't touch selectedDay/weekOffset.
-  const openAgendaForDentist = (dentistId: string) => {
-    setSelectedDentistId(null);
-    setProfessionalFilter([dentistId]);
-  };
-
   const toggleProfessionalFilter = (dentistId: string) => {
     setProfessionalFilter((prev) =>
       prev.includes(dentistId) ? prev.filter((id) => id !== dentistId) : [...prev, dentistId],
@@ -357,8 +389,12 @@ export function AppointmentsCard({
   const currentWeekDays = buildWeekDaysForOffset(weekOffset, weekDays);
   const currentWeekLabel = buildWeekLabelForOffset(weekOffset, weekLabel);
   // Only the real week (offset 0) has appointment data at all — see
-  // buildWeekDaysForOffset's comment.
-  const weekAppointments = weekOffset === 0 ? allAppointments : [];
+  // buildWeekDaysForOffset's comment. Scoped to just this dentist's own
+  // appointments when role is "dentist", so the day-selector's activity
+  // bars below reflect only their own load too.
+  const weekAppointments = (weekOffset === 0 ? allAppointments : []).filter(
+    (a) => !isDentist || a.dentistId === currentDentistId,
+  );
 
   const changeWeek = (nextOffset: number) => {
     const nextWeekDays = buildWeekDaysForOffset(nextOffset, weekDays);
@@ -377,7 +413,7 @@ export function AppointmentsCard({
 
   const dayAppointments = weekAppointments.filter((a) => a.day === selectedDay);
   const selectedAppointment = allAppointments.find((a) => a.id === selectedAppointmentId) ?? null;
-  const selectedDentist = dentists.find((d) => d.id === selectedDentistId) ?? null;
+  const selectedDentist = effectiveDentists.find((d) => d.id === selectedDentistId) ?? null;
   const encounterAppointment = allAppointments.find((a) => a.id === encounterAppointmentId) ?? null;
 
   // Estado filter thins out which appointments show in each dentist's slot
@@ -388,15 +424,27 @@ export function AppointmentsCard({
   );
   const hasActiveFilters = professionalFilter.length > 0 || statusFilter !== "all";
 
-  const sortedDentists = [...dentists].sort(
+  const sortedDentists = [...scopedDentists].sort(
     (a, b) =>
       statusFilteredDayAppointments.filter((appt) => appt.dentistId === b.id).length -
       statusFilteredDayAppointments.filter((appt) => appt.dentistId === a.id).length,
   );
+  // A Clinic Admin who's also configured a "Perfil profesional" (see
+  // adminDentistEntry above) always sees their own column first — pinned by
+  // id, not by name, since it's derived from the authenticated user's own
+  // profile — with every other professional keeping the relative order the
+  // count-based sort above already gave them.
+  const orderedDentists =
+    role === "clinic-admin" && adminDentistEntry
+      ? [
+          ...sortedDentists.filter((d) => d.id === ADMIN_DENTIST_ID),
+          ...sortedDentists.filter((d) => d.id !== ADMIN_DENTIST_ID),
+        ]
+      : sortedDentists;
   const visibleDentists =
     professionalFilter.length === 0
-      ? sortedDentists
-      : sortedDentists.filter((d) => professionalFilter.includes(d.id));
+      ? orderedDentists
+      : orderedDentists.filter((d) => professionalFilter.includes(d.id));
 
   // Adaptive time-slot grid: fewer visible dentist cards means each one
   // can afford more columns without shrinking the row height — only the
@@ -509,11 +557,13 @@ export function AppointmentsCard({
         {/* Filtros — esta fila queda exclusivamente para Profesional y
             Estado; la leyenda de convenciones vive debajo de la grilla. */}
         <div className="mt-3 flex flex-wrap items-center justify-start gap-2 md:flex-nowrap md:justify-end md:gap-3">
-          <ProfessionalFilterChips
-            dentists={dentists}
-            selectedIds={professionalFilter}
-            onToggle={toggleProfessionalFilter}
-          />
+          {!isDentist && (
+            <ProfessionalFilterChips
+              dentists={effectiveDentists}
+              selectedIds={professionalFilter}
+              onToggle={toggleProfessionalFilter}
+            />
+          )}
           <FilterChip
             label="Estado"
             value={statusFilter}
@@ -591,16 +641,25 @@ export function AppointmentsCard({
                           {appointment.type && (
                             <span className="block text-background/75">{appointment.type}</span>
                           )}
+                          {appointment.waitingRoom && (
+                            <span className="block text-background/75">En sala de espera</span>
+                          )}
                         </>
                       }
                     >
                       <button
                         type="button"
                         onClick={() => setSelectedAppointmentId(appointment.id)}
-                        className={`flex h-12 flex-col items-center justify-center rounded-md border px-1 text-center transition-opacity ${STATUS_STYLES[appointment.status]} ${
+                        className={`relative flex h-12 flex-col items-center justify-center rounded-md border px-1 text-center transition-opacity ${STATUS_STYLES[appointment.status]} ${
                           appointment.status === "cancelled" ? "opacity-70" : ""
                         }`}
                       >
+                        {appointment.waitingRoom && (
+                          <span
+                            aria-hidden="true"
+                            className="absolute -top-1 -right-1 size-3 rounded-full border-2 border-background bg-success"
+                          />
+                        )}
                         <span className="text-[9px] font-medium opacity-80">{slot}</span>
                         <span className="max-w-full truncate text-[11px] font-semibold">
                           {firstName(appointment.patientName)}
@@ -630,7 +689,7 @@ export function AppointmentsCard({
         <AppointmentDetailModal
           appointment={selectedAppointment}
           allAppointments={allAppointments}
-          dentists={dentists}
+          dentists={scopedDentists}
           weekDays={weekDays}
           onClose={() => setSelectedAppointmentId(null)}
           onUpdate={updateAppointment}
@@ -644,7 +703,7 @@ export function AppointmentsCard({
       {encounterAppointment && (
         <ClinicalEncounterScreen
           appointment={encounterAppointment}
-          dentists={dentists}
+          dentists={scopedDentists}
           allAppointments={allAppointments}
           weekDays={weekDays}
           onExit={() => setEncounterAppointmentId(null)}
@@ -659,10 +718,11 @@ export function AppointmentsCard({
 
       {showNewAppointment && (
         <NewAppointmentModal
-          dentists={dentists}
+          dentists={scopedDentists}
           weekDays={weekDays}
           existingAppointments={allAppointments}
           prefill={newAppointmentPrefill ?? undefined}
+          lockedDentist={isDentist ? (currentDentist ?? undefined) : undefined}
           onClose={closeNewAppointment}
           onCreate={addAppointment}
         />
@@ -674,17 +734,16 @@ export function AppointmentsCard({
           allAppointments={allAppointments}
           onClose={() => setSelectedDentistId(null)}
           onDeactivate={() => deactivateDentistAppointments(selectedDentist.id)}
-          onOpenAgenda={() => openAgendaForDentist(selectedDentist.id)}
+          onSelfProfileChange={setSelfDentistOverride}
         />
       )}
     </div>
   );
 }
 
-// Number used by the "WhatsApp" action below, via the official wa.me link.
-const WHATSAPP_NUMBER = "573173672033";
-
-const DAY_ORDER = ["L", "M", "X", "J", "V", "S", "D"];
+// Exported so AdminProfileModal's "Disponibilidad de atención" step can
+// reuse this exact day/hours picker instead of redefining it.
+export const DAY_ORDER = ["L", "M", "X", "J", "V", "S", "D"];
 const DAY_SHORT_LABELS: Record<string, string> = {
   L: "Lun",
   M: "Mar",
@@ -694,7 +753,7 @@ const DAY_SHORT_LABELS: Record<string, string> = {
   S: "Sáb",
   D: "Dom",
 };
-const SCHEDULE_TIME_OPTIONS = [
+export const SCHEDULE_TIME_OPTIONS = [
   "7:00 AM",
   "8:00 AM",
   "9:00 AM",
@@ -711,7 +770,7 @@ const SCHEDULE_TIME_OPTIONS = [
   "8:00 PM",
 ];
 
-function formatScheduleLabel(days: string[], start: string, end: string): string {
+export function formatScheduleLabel(days: string[], start: string, end: string): string {
   if (days.length === 0) return "Sin horario definido";
   const sorted = DAY_ORDER.filter((day) => days.includes(day));
   const isContiguous = sorted.every(
@@ -929,6 +988,7 @@ function EditableProfileRow({
   onStartEdit,
   onSave,
   onCancel,
+  variant = "stacked",
 }: {
   label: string;
   value: string;
@@ -939,18 +999,25 @@ function EditableProfileRow({
   onStartEdit: () => void;
   onSave: () => void;
   onCancel: () => void;
+  // "stacked" (default): value as the primary line, small gray label
+  // underneath — the credential-style list below the badge header.
+  // "heading"/"subheading": Nombre/Especialidad inside that badge header
+  // instead — centered, no <dt>/<dd> since they don't sit inside a <dl>.
+  variant?: "stacked" | "heading" | "subheading";
 }) {
+  const centered = variant !== "stacked";
+
   if (isEditing) {
     return (
-      <div className="flex flex-col gap-1.5">
-        <dt className="text-label-foreground">{label}</dt>
+      <div className={`flex flex-col gap-1.5 ${centered ? "items-center text-center" : ""}`}>
+        <span className="text-[11px] text-label-foreground">{label}</span>
         <input
           autoFocus
           value={draftValue}
           onChange={(e) => onDraftChange(e.target.value)}
-          className={FIELD_CLASS}
+          className={`${FIELD_CLASS} ${centered ? "text-center" : ""}`}
         />
-        <div className="flex justify-end gap-1.5">
+        <div className={`flex gap-1.5 ${centered ? "justify-center" : "justify-end"}`}>
           <button
             type="button"
             onClick={onCancel}
@@ -970,13 +1037,35 @@ function EditableProfileRow({
     );
   }
 
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <dt className="text-label-foreground">{label}</dt>
-      <div className="flex min-w-0 items-center gap-1.5">
-        <dd className="truncate font-medium">{value}</dd>
+  if (variant === "heading") {
+    return (
+      <div className="flex items-center justify-center gap-1.5">
+        <p className="text-lg leading-tight font-semibold break-words">{value}</p>
         {editable && <FieldPencilButton label={`Editar ${label}`} onClick={onStartEdit} />}
       </div>
+    );
+  }
+
+  if (variant === "subheading") {
+    return (
+      <div className="flex items-center justify-center gap-1.5">
+        <p className="text-sm text-muted-foreground">{value}</p>
+        {editable && <FieldPencilButton label={`Editar ${label}`} onClick={onStartEdit} />}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <div className="min-w-0 flex-1">
+        <dd className="text-sm font-medium break-words">{value}</dd>
+        <dt className="mt-0.5 text-[11px] text-label-foreground">{label}</dt>
+      </div>
+      {editable && (
+        <span className="shrink-0">
+          <FieldPencilButton label={`Editar ${label}`} onClick={onStartEdit} />
+        </span>
+      )}
     </div>
   );
 }
@@ -1096,23 +1185,55 @@ const KPI_HEADINGS: Record<KpiDetailKey, string> = {
   "citas-mes": "Citas este mes",
 };
 
-function DentistProfileModal({
+// Exported so the shell Header can open this exact same modal for the
+// authenticated dentist's own profile (see header.tsx) instead of building
+// a second one — same component, same behavior, just a different mount
+// point reading/writing the same RoleContext-shared self-profile data.
+export function DentistProfileModal({
   dentist,
   allAppointments,
   onClose,
   onDeactivate,
-  onOpenAgenda,
+  onSelfProfileChange,
+  initialProfile,
 }: {
   dentist: Dentist;
   allAppointments: Appointment[];
   onClose: () => void;
   onDeactivate: () => void;
-  onOpenAgenda: () => void;
+  // DEV TOOL — called with whichever of name/specialty/avatar_url changed
+  // once the self-view edit flow saves, so every place this dentist is
+  // rendered (Agenda board, filters, shell Header) reflects it for the
+  // rest of the session — there's no real backend to persist to yet.
+  onSelfProfileChange: (patch: { name?: string; specialty?: string; avatar_url?: string }) => void;
+  // DEV TOOL — seeds registrationNumber/mainRoom/schedule when `dentist.id`
+  // isn't one of DENTIST_PROFILE_MOCK's seeded entries (the Clinic Admin's
+  // own synthetic professional profile, see header.tsx) so this shows what
+  // they actually entered in "Configurar perfil profesional" instead of the
+  // generic DEFAULT_DENTIST_PROFILE_MOCK placeholders.
+  initialProfile?: {
+    registrationNumber?: string;
+    mainRoom?: string;
+    scheduleDays?: string[];
+    scheduleStart?: string;
+    scheduleEnd?: string;
+  };
 }) {
-  const { role } = useRole();
-  // DEV TOOL — see src/dev/role.ts. Editing a professional's own record is
-  // an admin-only action; other roles keep the read-only view.
-  const isAdminView = role === "clinic-admin";
+  const { role, dentistId: currentDentistId } = useRole();
+  // DEV TOOL — see src/dev/role.ts. Viewing/editing someone ELSE's record is
+  // an admin-only action (always-visible pencils, deactivation). Viewing
+  // your OWN record — a Dentist previewing
+  // themselves, or a Clinic Admin who has also configured a "Perfil
+  // profesional" for themselves (see ADMIN_DENTIST_ID) — always gets the
+  // narrower self-service edit path below (editingProfile) instead, even
+  // though the latter is still nominally "an admin".
+  const isSelfView =
+    (role === "dentist" && dentist.id === currentDentistId) ||
+    (role === "clinic-admin" && dentist.id === ADMIN_DENTIST_ID);
+  const isAdminView = role === "clinic-admin" && !isSelfView;
+  // Discreet context line shown only for the Admin-as-professional case —
+  // see the header chrome below.
+  const isAdminActingAsProfessional = role === "clinic-admin" && dentist.id === ADMIN_DENTIST_ID;
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1122,16 +1243,28 @@ function DentistProfileModal({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  const baseProfile = DENTIST_PROFILE_MOCK[dentist.id] ?? DEFAULT_DENTIST_PROFILE_MOCK;
+  const baseProfile =
+    DENTIST_PROFILE_MOCK[dentist.id] ?? { ...DEFAULT_DENTIST_PROFILE_MOCK, ...initialProfile };
   const [profile, setProfile] = useState({
     ...baseProfile,
     name: dentist.name,
     specialty: dentist.specialty,
     status: "active" as DentistStatus,
+    avatarUrl: dentist.avatar_url,
   });
 
   const [editingField, setEditingField] = useState<EditableFieldKey | null>(null);
   const [draftValue, setDraftValue] = useState("");
+  // DEV TOOL — "Editar perfil" toggle for the self-view (Dentist editing
+  // their own record): reuses the exact same EditableProfileRow pencils as
+  // isAdminView, just gated behind an explicit "enter edit mode" tap
+  // instead of always-visible.
+  const [editingProfile, setEditingProfile] = useState(false);
+  // DEV TOOL — the newly picked photo, previewed immediately but not
+  // applied to `profile.avatarUrl` (and not reported via onAvatarChange)
+  // until "Guardar foto"; "Cancelar" or exiting edit mode just discards it.
+  const [photoDraft, setPhotoDraft] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingStatus, setEditingStatus] = useState(false);
   const [pendingDeactivation, setPendingDeactivation] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState(false);
@@ -1148,11 +1281,38 @@ function DentistProfileModal({
   const saveField = () => {
     if (!editingField) return;
     const trimmed = draftValue.trim();
-    if (trimmed) setProfile((prev) => ({ ...prev, [editingField]: trimmed }));
+    if (trimmed) {
+      setProfile((prev) => ({ ...prev, [editingField]: trimmed }));
+      // Only the two fields the shell Header also displays need to sync
+      // there — and only when it's really the authenticated dentist
+      // editing their own record, not an admin editing someone else's.
+      if (isSelfView && editingField === "name") onSelfProfileChange({ name: trimmed });
+      if (isSelfView && editingField === "specialty") onSelfProfileChange({ specialty: trimmed });
+    }
     setEditingField(null);
   };
 
   const cancelEditing = () => setEditingField(null);
+
+  const handlePhotoSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // lets the same file be picked again later
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") setPhotoDraft(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const savePhotoChange = () => {
+    if (!photoDraft) return;
+    setProfile((prev) => ({ ...prev, avatarUrl: photoDraft }));
+    onSelfProfileChange({ avatar_url: photoDraft });
+    setPhotoDraft(null);
+  };
+
+  const cancelPhotoChange = () => setPhotoDraft(null);
 
   // This prototype's mock data only models a single week — "citas futuras"
   // is approximated as this dentist's appointments that haven't already
@@ -1213,7 +1373,12 @@ function DentistProfileModal({
         className="relative z-10 flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-background shadow-xl sm:max-h-[80vh] sm:w-full sm:max-w-2xl sm:rounded-xl md:max-w-4xl"
       >
         <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3">
-          <p className="text-sm font-semibold">Perfil del profesional</p>
+          <div>
+            <p className="text-sm font-semibold">Perfil del profesional</p>
+            {isAdminActingAsProfessional && (
+              <p className="text-[11px] text-muted-foreground">Administrador de Clínica · Profesional clínico</p>
+            )}
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -1225,14 +1390,72 @@ function DentistProfileModal({
         </div>
 
         <div className="flex-1 overflow-y-auto md:grid md:grid-cols-[1fr_1.15fr_1.15fr] md:overflow-hidden">
-          {/* Left — Datos personales */}
+          {/* Left — Tarjeta de identidad profesional (credencial) */}
           <div className="border-b border-border p-5 md:min-h-0 md:overflow-y-auto md:border-r md:border-b-0">
-            <div className="flex flex-col items-center gap-2 text-center md:items-start md:text-left">
-              <UserAvatar
-                name={dentist.name}
-                initials={dentist.initials}
-                avatar_url={dentist.avatar_url}
-                sizeClassName="size-16"
+            <div className="rounded-xl border border-border bg-[color-mix(in_oklab,var(--primary)_10%,transparent)] p-4 shadow-sm">
+              {/* Encabezado tipo credencial — siempre centrado, incluso en desktop. */}
+              <div className="flex flex-col items-center gap-2 text-center">
+              {isSelfView && editingProfile ? (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  aria-label="Cambiar foto de perfil"
+                  className="group relative rounded-full"
+                >
+                  <UserAvatar
+                    name={dentist.name}
+                    initials={dentist.initials}
+                    avatar_url={photoDraft ?? profile.avatarUrl}
+                    sizeClassName="size-20"
+                  />
+                  <span className="pointer-events-none absolute inset-0 rounded-full bg-foreground/0 transition-colors group-hover:bg-foreground/40" />
+                  <span className="pointer-events-none absolute -right-0.5 -bottom-0.5 flex size-5 items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground">
+                    <PencilIcon className="size-2.5" />
+                  </span>
+                </button>
+              ) : (
+                <UserAvatar
+                  name={dentist.name}
+                  initials={dentist.initials}
+                  avatar_url={photoDraft ?? profile.avatarUrl}
+                  sizeClassName="size-20"
+                />
+              )}
+
+              {isSelfView && editingProfile && (
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/webp"
+                  onChange={handlePhotoSelect}
+                  className="hidden"
+                />
+              )}
+
+              <EditableProfileRow
+                variant="heading"
+                label="Nombre"
+                value={profile.name}
+                editable={isAdminView || (isSelfView && editingProfile)}
+                isEditing={editingField === "name"}
+                draftValue={draftValue}
+                onDraftChange={setDraftValue}
+                onStartEdit={() => startEditing("name", profile.name)}
+                onSave={saveField}
+                onCancel={cancelEditing}
+              />
+
+              <EditableProfileRow
+                variant="subheading"
+                label="Especialidad"
+                value={profile.specialty}
+                editable={isAdminView || (isSelfView && editingProfile)}
+                isEditing={editingField === "specialty"}
+                draftValue={draftValue}
+                onDraftChange={setDraftValue}
+                onStartEdit={() => startEditing("specialty", profile.specialty)}
+                onSave={saveField}
+                onCancel={cancelEditing}
               />
 
               {isAdminView ? (
@@ -1286,6 +1509,16 @@ function DentistProfileModal({
                   {profile.status === "active" ? "Activo" : "Inactivo"}
                 </span>
               )}
+
+              {isSelfView && !editingProfile && (
+                <button
+                  type="button"
+                  onClick={() => setEditingProfile(true)}
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  Editar perfil
+                </button>
+              )}
             </div>
 
             {pendingDeactivation && (
@@ -1311,33 +1544,18 @@ function DentistProfileModal({
               </div>
             )}
 
-            <dl className="mt-5 flex flex-col gap-3 text-sm">
-              <EditableProfileRow
-                label="Nombre"
-                value={profile.name}
-                editable={isAdminView}
-                isEditing={editingField === "name"}
-                draftValue={draftValue}
-                onDraftChange={setDraftValue}
-                onStartEdit={() => startEditing("name", profile.name)}
-                onSave={saveField}
-                onCancel={cancelEditing}
-              />
-              <EditableProfileRow
-                label="Especialidad"
-                value={profile.specialty}
-                editable={isAdminView}
-                isEditing={editingField === "specialty"}
-                draftValue={draftValue}
-                onDraftChange={setDraftValue}
-                onStartEdit={() => startEditing("specialty", profile.specialty)}
-                onSave={saveField}
-                onCancel={cancelEditing}
-              />
+            {/* Separación visual sutil entre el gafete y los datos profesionales. */}
+            <div className="mt-5 border-t border-border" />
+
+            <dl
+              className={`mt-5 flex flex-col gap-4 text-sm ${
+                isSelfView && editingProfile ? "rounded-lg border border-primary/15 bg-primary/[0.03] p-3" : ""
+              }`}
+            >
               <EditableProfileRow
                 label="Registro profesional"
                 value={profile.registrationNumber}
-                editable={isAdminView}
+                editable={isAdminView || (isSelfView && editingProfile)}
                 isEditing={editingField === "registrationNumber"}
                 draftValue={draftValue}
                 onDraftChange={setDraftValue}
@@ -1345,21 +1563,36 @@ function DentistProfileModal({
                 onSave={saveField}
                 onCancel={cancelEditing}
               />
-              <EditableProfileRow
-                label="Teléfono"
-                value={profile.phone}
-                editable={isAdminView}
-                isEditing={editingField === "phone"}
-                draftValue={draftValue}
-                onDraftChange={setDraftValue}
-                onStartEdit={() => startEditing("phone", profile.phone)}
-                onSave={saveField}
-                onCancel={cancelEditing}
-              />
+              <div>
+                <EditableProfileRow
+                  label="Teléfono"
+                  value={profile.phone}
+                  editable={isAdminView || (isSelfView && editingProfile)}
+                  isEditing={editingField === "phone"}
+                  draftValue={draftValue}
+                  onDraftChange={setDraftValue}
+                  onStartEdit={() => startEditing("phone", profile.phone)}
+                  onSave={saveField}
+                  onCancel={cancelEditing}
+                />
+                {/* Compact contact action, right next to the phone it uses —
+                    always this professional's own number, whoever's viewing. */}
+                {editingField !== "phone" && profile.phone && (
+                  <a
+                    href={`https://wa.me/${profile.phone.replace(/\D/g, "")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10"
+                  >
+                    <PhoneIcon className="size-3" />
+                    WhatsApp
+                  </a>
+                )}
+              </div>
               <EditableProfileRow
                 label="Correo electrónico"
                 value={profile.email}
-                editable={isAdminView}
+                editable={isAdminView || (isSelfView && editingProfile)}
                 isEditing={editingField === "email"}
                 draftValue={draftValue}
                 onDraftChange={setDraftValue}
@@ -1370,7 +1603,7 @@ function DentistProfileModal({
               <EditableProfileRow
                 label="Consultorio principal"
                 value={profile.mainRoom}
-                editable={isAdminView}
+                editable={isAdminView || (isSelfView && editingProfile)}
                 isEditing={editingField === "mainRoom"}
                 draftValue={draftValue}
                 onDraftChange={setDraftValue}
@@ -1379,6 +1612,32 @@ function DentistProfileModal({
                 onCancel={cancelEditing}
               />
             </dl>
+
+            {isSelfView && editingProfile && (
+              <div className="mt-4 flex justify-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    cancelPhotoChange();
+                    setEditingProfile(false);
+                  }}
+                  className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-foreground/70 hover:bg-foreground/5"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    savePhotoChange();
+                    setEditingProfile(false);
+                  }}
+                  className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
+                >
+                  Guardar cambios
+                </button>
+              </div>
+            )}
+            </div>
           </div>
 
           {/* Center — Disponibilidad y métricas */}
@@ -1444,7 +1703,7 @@ function DentistProfileModal({
                     <dd className="truncate font-medium">
                       {formatScheduleLabel(profile.scheduleDays, profile.scheduleStart, profile.scheduleEnd)}
                     </dd>
-                    {isAdminView && (
+                    {(isAdminView || isSelfView) && (
                       <FieldPencilButton label="Editar horario de atención" onClick={startEditingSchedule} />
                     )}
                   </div>
@@ -1526,24 +1785,6 @@ function DentistProfileModal({
                 </ul>
               ))}
           </div>
-        </div>
-
-        <div className="flex shrink-0 gap-2 border-t border-border px-5 py-3.5">
-          <a
-            href={`https://wa.me/${WHATSAPP_NUMBER}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex flex-1 items-center justify-center rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
-          >
-            WhatsApp
-          </a>
-          <button
-            type="button"
-            onClick={onOpenAgenda}
-            className="flex-1 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground/80 transition-colors hover:bg-foreground/5"
-          >
-            Abrir agenda
-          </button>
         </div>
       </div>
     </div>
