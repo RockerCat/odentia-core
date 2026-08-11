@@ -6,6 +6,7 @@ import {
   BarChartIcon,
   BuildingIcon,
   CalendarIcon,
+  CheckCircleIcon,
   ClipboardIcon,
   ClockIcon,
   CreditCardIcon,
@@ -38,6 +39,8 @@ const MARKETPLACE_FEATURES = [
   { icon: BuildingIcon, title: "Proveedores", description: "Aliados verificados para tu operación." },
   { icon: CreditCardIcon, title: "Beneficios", description: "Ahorros y patrocinios de suscripción." },
 ];
+
+const MARKETPLACE_PRODUCTS = ["Guantes de nitrilo (caja x100)", "Anestesia dental", "Resina compuesta"];
 
 const FLOW_STEPS = [
   { icon: CalendarIcon, label: "Agenda" },
@@ -98,9 +101,9 @@ export default function LandingPage() {
                 Gestiona tu clínica. Conecta todo lo demás.
               </h1>
               <p className="mt-5 max-w-xl text-base text-muted-foreground sm:text-lg">
-                Odentia va más allá de administrar citas: organiza tu agenda, tus pacientes y la
-                atención clínica del día a día — y te da acceso a un marketplace especializado
-                para tu consultorio, todo en un solo lugar.
+                Odentia va más allá de gestionar tu agenda: conecta la operación de tu clínica con
+                un marketplace especializado para odontología. Organiza tus pacientes y la
+                atención clínica del día a día, todo desde un solo lugar.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <button
@@ -191,7 +194,7 @@ export default function LandingPage() {
         </section>
 
         {/* Mucho más que un software de citas */}
-        <section id="funcionalidades" className="border-t border-border bg-background px-4 py-14 sm:px-6 sm:py-20">
+        <section id="funcionalidades" className="border-t border-border bg-background px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-5xl">
             <div className="mx-auto max-w-2xl text-center">
               <h2 className="text-2xl font-semibold sm:text-3xl">
@@ -203,7 +206,7 @@ export default function LandingPage() {
               </p>
             </div>
 
-            <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">
               <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm sm:p-8">
                 <div className="flex items-center gap-3">
                   <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -266,7 +269,7 @@ export default function LandingPage() {
         </section>
 
         {/* Marketplace — near-second-hero */}
-        <section id="marketplace" className="relative border-t border-border px-4 py-16 sm:px-6 sm:py-24">
+        <section id="marketplace" className="relative border-t border-border px-4 py-14 sm:px-6 sm:py-20">
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px] bg-[radial-gradient(55%_55%_at_80%_0%,color-mix(in_oklab,var(--primary)_12%,transparent),transparent)]"
@@ -281,13 +284,9 @@ export default function LandingPage() {
               </h2>
               <p className="mt-4 max-w-lg text-sm text-muted-foreground sm:text-base">
                 El Marketplace conecta la operación de tu clínica con proveedores e insumos
-                odontológicos. Las compras elegibles con proveedores aliados pueden patrocinar la
-                suscripción de tu clínica.
+                odontológicos. Tus compras elegibles en LopaDent pueden patrocinar la suscripción
+                de tu clínica.
               </p>
-              <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80">
-                <BuildingIcon className="size-3.5 text-primary" />
-                Proveedor aliado actual: LopaDent
-              </div>
             </div>
 
             <div className="relative">
@@ -303,14 +302,19 @@ export default function LandingPage() {
                   </span>
                 </div>
 
-                <div className="mt-3 flex items-center gap-3 rounded-lg border border-border bg-surface p-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    <ClipboardIcon className="size-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-medium">Insumos odontológicos</p>
-                    <p className="truncate text-[11px] text-muted-foreground">LopaDent · Proveedor aliado</p>
-                  </div>
+                <div className="mt-3 flex flex-col gap-2">
+                  {MARKETPLACE_PRODUCTS.map((product) => (
+                    <div key={product} className="flex items-center gap-3 rounded-lg border border-border bg-surface p-2.5">
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <ToothIcon className="size-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium">{product}</p>
+                        <p className="truncate text-[10px] text-muted-foreground">LopaDent</p>
+                      </div>
+                      <CheckCircleIcon className="size-3.5 shrink-0 text-primary" />
+                    </div>
+                  ))}
                 </div>
 
                 <div className="mt-3 flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
@@ -328,23 +332,23 @@ export default function LandingPage() {
         </section>
 
         {/* Todo conectado en una sola operación */}
-        <section className="border-t border-border bg-background px-4 py-14 sm:px-6 sm:py-20">
+        <section className="border-t border-border bg-background px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-4xl">
             <h2 className="text-center text-xl font-semibold sm:text-2xl">
               Todo conectado en una sola operación
             </h2>
 
-            <div className="mt-9 flex flex-col items-center gap-3 sm:flex-row sm:justify-between sm:gap-2">
+            <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-between sm:gap-2">
               {FLOW_STEPS.map(({ icon: Icon, label }, index) => (
                 <Fragment key={label}>
-                  <div className="flex flex-col items-center gap-2">
-                    <span className="flex size-11 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
-                      <Icon className="size-5" />
+                  <div className="flex flex-col items-center gap-2.5">
+                    <span className="flex size-12 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10 text-primary">
+                      <Icon className="size-6" />
                     </span>
-                    <p className="text-xs font-medium text-foreground sm:text-sm">{label}</p>
+                    <p className="text-sm font-medium text-foreground">{label}</p>
                   </div>
                   {index < FLOW_STEPS.length - 1 && (
-                    <ArrowRightIcon className="size-4 shrink-0 rotate-90 text-label-foreground sm:rotate-0" />
+                    <ArrowRightIcon className="size-5 shrink-0 rotate-90 text-primary/40 sm:rotate-0" />
                   )}
                 </Fragment>
               ))}
@@ -353,15 +357,18 @@ export default function LandingPage() {
         </section>
 
         {/* Closing CTA */}
-        <section className="px-4 py-14 sm:px-6 sm:py-20">
+        <section className="px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-4xl">
-            <div className="rounded-2xl border border-primary/20 bg-[linear-gradient(135deg,color-mix(in_oklab,var(--primary)_8%,var(--background)),var(--background))] p-8 text-center shadow-sm sm:p-12">
+            <div className="rounded-2xl border border-primary/20 bg-[linear-gradient(135deg,color-mix(in_oklab,var(--primary)_8%,var(--background)),var(--background))] p-7 text-center shadow-sm sm:p-10">
               <h2 className="text-2xl font-semibold text-balance sm:text-3xl">
                 Tu clínica puede hacer mucho más desde un solo lugar.
               </h2>
+              <p className="mx-auto mt-3 max-w-lg text-sm text-muted-foreground sm:text-base">
+                Empieza a gestionar tu clínica y descubre un ecosistema creado para odontología.
+              </p>
               <button
                 type="button"
-                className="mt-7 rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90"
+                className="mt-6 rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90"
               >
                 Registra tu clínica
               </button>
