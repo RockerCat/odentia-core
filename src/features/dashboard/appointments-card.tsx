@@ -7,6 +7,7 @@ import { ChevronDownIcon, ChevronIcon, CloseIcon, PencilIcon, PlusIcon } from "@
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { firstName } from "@/lib/format";
 import { AnchoredPopover, AppointmentDetailModal, FIELD_CLASS } from "./appointment-detail-modal";
+import { ClinicalEncounterScreen } from "./clinical-encounter-screen";
 import type { Appointment, AppointmentStatus, Dentist, WeekDay } from "./mock-data";
 import { STATUS_LABELS, STATUS_STYLES } from "./mock-data";
 import { NewAppointmentModal } from "./new-appointment-modal";
@@ -285,6 +286,10 @@ export function AppointmentsCard({
   // state instead of a real backend (see PROJECT_STATUS.md).
   const [allAppointments, setAllAppointments] = useState(appointments);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
+  // Set when the clinical encounter screen ("Iniciar atención") is open —
+  // separate from selectedAppointmentId so opening it can close the detail
+  // modal underneath rather than stacking on top of it.
+  const [encounterAppointmentId, setEncounterAppointmentId] = useState<string | null>(null);
   const [selectedDentistId, setSelectedDentistId] = useState<string | null>(null);
   // Empty array means no filter applied (shown as "Todos") — doesn't
   // affect selectedDay/weekOffset. Multi-select: 0..N dentist ids.
@@ -373,6 +378,7 @@ export function AppointmentsCard({
   const dayAppointments = weekAppointments.filter((a) => a.day === selectedDay);
   const selectedAppointment = allAppointments.find((a) => a.id === selectedAppointmentId) ?? null;
   const selectedDentist = dentists.find((d) => d.id === selectedDentistId) ?? null;
+  const encounterAppointment = allAppointments.find((a) => a.id === encounterAppointmentId) ?? null;
 
   // Estado filter thins out which appointments show in each dentist's slot
   // grid (non-matching slots simply render as free); Profesional filter
@@ -628,6 +634,26 @@ export function AppointmentsCard({
           weekDays={weekDays}
           onClose={() => setSelectedAppointmentId(null)}
           onUpdate={updateAppointment}
+          onStartEncounter={() => {
+            setSelectedAppointmentId(null);
+            setEncounterAppointmentId(selectedAppointment.id);
+          }}
+        />
+      )}
+
+      {encounterAppointment && (
+        <ClinicalEncounterScreen
+          appointment={encounterAppointment}
+          dentists={dentists}
+          allAppointments={allAppointments}
+          weekDays={weekDays}
+          onExit={() => setEncounterAppointmentId(null)}
+          onComplete={() => {
+            updateAppointment({ ...encounterAppointment, status: "completed" });
+            setEncounterAppointmentId(null);
+          }}
+          onCreateAppointment={addAppointment}
+          onUpdateAppointment={updateAppointment}
         />
       )}
 

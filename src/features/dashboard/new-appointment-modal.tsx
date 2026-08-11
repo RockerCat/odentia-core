@@ -73,17 +73,18 @@ export function NewAppointmentModal({
   dentists: Dentist[];
   weekDays: WeekDay[];
   existingAppointments: Appointment[];
-  // Set when opened from an empty calendar slot instead of the "Nueva
-  // cita" button — pre-fills Profesional/Fecha/Horario (duration still
-  // takes the standard default) and highlights those three values in the
-  // primary color until the user changes one.
-  prefill?: { dentistId: string; day: string; time: string };
+  // Set when opened from an empty calendar slot (Profesional/Fecha/Horario)
+  // or from the clinical encounter screen's "Agendar próxima cita" action
+  // (Paciente/Profesional/Tratamiento) — each field is independently
+  // optional and, when a date/time/professional is included, highlights
+  // that value in the primary color until the user changes it.
+  prefill?: { dentistId?: string; day?: string; time?: string; patientName?: string; type?: string };
   onClose: () => void;
   onCreate: (appointment: Appointment) => void;
 }) {
   const patientOptions = derivePatientOptions(existingAppointments, weekDays);
 
-  const [patientName, setPatientName] = useState("");
+  const [patientName, setPatientName] = useState(prefill?.patientName ?? "");
   const [dentistId, setDentistId] = useState(prefill?.dentistId ?? "");
   // Empty unless prefilled from a calendar slot click — no default
   // day/time otherwise, per this refinement's spec. The date/time
@@ -94,17 +95,19 @@ export function NewAppointmentModal({
   const [time, setTime] = useState(prefill?.time ?? "");
   const [durationMinutes, setDurationMinutes] = useState(DEFAULT_APPOINTMENT_DURATION);
   const [room, setRoom] = useState("");
-  const [type, setType] = useState("");
+  const [type, setType] = useState(prefill?.type ?? "");
   const [notes, setNotes] = useState("");
   const [editingField, setEditingField] = useState<"date" | "time" | null>(null);
   const [creating, setCreating] = useState(false);
 
   // Cleared the moment the user actively edits that specific field — once
-  // they've engaged with it, it's their choice, not just a calendar
-  // suggestion anymore.
-  const [dentistFromCalendar, setDentistFromCalendar] = useState(Boolean(prefill));
-  const [dateFromCalendar, setDateFromCalendar] = useState(Boolean(prefill));
-  const [timeFromCalendar, setTimeFromCalendar] = useState(Boolean(prefill));
+  // they've engaged with it, it's their choice, not just a suggestion
+  // anymore. Keyed off the specific field (not the whole prefill object) so
+  // a partial prefill — e.g. only dentistId/patientName/type, no day/time —
+  // doesn't falsely highlight an empty date/time as if it were pre-filled.
+  const [dentistFromCalendar, setDentistFromCalendar] = useState(Boolean(prefill?.dentistId));
+  const [dateFromCalendar, setDateFromCalendar] = useState(Boolean(prefill?.day));
+  const [timeFromCalendar, setTimeFromCalendar] = useState(Boolean(prefill?.time));
 
   const dayEntry = weekDays.find((d) => d.key === day);
   const dayLabel = dayEntry ? `${dayEntry.label}, ${dayEntry.dateLabel}` : "Selecciona una fecha";

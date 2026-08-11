@@ -305,3 +305,43 @@ export function AlertTriangleIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function BoldIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M7 4h6a3.5 3.5 0 0 1 0 7H7z" />
+      <path d="M7 11h7a3.5 3.5 0 0 1 0 7H7z" />
+    </svg>
+  );
+}
+
+export function ItalicIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <line x1="10" y1="4" x2="18" y2="4" />
+      <line x1="6" y1="20" x2="14" y2="20" />
+      <line x1="14" y1="4" x2="10" y2="20" />
+    </svg>
+  );
+}
+
+export function ListIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <circle cx="4.5" cy="6" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="4.5" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="4.5" cy="18" r="1.1" fill="currentColor" stroke="none" />
+      <line x1="9" y1="6" x2="20" y2="6" />
+      <line x1="9" y1="12" x2="20" y2="12" />
+      <line x1="9" y1="18" x2="20" y2="18" />
+    </svg>
+  );
+}
+
+export function ToothIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M12 3c-1.8 0-2.6 1-4 1S5.5 3 4 3C2.3 3 1.5 4.8 1.7 6.8c.2 2 1 3.3 1.4 5.2.5 2.2 1 5 2.2 6.6.9 1.2 1.7.6 2-.6.3-1.2.6-3.5 1.7-3.5s1.4 2.3 1.7 3.5c.3 1.2 1.1 1.8 2 .6 1.2-1.6 1.7-4.4 2.2-6.6.4-1.9 1.2-3.2 1.4-5.2C22.5 4.8 21.7 3 20 3c-1.5 0-2.6 1-4 1s-2.2-1-4-1z" />
+    </svg>
+  );
+}

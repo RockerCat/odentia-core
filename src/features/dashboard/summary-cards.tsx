@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CloseIcon } from "@/components/shell/icons";
 import { AppointmentDetailModal } from "./appointment-detail-modal";
+import { ClinicalEncounterScreen } from "./clinical-encounter-screen";
 import type { Appointment, Dentist, OperationalAlert, WeekDay } from "./mock-data";
 import { STATUS_LABELS, STATUS_STYLES } from "./mock-data";
 
@@ -50,6 +51,10 @@ export function SummaryCards({
   // CRUD with local state instead of a real backend (see PROJECT_STATUS.md).
   const [allAppointments, setAllAppointments] = useState(appointments);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
+  // Same "Iniciar atención" wiring as AppointmentsCard — see its identical
+  // encounterAppointmentId state for why this is separate from
+  // selectedAppointmentId.
+  const [encounterAppointmentId, setEncounterAppointmentId] = useState<string | null>(null);
   const todayDay = weekDays.find((day) => day.isToday);
   // Same filter that already produces TODAY_SUMMARY's "Citas hoy"/
   // "Confirmadas"/"Pendientes de confirmar" totals — not a new definition,
@@ -60,12 +65,17 @@ export function SummaryCards({
     setAllAppointments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
   };
 
+  const addAppointment = (created: Appointment) => {
+    setAllAppointments((prev) => [...prev, created]);
+  };
+
   const openAppointmentDetail = (id: string) => {
     setOpenKpi(null);
     setSelectedAppointmentId(id);
   };
 
   const selectedAppointment = allAppointments.find((a) => a.id === selectedAppointmentId) ?? null;
+  const encounterAppointment = allAppointments.find((a) => a.id === encounterAppointmentId) ?? null;
 
   const recordsForKey = (key: KpiKey) => {
     switch (key) {
@@ -134,6 +144,26 @@ export function SummaryCards({
           weekDays={weekDays}
           onClose={() => setSelectedAppointmentId(null)}
           onUpdate={updateAppointment}
+          onStartEncounter={() => {
+            setSelectedAppointmentId(null);
+            setEncounterAppointmentId(selectedAppointment.id);
+          }}
+        />
+      )}
+
+      {encounterAppointment && (
+        <ClinicalEncounterScreen
+          appointment={encounterAppointment}
+          dentists={dentists}
+          allAppointments={allAppointments}
+          weekDays={weekDays}
+          onExit={() => setEncounterAppointmentId(null)}
+          onComplete={() => {
+            updateAppointment({ ...encounterAppointment, status: "completed" });
+            setEncounterAppointmentId(null);
+          }}
+          onCreateAppointment={addAppointment}
+          onUpdateAppointment={updateAppointment}
         />
       )}
     </div>

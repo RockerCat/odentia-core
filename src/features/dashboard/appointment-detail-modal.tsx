@@ -98,7 +98,7 @@ function chronologicalKey(item: Appointment, weekDays: WeekDay[]): number {
 // recent first. Matched by patientName since this prototype has no
 // dedicated patient records yet (see PROJECT_STATUS.md — Patients is a
 // separate, not-yet-built milestone).
-function getPatientHistory(
+export function getPatientHistory(
   allAppointments: Appointment[],
   current: Appointment,
   weekDays: WeekDay[],
@@ -118,6 +118,7 @@ export function AppointmentDetailModal({
   weekDays,
   onClose,
   onUpdate,
+  onStartEncounter,
 }: {
   appointment: Appointment;
   allAppointments: Appointment[];
@@ -125,6 +126,7 @@ export function AppointmentDetailModal({
   weekDays: WeekDay[];
   onClose: () => void;
   onUpdate: (updated: Appointment) => void;
+  onStartEncounter: () => void;
 }) {
   const [editingField, setEditingField] = useState<FieldKey | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -162,13 +164,12 @@ export function AppointmentDetailModal({
   };
 
   // The footer's main CTA: for a cancelled appointment it reactivates it
-  // (back to confirmed); otherwise it's the existing "Iniciar atención"
-  // stub, unchanged.
+  // (back to confirmed); otherwise it opens the clinical encounter screen.
   const isCancelled = appointment.status === "cancelled";
   const primaryCtaLabel = reactivating ? "Reactivando…" : isCancelled ? "Reactivar cita" : "Iniciar atención";
   const handlePrimaryCta = async () => {
     if (!isCancelled) {
-      setInfoMessage("La vista de atención clínica estará disponible próximamente.");
+      onStartEncounter();
       return;
     }
     setReactivating(true);

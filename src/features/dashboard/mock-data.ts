@@ -101,6 +101,22 @@ export const TREATMENT_OPTIONS = [
 
 export const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
 
+// Catalog of common clinical procedures for the "Procedimientos realizados"
+// picker in the clinical encounter screen — same small-fixed-catalog
+// approach as ROOMS/TREATMENT_OPTIONS above.
+export const PROCEDURE_OPTIONS = [
+  "Limpieza dental",
+  "Resina compuesta",
+  "Extracción dental",
+  "Endodoncia",
+  "Blanqueamiento dental",
+  "Aplicación de flúor",
+  "Sellantes",
+  "Corona dental",
+  "Ajuste de brackets",
+  "Retiro de puntos",
+];
+
 export type WeekDay = {
   key: string;
   label: string;
