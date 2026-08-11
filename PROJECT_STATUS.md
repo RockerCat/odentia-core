@@ -2,7 +2,7 @@
 
 # Odentia Core
 
-**Last Updated:** 2026-08-05
+**Last Updated:** 2026-08-11
 
 ---
 
@@ -36,6 +36,53 @@ The application should look production-ready even though all data is mocked.
 
 ---
 
+# Progress So Far
+
+What exists today in the clickable prototype (mock data only, no backend):
+
+## Shell & Access
+
+- Responsive app shell: desktop sidebar + header, mobile bottom tab bar + mobile header.
+- Mock demo login at `/login` — no real backend. Lets a tester pick one of four demo
+  profiles (Clinic Admin, Dentist, Assistant, Superadmin), each with its own mock
+  identity, and enter the app as that role.
+- The selected role is saved to `localStorage` so it survives a refresh, and drives
+  header, greeting, avatar, "Mi perfil", permissions, and nav everywhere. "Salir"
+  clears it and returns to `/login`.
+- Role-based navigation (different nav items per role, per the Domain Model in
+  CLAUDE.md).
+- A separate dev-only role switcher (hidden outside `development`) still exists for
+  fast manual testing without going through `/login`.
+
+## Agenda (the Clinic Admin's operational home)
+
+- Weekly appointment board scoped per role (a Dentist sees only their own column; a
+  Clinic Admin/Assistant see all professionals), with professional/status filters.
+- KPI summary cards, clickable for detail, plus an alerts modal.
+- Appointment creation flow.
+- Appointment detail modal with patient history timeline, cancel flow, and
+  "start attention" flow.
+- Clinical encounter screen (attending a patient) with an interactive odontogram.
+- Marketplace card — placeholder only, no real integration (see Marketplace Status).
+
+## Identity & Profile
+
+- Each role (Clinic Admin, Dentist, Assistant, Superadmin) has its own distinct mock
+  identity — never a shared/default one.
+- "Mi perfil" modals per role: Dentist/Clinic-Admin-as-professional share one modal,
+  Assistant and Clinic Admin (pure administrator) each have their own simpler one.
+- A Clinic Admin can optionally configure a "Perfil profesional" to also appear as a
+  practicing professional, without a second role.
+
+## Not built yet
+
+Register, Forgot Password, Onboarding (Create Practice / Configure Schedule / Invite
+Assistant), a dedicated Patients list/detail screen, Medical Records screens, Reports,
+Team, Subscription, Settings, and the Patient Portal are all still just nav-item
+placeholders or entirely absent — see MVP Scope below for what's still pending.
+
+---
+
 # Development Rules (Current Phase)
 
 During this phase Claude MUST:
@@ -52,7 +99,8 @@ Claude MUST NOT:
 - Implement Supabase.
 - Create database schemas.
 - Create migrations.
-- Implement authentication.
+- Implement real authentication (a mock/demo login backed by localStorage — see
+  Progress So Far — is in scope; verifying real credentials against a backend is not).
 - Implement APIs.
 - Integrate payment providers.
 - Build Marketplace APIs.
@@ -68,7 +116,7 @@ The first prototype should include:
 ## Public
 
 - Landing Page
-- Login
+- Login — delivered as a mock demo login (see Progress So Far); no real backend yet.
 - Register
 - Forgot Password
 
@@ -129,16 +177,16 @@ Future integration will happen through APIs.
 
 Priority order:
 
-1. Design System
-2. Authentication Screens
-3. Onboarding
-4. Dashboard
-5. Schedule
-6. Patients
-7. Medical Records
-8. Reports
-9. Settings
-10. Marketplace Entry Point
+1. Design System — done.
+2. Authentication Screens — mock login done; Register/Forgot Password pending.
+3. Onboarding — pending.
+4. Dashboard — done (Agenda serves as the Clinic Admin's home).
+5. Schedule — appointment board/creation/detail/encounter done; standalone Calendar view pending.
+6. Patients — pending (only exists inline as history within the appointment detail modal).
+7. Medical Records — pending (clinical encounter + odontogram exist; no dedicated record screens).
+8. Reports — pending.
+9. Settings — pending.
+10. Marketplace Entry Point — placeholder card exists; no real navigation yet.
 
 ---
 

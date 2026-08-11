@@ -104,6 +104,12 @@ Unless explicitly instructed otherwise:
 - Clean folder organization.
 - Avoid unnecessary global state.
 
+Until real authentication exists, the mock login/session lives in
+`src/features/auth/` (not real auth — no backend credential check). Keep it
+there; do not scatter session logic into feature folders. `src/dev/` is a
+separate, fully disposable dev-only shim — safe to delete once real auth
+lands.
+
 ---
 
 # Multi-Tenant
