@@ -33,7 +33,9 @@ export default function LoginPage() {
       return;
     }
     writeSession({ role: match.role });
-    router.push("/agenda");
+    // Superadmin operates the platform, not a clinic (see CLAUDE.md Domain
+    // Model) — its own home is /admin, not the Clinic Agenda.
+    router.push(match.role === "superadmin" ? "/admin" : "/agenda");
   };
 
   return (

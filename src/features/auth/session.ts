@@ -23,9 +23,25 @@ export function readSession(): DemoSession | null {
 export function writeSession(session: DemoSession): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  notifySessionListeners();
 }
 
 export function clearSession(): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(SESSION_STORAGE_KEY);
+  notifySessionListeners();
+}
+
+// Lets useSyncExternalStore (see role-context.tsx) know the session changed
+// — the native "storage" event only fires in *other* tabs, not the one
+// that made the write, so same-tab consumers need this instead.
+const listeners = new Set<() => void>();
+
+export function subscribeToSession(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function notifySessionListeners(): void {
+  listeners.forEach((listener) => listener());
 }

@@ -5,7 +5,8 @@
 
 import { NAV_ITEMS, type NavItem } from "@/components/shell/nav-items";
 import {
-  ClipboardIcon,
+  BuildingIcon,
+  CreditCardIcon,
   DashboardIcon,
   SlidersIcon,
   StoreIcon,
@@ -59,11 +60,16 @@ export const ROLE_NAV_ITEMS: Record<Role, readonly NavItem[]> = {
         item.label !== "Configuración",
     ),
   ],
+  // Superadmin manages the platform itself, not a clinic's operation —
+  // "Marketplace" here is grouped as a plain "Negocio" item (not the
+  // "marketplace" group) on purpose: it means marketplace management/
+  // activity, not the supply-shopping promo the clinic-facing roles see.
   superadmin: [
-    { label: "Inicio", icon: DashboardIcon, group: "work" },
-    { label: "Consultorios", icon: UsersIcon, group: "work" },
-    { label: "Planes y Suscripciones", icon: ClipboardIcon, group: "work" },
-    { label: "Marketplace", icon: StoreIcon, group: "marketplace" },
-    { label: "Operación global", icon: SlidersIcon, group: "admin" },
+    { label: "Inicio", icon: DashboardIcon, group: "platform" },
+    { label: "Clínicas", icon: BuildingIcon, group: "platform" },
+    { label: "Usuarios", icon: UsersIcon, group: "platform" },
+    { label: "Suscripciones", icon: CreditCardIcon, group: "business" },
+    { label: "Marketplace", icon: StoreIcon, group: "business" },
+    { label: "Configuración", icon: SlidersIcon, group: "admin" },
   ],
 };

@@ -264,11 +264,16 @@ export const WEEK_APPOINTMENTS: Appointment[] = [
   { id: "7", day: "wednesday", time: "2:00 PM", patientName: "Valentina Cruz", initials: "VC", type: "Primera consulta", status: "pending", dentistId: "d1" },
   { id: "8", day: "wednesday", time: "3:30 PM", patientName: "Diego Morales", initials: "DM", type: "Control de ortodoncia", status: "confirmed", dentistId: "d2", room: "Consultorio 2", patientPhone: "+57 304 221 9087" },
 
-  // Thursday — upcoming
-  { id: "j1", day: "thursday", time: "9:00 AM", patientName: "Emilio Cárdenas", initials: "EC", type: "Limpieza dental", status: "confirmed", dentistId: "d1" },
+  // Thursday — upcoming. j1/j3/j4 are "completed" rather than "confirmed"
+  // on purpose: these three also surface in their patient's Historial de
+  // citas (see patient-detail-modal.tsx, which lists every appointment for
+  // a patient, not just already-past ones), where an operational status
+  // like "Confirmada" reads as incoherent next to genuinely resolved past
+  // visits. Deliberate, one-off mock correction — not a date-based rule.
+  { id: "j1", day: "thursday", time: "9:00 AM", patientName: "Emilio Cárdenas", initials: "EC", type: "Limpieza dental", status: "completed", dentistId: "d1" },
   { id: "j2", day: "thursday", time: "2:30 PM", patientName: "Antonia Bermúdez", initials: "AB", type: "Chequeo general", status: "pending", dentistId: "d1" },
-  { id: "j3", day: "thursday", time: "10:30 AM", patientName: "Camilo Ríos", initials: "CR", type: "Control de ortodoncia", status: "confirmed", dentistId: "d2" },
-  { id: "j4", day: "thursday", time: "11:00 AM", patientName: "Isabella Fonseca", initials: "IF", type: "Extracción dental", status: "confirmed", dentistId: "d3" },
+  { id: "j3", day: "thursday", time: "10:30 AM", patientName: "Camilo Ríos", initials: "CR", type: "Control de ortodoncia", status: "completed", dentistId: "d2" },
+  { id: "j4", day: "thursday", time: "11:00 AM", patientName: "Isabella Fonseca", initials: "IF", type: "Extracción dental", status: "completed", dentistId: "d3" },
   { id: "j5", day: "thursday", time: "3:00 PM", patientName: "Mateo Salazar", initials: "MS", type: "Primera consulta", status: "pending", dentistId: "d3" },
 
   // Friday — upcoming

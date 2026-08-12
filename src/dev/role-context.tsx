@@ -7,9 +7,21 @@
 // underlying role/session mechanism is what src/app/login relies on in
 // production too.
 
-import { createContext, useContext, useState, type ReactNode } from "react";
-import { clearSession, readSession, writeSession } from "@/features/auth/session";
+import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
+import { clearSession, readSession, subscribeToSession, writeSession } from "@/features/auth/session";
 import { DEFAULT_ROLE, DEV_DENTIST_ID, type Role } from "./role";
+
+// The server has no access to localStorage, so it always "sees" the
+// default role — useSyncExternalStore uses this for both SSR and the
+// client's first (hydration) render, guaranteeing they match. Once
+// hydrated, React re-reads getClientRole() below and re-renders with the
+// real persisted role if it differs — a one-tick flash to the real role
+// is the expected, correct trade-off for browser-storage-backed state,
+// and it happens through React's own sanctioned mechanism for this
+// instead of a manual setState-in-effect (which a mismatched first paint
+// would otherwise require).
+const getServerRole = (): Role => DEFAULT_ROLE;
+const getClientRole = (): Role => readSession()?.role ?? DEFAULT_ROLE;
 
 // DEV TOOL — the mutable subset of the authenticated dentist's own identity
 // that the self-service "Editar perfil" flow (DentistProfileModal) can
@@ -82,7 +94,12 @@ const RoleContext = createContext<RoleContextValue>({
 });
 
 export function RoleProvider({ children }: { children: ReactNode }) {
-  const [role, setRoleState] = useState<Role>(() => readSession()?.role ?? DEFAULT_ROLE);
+  // `role` is derived entirely from the persisted session (see the
+  // getServerRole/getClientRole comment above) rather than its own local
+  // state — setRole/logout below just write through to that same session,
+  // and subscribeToSession's notification re-runs getClientRole so this
+  // re-renders with the new value.
+  const role = useSyncExternalStore(subscribeToSession, getClientRole, getServerRole);
   const [selfDentistOverride, setSelfDentistOverrideState] = useState<SelfDentistOverride>(NO_SELF_OVERRIDE);
   const [adminIdentityOverride, setAdminIdentityOverrideState] =
     useState<AdminIdentityOverride>(NO_ADMIN_OVERRIDE);
@@ -93,13 +110,11 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   // Persisted immediately so both the /login demo picker and the dev
   // RoleSwitcher survive a refresh through the exact same mechanism.
   const setRole = (next: Role) => {
-    setRoleState(next);
     writeSession({ role: next });
   };
 
   const logout = () => {
     clearSession();
-    setRoleState(DEFAULT_ROLE);
   };
 
   const setSelfDentistOverride = (patch: SelfDentistOverride) => {

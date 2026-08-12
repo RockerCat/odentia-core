@@ -1,6 +1,7 @@
+import Link from "next/link";
 import { ROLE_NAV_ITEMS } from "@/dev/role"; // DEV TOOL — see src/dev/role.ts
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
-import { NAV_ITEMS, type NavGroup, type NavItem } from "./nav-items";
+import { type NavGroup, type NavItem } from "./nav-items";
 
 type SidebarNavProps = {
   activeLabel?: string;
@@ -11,6 +12,8 @@ type SidebarNavProps = {
 const GROUP_LABELS: Partial<Record<NavGroup, string>> = {
   work: "Trabajo",
   admin: "Administración",
+  platform: "Plataforma",
+  business: "Negocio",
 };
 
 function groupIntoSections(items: readonly NavItem[]) {
@@ -28,8 +31,10 @@ function groupIntoSections(items: readonly NavItem[]) {
 
 export function SidebarNav({ activeLabel }: SidebarNavProps) {
   const { role } = useRole();
-  // DEV TOOL — revert to plain `NAV_ITEMS` when removing src/dev/.
-  const items = process.env.NODE_ENV === "development" ? ROLE_NAV_ITEMS[role] : NAV_ITEMS;
+  // DEV TOOL — see src/dev/role.ts. `role` is the mock session set at
+  // /login (production-safe) or, in development only, the RoleSwitcher —
+  // either way this always reflects who's actually "logged in" right now.
+  const items = ROLE_NAV_ITEMS[role];
   const sections = groupIntoSections(items);
 
   return (
@@ -45,41 +50,53 @@ export function SidebarNav({ activeLabel }: SidebarNavProps) {
             </p>
           )}
           <div className="flex flex-col gap-1">
-            {section.items.map(({ label, icon: Icon, group }) => {
+            {section.items.map(({ label, icon: Icon, group, href }) => {
               const active = label === activeLabel;
 
               if (group === "marketplace") {
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
-                      active
-                        ? "border-primary bg-primary/15 text-primary"
-                        : "border-primary/25 bg-primary/5 text-foreground/90 hover:border-primary/40 hover:bg-primary/10"
-                    }`}
-                  >
+                const className = `flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                  active
+                    ? "border-primary bg-primary/15 text-primary"
+                    : "border-primary/25 bg-primary/5 text-foreground/90 hover:border-primary/40 hover:bg-primary/10"
+                }`;
+                const children = (
+                  <>
                     <Icon className="size-5 shrink-0 text-primary" />
                     <span className="flex-1 text-left">{label}</span>
                     <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
                       Promo
                     </span>
+                  </>
+                );
+                // Falls back to an inert button for every nav item with no
+                // real page behind it yet — see the href comment on NavItem.
+                return href ? (
+                  <Link key={label} href={href} className={className}>
+                    {children}
+                  </Link>
+                ) : (
+                  <button key={label} type="button" className={className}>
+                    {children}
                   </button>
                 );
               }
 
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
-                    active
-                      ? "bg-primary/10 font-medium text-primary"
-                      : "text-foreground/80 hover:bg-foreground/5"
-                  }`}
-                >
+              const className = `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                active ? "bg-primary/10 font-medium text-primary" : "text-foreground/80 hover:bg-foreground/5"
+              }`;
+              const children = (
+                <>
                   <Icon className="size-5 shrink-0" />
                   <span>{label}</span>
+                </>
+              );
+              return href ? (
+                <Link key={label} href={href} className={className}>
+                  {children}
+                </Link>
+              ) : (
+                <button key={label} type="button" className={className}>
+                  {children}
                 </button>
               );
             })}

@@ -99,8 +99,10 @@ function buildMonthGrid(viewMonth: Date): Date[] {
 
 // Orders appointments across the week (day index, then time-of-day) so
 // "history" can mean "everything before this appointment," regardless of
-// which day is currently selected in the board.
-function chronologicalKey(item: Appointment, weekDays: WeekDay[]): number {
+// which day is currently selected in the board. Exported for the Patients
+// module (see src/features/patients/mock-data.ts), which needs the same
+// ordering to find each patient's most recent/next appointment.
+export function chronologicalKey(item: Appointment, weekDays: WeekDay[]): number {
   const dayIndex = weekDays.findIndex((d) => d.key === item.day);
   const timeIndex = TIME_SLOTS.indexOf(item.time);
   return dayIndex * 1000 + timeIndex;
@@ -1327,7 +1329,10 @@ function PatientHistoryPanel({
   );
 }
 
-function HistoryEntry({
+// Exported so the Patients module's own history timeline (see
+// patient-detail-modal.tsx) reuses this exact row instead of a second
+// implementation of the same "Historial de citas" pattern.
+export function HistoryEntry({
   item,
   dentistName,
   dayLabel,

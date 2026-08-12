@@ -41,15 +41,16 @@ export type AssistantUser = {
   avatar_url?: string;
 };
 
-// No avatar_url on purpose — UserAvatar already falls back to initials
-// ("LT") when it's absent, matching "usa iniciales por ahora" without
-// generating a placeholder image.
 export const CURRENT_ASSISTANT: AssistantUser = {
   name: "Laura Torres",
   initials: "LT",
   clinicName: "Clínica Sonrisa Perfecta",
   email: "laura.torres@odentia.com",
   phone: "+57 300 456 7890",
+  // Temporary placeholder headshot for development only — same mock photo
+  // source as CURRENT_USER/DENTISTS above. UserAvatar still falls back to
+  // initials ("LT") if this ever fails to load.
+  avatar_url: "https://randomuser.me/api/portraits/women/50.jpg",
 };
 
 // Superadmin represents the Odentia team, not a single clinic (see CLAUDE.md
@@ -69,4 +70,8 @@ export const CURRENT_SUPERADMIN: SuperadminUser = {
   contextLabel: "Plataforma Odentia",
   email: "mateo.pena@odentia.com",
   phone: "+57 300 789 1234",
+  // Temporary placeholder headshot for development only — same mock photo
+  // source as CURRENT_USER/DENTISTS above. UserAvatar still falls back to
+  // initials ("MP") if this ever fails to load.
+  avatar_url: "https://randomuser.me/api/portraits/men/45.jpg",
 };
