@@ -42,14 +42,13 @@ export const metadata: Metadata = {
     siteName: "Odentia",
     locale: "es_CO",
     type: "website",
-    // Reuses the existing wordmark — no dedicated OG image asset exists yet.
-    images: [{ url: "/branding/odentia.png", width: 1460, height: 434, alt: "Odentia" }],
+    images: [{ url: "/branding/odentia-og-image.png", width: 1815, height: 844, alt: "Odentia" }],
   },
   twitter: {
     card: "summary_large_image",
     title,
     description,
-    images: ["/branding/odentia.png"],
+    images: ["/branding/odentia-og-image.png"],
   },
 };
 
