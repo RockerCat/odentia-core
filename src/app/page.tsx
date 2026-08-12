@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Fragment } from "react";
 import { Logo } from "@/components/shell/logo";
@@ -36,7 +37,7 @@ const CLINIC_FEATURES = [
 const MARKETPLACE_FEATURES = [
   { icon: StoreIcon, title: "Marketplace", description: "Compra insumos desde Odentia." },
   { icon: ClipboardIcon, title: "Insumos odontológicos", description: "Catálogo especializado." },
-  { icon: BuildingIcon, title: "Proveedores", description: "Aliados verificados para tu operación." },
+  { icon: BuildingIcon, title: "LopaDent", description: "Nuestro aliado especializado en productos odontológicos." },
   { icon: CreditCardIcon, title: "Beneficios", description: "Ahorros y patrocinios de suscripción." },
 ];
 
@@ -97,24 +98,34 @@ export default function LandingPage() {
                 Plataforma para clínicas dentales
               </span>
 
-              <h1 className="mt-5 text-3xl font-semibold tracking-tight text-balance sm:text-5xl">
-                Gestiona tu clínica. Conecta todo lo demás.
+              <h1 className="mt-5 max-w-xl text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+                Gestiona tu clínica odontológica y poténciala con un marketplace especializado.
               </h1>
               <p className="mt-5 max-w-xl text-base text-muted-foreground sm:text-lg">
-                Odentia va más allá de gestionar tu agenda: conecta la operación de tu clínica con
-                un marketplace especializado para odontología. Organiza tus pacientes y la
-                atención clínica del día a día, todo desde un solo lugar.
+                Odentia reúne la gestión diaria de tu clínica e integra un marketplace pensado
+                para odontología. Organiza tu agenda, pacientes y atención clínica, mientras
+                compras los insumos que necesitas y obtienes beneficios para tu suscripción.
               </p>
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <div className="mt-6 flex flex-col items-start gap-1.5">
+                <span className="text-xs text-muted-foreground">En alianza con</span>
+                <Image
+                  src="/branding/lopadent.png"
+                  alt="LopaDent"
+                  width={90}
+                  height={22}
+                  className="h-auto w-[90px]"
+                />
+              </div>
+              <div className="mt-8 flex items-center gap-2 sm:gap-3">
                 <button
                   type="button"
-                  className="w-full rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90 sm:w-auto"
+                  className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium whitespace-nowrap text-primary-foreground hover:opacity-90 sm:px-6 sm:py-3"
                 >
                   Registra tu clínica
                 </button>
                 <Link
                   href="/login"
-                  className="w-full rounded-lg border border-border bg-background px-6 py-3 text-center text-sm font-medium text-foreground hover:bg-foreground/5 sm:w-auto"
+                  className="rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-medium whitespace-nowrap text-foreground hover:bg-foreground/5 sm:px-6 sm:py-3"
                 >
                   Iniciar sesión
                 </Link>
@@ -198,7 +209,7 @@ export default function LandingPage() {
           <div className="mx-auto max-w-5xl">
             <div className="mx-auto max-w-2xl text-center">
               <h2 className="text-2xl font-semibold sm:text-3xl">
-                Mucho más que un software de citas
+                Mucho más que un software de citas odontológicas
               </h2>
               <p className="mt-3 text-sm text-muted-foreground sm:text-base">
                 Dos frentes, una sola plataforma: la operación clínica del día a día y el acceso a
@@ -249,7 +260,19 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                <div className="mt-6 grid grid-cols-2 gap-3">
+                <div className="mt-5 flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+                    <BuildingIcon className="size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">Marketplace en alianza con LopaDent</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      Especialistas en productos e insumos odontológicos.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 gap-3">
                   {MARKETPLACE_FEATURES.map(({ icon: Icon, title, description }) => (
                     <div
                       key={title}
@@ -283,9 +306,9 @@ export default function LandingPage() {
                 Tus compras también pueden pagar Odentia.
               </h2>
               <p className="mt-4 max-w-lg text-sm text-muted-foreground sm:text-base">
-                El Marketplace conecta la operación de tu clínica con proveedores e insumos
-                odontológicos. Tus compras elegibles en LopaDent pueden patrocinar la suscripción
-                de tu clínica.
+                El Marketplace conecta la operación de tu clínica con LopaDent y sus insumos
+                odontológicos. Tus compras elegibles pueden patrocinar la suscripción de tu
+                clínica.
               </p>
             </div>
 
