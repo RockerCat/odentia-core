@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Logo } from "@/components/shell/logo";
 import { UserAvatar } from "@/components/user-avatar";
+import { homeRouteForRole } from "@/dev/role"; // DEV TOOL — see src/dev/role.ts
 import { DEMO_USERS, type DemoUser } from "@/features/auth/demo-users";
 import { writeSession } from "@/features/auth/session";
 
@@ -33,9 +34,7 @@ export default function LoginPage() {
       return;
     }
     writeSession({ role: match.role });
-    // Superadmin operates the platform, not a clinic (see CLAUDE.md Domain
-    // Model) — its own home is /admin, not the Clinic Agenda.
-    router.push(match.role === "superadmin" ? "/admin" : "/agenda");
+    router.push(homeRouteForRole(match.role));
   };
 
   return (

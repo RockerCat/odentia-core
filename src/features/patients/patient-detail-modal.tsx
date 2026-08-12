@@ -3,12 +3,8 @@
 import { useRef, useState } from "react";
 import { CloseIcon, PhoneIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
-import {
-  chronologicalKey,
-  FIELD_CLASS,
-  HistoryEntry,
-} from "@/features/dashboard/appointment-detail-modal";
-import type { Appointment, Dentist, WeekDay } from "@/features/dashboard/mock-data";
+import { FIELD_CLASS, HistoryEntry } from "@/features/dashboard/appointment-detail-modal";
+import { chronologicalKey, type Appointment, type Dentist, type WeekDay } from "@/features/dashboard/mock-data";
 import { getPatientVisitSummary, PATIENT_STATUS_LABELS, type Patient } from "./mock-data";
 
 const RECENT_HISTORY_LIMIT = 5;

@@ -20,6 +20,7 @@ import {
 import { formatClockLabel, formatElapsed } from "@/lib/format";
 import type { Appointment, AppointmentStatus, Dentist, WeekDay } from "./mock-data";
 import {
+  chronologicalKey,
   DURATION_OPTIONS,
   HISTORY_STATUS_BADGE_CLASS,
   MOCK_PATIENT_HISTORY,
@@ -97,16 +98,6 @@ function buildMonthGrid(viewMonth: Date): Date[] {
   );
 }
 
-// Orders appointments across the week (day index, then time-of-day) so
-// "history" can mean "everything before this appointment," regardless of
-// which day is currently selected in the board. Exported for the Patients
-// module (see src/features/patients/mock-data.ts), which needs the same
-// ordering to find each patient's most recent/next appointment.
-export function chronologicalKey(item: Appointment, weekDays: WeekDay[]): number {
-  const dayIndex = weekDays.findIndex((d) => d.key === item.day);
-  const timeIndex = TIME_SLOTS.indexOf(item.time);
-  return dayIndex * 1000 + timeIndex;
-}
 
 // Same patient, strictly earlier than the appointment being viewed, most
 // recent first. Matched by patientName since this prototype has no

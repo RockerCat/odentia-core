@@ -7,7 +7,11 @@ import { PatientsScreen } from "@/features/patients/patients-screen";
 // to a single dentist).
 export default function PatientsPage() {
   return (
-    <AppShell activeNavLabel="Pacientes" heading={<PatientsGreeting />}>
+    <AppShell
+      activeNavLabel="Pacientes"
+      heading={<PatientsGreeting />}
+      allowedRoles={["clinic-admin", "dentist", "assistant", "superadmin"]}
+    >
       <PatientsScreen />
     </AppShell>
   );

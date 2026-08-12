@@ -1,5 +1,4 @@
-import { chronologicalKey } from "@/features/dashboard/appointment-detail-modal";
-import type { Appointment, AppointmentStatus, WeekDay } from "@/features/dashboard/mock-data";
+import { chronologicalKey, type Appointment, type AppointmentStatus, type WeekDay } from "@/features/dashboard/mock-data";
 
 // Patients aren't a first-class entity in the Agenda's own mocks (see
 // appointment-detail-modal.tsx's getPatientHistory comment) — this module
@@ -23,6 +22,7 @@ export type Patient = {
   usualDentistId: string;
   allergies?: string;
   status: PatientStatus;
+  avatar_url?: string;
   // Only set for patients with no appointment in the current mock week —
   // gives "Sin atención +6 meses" real mock coverage without inventing
   // stale entries in WEEK_APPOINTMENTS. Ignored whenever a real matching
@@ -183,6 +183,9 @@ export const PATIENTS: Patient[] = [
     isNewThisMonth: false,
     usualDentistId: "d1",
     status: "active",
+    // Also the demo Patient-role identity (see CURRENT_PATIENT in
+    // src/lib/current-user.ts) — same photo for consistency.
+    avatar_url: "https://randomuser.me/api/portraits/women/72.jpg",
   },
   {
     id: "p12",

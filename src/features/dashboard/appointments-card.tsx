@@ -62,8 +62,10 @@ function isSameCalendarDay(a: Date, b: Date): boolean {
 // This prototype's mock data only models the one real week above —
 // browsing to any other week still navigates for real (real dates, real
 // header range), it just correctly shows no appointments rather than
-// fabricating data that was never modeled.
-function buildWeekDaysForOffset(offset: number, baseWeekDays: WeekDay[]): WeekDay[] {
+// fabricating data that was never modeled. Exported so the Patient
+// portal's "Reprogramar" week nav (see my-appointments-screen.tsx) reuses
+// the exact same date math instead of a second implementation.
+export function buildWeekDaysForOffset(offset: number, baseWeekDays: WeekDay[]): WeekDay[] {
   if (offset === 0) return baseWeekDays;
   const today = addDays(REFERENCE_MONDAY, 2); // Wednesday of the reference week
   const monday = addDays(REFERENCE_MONDAY, offset * 7);
@@ -80,7 +82,7 @@ function buildWeekDaysForOffset(offset: number, baseWeekDays: WeekDay[]): WeekDa
   });
 }
 
-function buildWeekLabelForOffset(offset: number, baseWeekLabel: string): string {
+export function buildWeekLabelForOffset(offset: number, baseWeekLabel: string): string {
   if (offset === 0) return baseWeekLabel;
   const monday = addDays(REFERENCE_MONDAY, offset * 7);
   const sunday = addDays(monday, 6);
@@ -827,7 +829,10 @@ type DentistProfileMock = {
 // Placeholder profile details for the modal below, while it connects to
 // real dentist records (see PROJECT_STATUS.md's mock-data-only phase) —
 // keyed by id, with a generic fallback for any dentist not listed here.
-const DENTIST_PROFILE_MOCK: Record<string, DentistProfileMock> = {
+// Exported so the Patient portal's own "Próxima cita" professional card
+// (see src/features/portal/) can show the same registrationNumber/phone
+// instead of inventing a second, driftable set of values.
+export const DENTIST_PROFILE_MOCK: Record<string, DentistProfileMock> = {
   d1: {
     registrationNumber: "T.P. 45231",
     phone: "+57 300 123 4567",

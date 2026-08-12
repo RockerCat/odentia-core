@@ -1,6 +1,6 @@
 import { ROLE_LABELS, type Role } from "@/dev/role";
 import { DENTISTS } from "@/features/dashboard/mock-data";
-import { CURRENT_ASSISTANT, CURRENT_SUPERADMIN, CURRENT_USER } from "@/lib/current-user";
+import { CURRENT_ASSISTANT, CURRENT_PATIENT, CURRENT_SUPERADMIN, CURRENT_USER } from "@/lib/current-user";
 
 export type DemoUser = {
   role: Role;
@@ -59,5 +59,15 @@ export const DEMO_USERS: DemoUser[] = [
     roleLabel: ROLE_LABELS.superadmin,
     contextLabel: CURRENT_SUPERADMIN.contextLabel,
     avatar_url: CURRENT_SUPERADMIN.avatar_url,
+  },
+  {
+    role: "patient",
+    email: "paciente.demo@odentia.com",
+    password: "demo1234",
+    name: CURRENT_PATIENT.name,
+    initials: CURRENT_PATIENT.initials,
+    roleLabel: ROLE_LABELS.patient,
+    contextLabel: CURRENT_PATIENT.clinicName,
+    avatar_url: CURRENT_PATIENT.avatar_url,
   },
 ];

@@ -14,7 +14,11 @@ import { Greeting } from "@/components/greeting";
 
 export default function AgendaPage() {
   return (
-    <AppShell activeNavLabel="Agenda" heading={<Greeting />}>
+    <AppShell
+      activeNavLabel="Agenda"
+      heading={<Greeting />}
+      allowedRoles={["clinic-admin", "dentist", "assistant", "superadmin"]}
+    >
       <div className="grid grid-cols-1 gap-7 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <AppointmentsCard

@@ -11,7 +11,7 @@ import { StatGrid } from "@/features/admin/stat-grid";
 // profile, or directly once a session exists.
 export default function AdminPage() {
   return (
-    <AppShell activeNavLabel="Inicio" heading={<AdminGreeting />} requiredRole="superadmin">
+    <AppShell activeNavLabel="Inicio" heading={<AdminGreeting />} allowedRoles={["superadmin"]}>
       <div className="flex flex-col gap-6">
         <StatGrid stats={PLATFORM_KPIS} />
 

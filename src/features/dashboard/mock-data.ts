@@ -1,4 +1,5 @@
 import { BellIcon, CalendarIcon, CheckCircleIcon, ClockIcon } from "@/components/shell/icons";
+import { TIME_SLOTS } from "./schedule-config";
 
 export type Dentist = {
   id: string;
@@ -164,7 +165,29 @@ export type Appointment = {
   // arrived never changes their clinical status, and finishing/cancelling
   // an appointment doesn't clear this either — see appointment-detail-modal.tsx.
   waitingRoom?: boolean;
+  // Set when `status` is cancelled via the Patient portal's cancel flow
+  // (see my-appointments-screen.tsx) — never edited elsewhere.
+  cancellationReason?: string;
+  // Set via the Patient portal's "Reprogramar" flow (see
+  // my-appointments-screen.tsx) when a reschedule is requested — the
+  // appointment itself (day/time/dentistId/status) is deliberately left
+  // untouched until the clinic approves the change (not built yet); this
+  // only records the proposed new slot/professional so the UI can show
+  // "solicitud pendiente" and block a second request for the same
+  // appointment. dentistId is always recorded, even when unchanged, so the
+  // pending banner can always name the requested professional.
+  pendingReschedule?: { day: string; time: string; dentistId: string };
 };
+
+// Orders appointments across the week (day index, then time-of-day) — a
+// plain, hook-free helper (unlike most of this feature) so it can be
+// imported from Server Components too (see src/features/portal/), not just
+// appointment-detail-modal.tsx's own client-only history logic.
+export function chronologicalKey(item: Appointment, weekDays: WeekDay[]): number {
+  const dayIndex = weekDays.findIndex((d) => d.key === item.day);
+  const timeIndex = TIME_SLOTS.indexOf(item.time);
+  return dayIndex * 1000 + timeIndex;
+}
 
 // TEMPORARY — stands in for a patient's real appointment history so the
 // timeline's design/UX can be validated before that data exists (see

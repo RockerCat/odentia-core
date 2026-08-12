@@ -2,7 +2,7 @@
 
 import { ROLE_LABELS } from "@/dev/role"; // DEV TOOL — see src/dev/role.ts
 import { useRole } from "@/dev/role-context";
-import { CURRENT_ASSISTANT, CURRENT_SUPERADMIN, CURRENT_USER } from "@/lib/current-user";
+import { CURRENT_ASSISTANT, CURRENT_PATIENT, CURRENT_SUPERADMIN, CURRENT_USER } from "@/lib/current-user";
 import { ADMIN_DENTIST_ID, DENTISTS, type Dentist } from "./mock-data";
 
 export type AuthenticatedIdentity = {
@@ -38,6 +38,7 @@ export function useAuthenticatedIdentity(): AuthenticatedIdentity {
   const isClinicAdmin = role === "clinic-admin";
   const isAssistant = role === "assistant";
   const isSuperadmin = role === "superadmin";
+  const isPatient = role === "patient";
 
   const baseDentist = DENTISTS.find((d) => d.id === dentistId) ?? null;
   const authenticatedDentist = isDentist && baseDentist ? { ...baseDentist, ...selfDentistOverride } : null;
@@ -72,6 +73,17 @@ export function useAuthenticatedIdentity(): AuthenticatedIdentity {
       secondaryLabel: `${ROLE_LABELS.superadmin} · ${CURRENT_SUPERADMIN.contextLabel}`,
       // Superadmin operates the platform, never a single clinic's own
       // professional record (see CLAUDE.md Domain Model).
+      professionalRecord: null,
+    };
+  }
+
+  if (isPatient) {
+    return {
+      name: CURRENT_PATIENT.name,
+      initials: CURRENT_PATIENT.initials,
+      avatar_url: CURRENT_PATIENT.avatar_url,
+      secondaryLabel: `${ROLE_LABELS.patient} · ${CURRENT_PATIENT.clinicName}`,
+      // A Patient has no clinical professional record of their own.
       professionalRecord: null,
     };
   }

@@ -13,9 +13,9 @@ import {
   UsersIcon,
 } from "@/components/shell/icons";
 
-export type Role = "superadmin" | "clinic-admin" | "dentist" | "assistant";
+export type Role = "superadmin" | "clinic-admin" | "dentist" | "assistant" | "patient";
 
-export const ROLES: Role[] = ["superadmin", "clinic-admin", "dentist", "assistant"];
+export const ROLES: Role[] = ["superadmin", "clinic-admin", "dentist", "assistant", "patient"];
 
 export const DEFAULT_ROLE: Role = "clinic-admin";
 
@@ -30,7 +30,23 @@ export const ROLE_LABELS: Record<Role, string> = {
   "clinic-admin": "Administrador de Clínica",
   dentist: "Odontólogo",
   assistant: "Asistente",
+  patient: "Paciente",
 };
+
+// Where a redirect should land whoever's actually logged in — used both by
+// /login after picking a demo profile and by the route guard (see
+// src/components/shell/use-route-guard.ts) when a role tries a page it
+// isn't allowed on.
+export function homeRouteForRole(role: Role): string {
+  switch (role) {
+    case "superadmin":
+      return "/admin";
+    case "patient":
+      return "/portal/citas";
+    default:
+      return "/agenda";
+  }
+}
 
 // Clinic Admin has no separate "Inicio" — Agenda is the entry point, so
 // NAV_ITEMS itself no longer has an Inicio entry. Dentist/Assistant still
@@ -72,4 +88,9 @@ export const ROLE_NAV_ITEMS: Record<Role, readonly NavItem[]> = {
     { label: "Marketplace", icon: StoreIcon, group: "business" },
     { label: "Configuración", icon: SlidersIcon, group: "admin" },
   ],
+  // A Patient's own portal (src/app/portal/) never uses the clinic shell
+  // (Sidebar/SidebarNav/BottomTabBar — see AppShell) — it has its own
+  // simple nav (see portal-shell.tsx) instead. Empty here only to satisfy
+  // Record<Role, ...>; never actually rendered.
+  patient: [],
 };
