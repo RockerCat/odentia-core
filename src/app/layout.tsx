@@ -12,9 +12,45 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Resolves to the real production domain automatically once deployed on
+// Vercel (VERCEL_PROJECT_PRODUCTION_URL is the stable, custom-domain-aware
+// one; VERCEL_URL is per-deployment as a fallback), or localhost in dev.
+// Set NEXT_PUBLIC_SITE_URL in the Vercel project settings to pin this to a
+// custom domain explicitly once one exists.
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:3000");
+
+const title = "Odentia";
+const description = "Gestiona tu clínica y poténciala con un marketplace odontológico.";
+
 export const metadata: Metadata = {
-  title: "Odentia",
-  description: "Odentia — gestión de consultorios dentales, simplificada.",
+  metadataBase: new URL(siteUrl),
+  title,
+  description,
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    title,
+    description,
+    url: "/",
+    siteName: "Odentia",
+    locale: "es_CO",
+    type: "website",
+    // Reuses the existing wordmark — no dedicated OG image asset exists yet.
+    images: [{ url: "/branding/odentia.png", width: 1460, height: 434, alt: "Odentia" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+    images: ["/branding/odentia.png"],
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
