@@ -26,7 +26,7 @@ const siteUrl =
       : "http://localhost:3000");
 
 const title = "Odentia";
-const description = "Gestiona tu clínica y poténciala con un marketplace odontológico.";
+const description = "Gestiona tu clínica odontológica y poténciala con un marketplace especializado.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
