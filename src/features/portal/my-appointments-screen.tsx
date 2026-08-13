@@ -187,8 +187,13 @@ export function MyAppointmentsScreen() {
     <div className="flex flex-col gap-6">
       {/* Próxima cita — the screen's centerpiece, not a thin info strip:
           Profesional (same visual language as "Perfil del profesional"),
-          Datos de la cita, and Historial side by side on wide screens. */}
-      <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
+          Datos de la cita, and Historial side by side on wide screens.
+          Mobile keeps its already-approved full width; desktop caps and
+          centers the card itself (not just its inner content) so it stops
+          stretching across the whole page — same treatment for both the
+          populated and empty-state (scheduling) content, since it's the
+          same card either way. */}
+      <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6 md:mx-auto md:max-w-4xl">
         <h2 className="text-base font-semibold">
           {nextAppointment ? "Próxima cita" : "Agenda tu próxima cita con nosotros"}
         </h2>
@@ -1131,7 +1136,12 @@ function NewAppointmentScheduler({ onCreate }: { onCreate: (day: string, time: s
   };
 
   return (
-    <div>
+    // Mobile keeps its already-approved full-width layout; desktop caps the
+    // whole picker (odontólogo, semana, días, horarios, CTA) to one shared,
+    // centered width instead of stretching the 3-column slot grid across
+    // the entire card — same density as the Reprogramar modal's own
+    // max-w-md, just inline instead of in a dialog.
+    <div className="md:mx-auto md:max-w-md">
       <AppointmentSlotFields excludeAppointmentId="" picker={picker} showSelectionSummary={false} />
 
       <button

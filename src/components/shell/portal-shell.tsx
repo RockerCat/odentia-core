@@ -9,7 +9,6 @@ import { RoleSwitcher } from "@/dev/role-switcher"; // DEV TOOL — see src/dev/
 import { useAuthenticatedIdentity } from "@/features/dashboard/use-authenticated-identity";
 import { CURRENT_PATIENT } from "@/lib/current-user";
 import { BuildingIcon, CalendarIcon, ChevronDownIcon, LogOutIcon, NoteIcon, ToothIcon, UserIcon } from "./icons";
-import { Logo } from "./logo";
 import { PageContainer } from "./page-container";
 import { useRouteGuard } from "./use-route-guard";
 
@@ -28,13 +27,12 @@ import { useRouteGuard } from "./use-route-guard";
 // mock Patient belongs to exactly one clinic. If/when a Patient can belong
 // to several, this becomes "Mi clínica" with a picker instead — not built
 // yet, see my-clinic-screen.tsx.
-// Mobile-only header branding: for the Patient, Odentia is the platform
-// behind the scenes, not the brand they're interacting with — that's their
-// clinic (see task scope: this replaces Odentia's own logo in the Patient's
-// mobile header only, never the desktop sidebar, and never for any other
-// role). Same mock asset as the Clinic Admin's own Clínica page/Agenda
-// identity card; hardcoded per this iteration's scope — no dynamic
-// per-clinic branding/slug resolution yet.
+// Odentia's own logo never appears anywhere in the Patient portal (mobile
+// header or desktop sidebar) — the Patient is interacting with their
+// clinic, not the Odentia platform itself; Odentia stays the backoffice
+// behind the scenes (see CLAUDE.md). Same mock asset as the Clinic Admin's
+// own Clínica page/Agenda identity card; hardcoded per this iteration's
+// scope — no dynamic per-clinic branding/slug resolution yet.
 const CLINIC_LOGO_URL = "/branding/sonrisa_perfecta.png";
 
 const PORTAL_NAV_ITEMS = [
@@ -122,7 +120,12 @@ function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
     <div className="flex h-dvh overflow-hidden bg-surface text-foreground">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-background md:flex">
         <div className="flex items-center justify-center border-b border-border px-4 py-8">
-          <Logo />
+          {/* eslint-disable-next-line @next/next/no-img-element -- local mock asset, not worth Next/Image's optimization pipeline */}
+          <img
+            src={CLINIC_LOGO_URL}
+            alt={`Logo de ${CURRENT_PATIENT.clinicName}`}
+            className="h-14 w-auto max-w-[180px] object-contain"
+          />
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 px-3 py-6">
