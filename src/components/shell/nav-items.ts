@@ -33,7 +33,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Pacientes", icon: UserIcon, group: "work", href: "/pacientes" },
   { label: "Reportes", icon: BarChartIcon, group: "work" },
   { label: "Marketplace", icon: StoreIcon, group: "marketplace" },
-  { label: "Clínica", icon: BuildingIcon, group: "admin" },
+  { label: "Clínica", icon: BuildingIcon, group: "admin", href: "/clinica" },
   { label: "Mi Suscripción", icon: CreditCardIcon, group: "admin" },
   { label: "Configuración", icon: SlidersIcon, group: "admin" },
 ];

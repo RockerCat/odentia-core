@@ -2,7 +2,7 @@
 
 # Odentia Core
 
-**Last Updated:** 2026-08-11
+**Last Updated:** 2026-08-12
 
 ---
 
@@ -42,10 +42,13 @@ What exists today in the clickable prototype (mock data only, no backend):
 
 ## Shell & Access
 
-- Responsive app shell: desktop sidebar + header, mobile bottom tab bar + mobile header.
-- Mock demo login at `/login` — no real backend. Lets a tester pick one of four demo
-  profiles (Clinic Admin, Dentist, Assistant, Superadmin), each with its own mock
-  identity, and enter the app as that role.
+- Two shells: `AppShell` for clinic roles (desktop sidebar + header, mobile bottom
+  tab bar + mobile header) and `PortalShell` for the Patient role — its own simpler
+  nav, no clinic-dashboard chrome (see Patient Portal below). Both share one
+  role-gating hook (`useRouteGuard`).
+- Mock demo login at `/login` — no real backend. Lets a tester pick one of five demo
+  profiles (Clinic Admin, Dentist, Assistant, Superadmin, Patient), each with its own
+  mock identity, and enter the app as that role.
 - The selected role is saved to `localStorage` so it survives a refresh, and drives
   header, greeting, avatar, "Mi perfil", permissions, and nav everywhere. "Salir"
   clears it and returns to `/login`.
@@ -65,21 +68,60 @@ What exists today in the clickable prototype (mock data only, no backend):
 - Clinical encounter screen (attending a patient) with an interactive odontogram.
 - Marketplace card — placeholder only, no real integration (see Marketplace Status).
 
+## Admin (the Superadmin's platform-wide home)
+
+- `/admin` — platform KPIs, monthly activity, a Marketplace overview, a recent-clinics
+  list, and an attention list. Gated to the Superadmin role.
+
+## Pacientes (the Clinic Admin's patient directory)
+
+- `/pacientes` — search/filters over the clinic's patients, a compact list, and a
+  detail modal with an editable patient card plus the same appointment-history
+  timeline component Agenda uses. New-patient and new-appointment-from-patient flows.
+
+## Patient Portal
+
+- `/portal/*` — the Patient's own experience, fully separate from the clinic
+  dashboard. Nav: Mis citas, Mi salud dental, Mi Historia Clínica, and the clinic's
+  own name (a read-only info screen); "Mi perfil" lives in the avatar menu instead.
+- **Mis citas** (`/portal/citas`, the Patient's entry point) — a featured "Próxima
+  cita" card (assigned professional, appointment data, a compact appointment-history
+  timeline) plus:
+  - **Reprogramar**: a mock request flow, not an immediate edit. Week navigation +
+    horizontal day selector + availability-aware slot grid (mirrors Agenda's own
+    week-nav pattern), with an odontólogo dropdown to request a different
+    professional (always includes the current one, shows avatar/specialty/next
+    availability per option, re-searches availability on change). Submitting never
+    changes the real appointment — it records a pending request and shows a
+    confirmation message; the original appointment stays valid until the clinic
+    would approve it (approval itself isn't built — no backend yet). A second
+    request can't be started while one is pending.
+  - **Cancelar cita**: a confirmation modal requiring a motivo before cancelling.
+  - Confirmar asistencia for a pending appointment.
+- **Mi salud dental**, **Mi Historia Clínica**, clinic info screen, and "Mi perfil" —
+  read-only mock views scoped to the logged-in patient only.
+- Not built: the Patient starting a brand-new booking from scratch ("Agendar nueva
+  cita" is a placeholder button with no flow behind it yet), and any clinic-side
+  approval UI for a pending reschedule request.
+
 ## Identity & Profile
 
-- Each role (Clinic Admin, Dentist, Assistant, Superadmin) has its own distinct mock
-  identity — never a shared/default one.
-- "Mi perfil" modals per role: Dentist/Clinic-Admin-as-professional share one modal,
-  Assistant and Clinic Admin (pure administrator) each have their own simpler one.
+- Each role (Clinic Admin, Dentist, Assistant, Superadmin, Patient) has its own
+  distinct mock identity — never a shared/default one.
+- "Mi perfil" modals/screens per role: Dentist/Clinic-Admin-as-professional share one
+  modal, Assistant and Clinic Admin (pure administrator) each have their own simpler
+  one, and the Patient has its own read-only profile screen in the portal.
 - A Clinic Admin can optionally configure a "Perfil profesional" to also appear as a
   practicing professional, without a second role.
 
 ## Not built yet
 
 Register, Forgot Password, Onboarding (Create Practice / Configure Schedule / Invite
-Assistant), a dedicated Patients list/detail screen, Medical Records screens, Reports,
-Team, Subscription, Settings, and the Patient Portal are all still just nav-item
-placeholders or entirely absent — see MVP Scope below for what's still pending.
+Assistant), dedicated clinic-side Medical Records screens, Reports, Team,
+Subscription, and Settings are all still just nav-item placeholders or entirely
+absent — see MVP Scope below for what's still pending. Within what's already built,
+the Patient booking a new appointment and the clinic approving a pending reschedule
+request are the two known gaps (see Patient Portal above).
 
 ---
 
@@ -132,24 +174,28 @@ The first prototype should include:
 
 ## Core
 
-- Dashboard
-- Schedule
-- Calendar
-- Patients
-- Patient Details
-- Medical Records
-- Reports
-- Team
-- Subscription
-- Settings
+- Dashboard — done (Agenda for clinic roles, `/admin` for Superadmin).
+- Schedule — appointment board/creation/detail/encounter done; standalone Calendar
+  view pending.
+- Calendar — pending.
+- Patients — done (`/pacientes`: search/filters, list, detail modal).
+- Patient Details — done (part of the `/pacientes` detail modal).
+- Medical Records — pending (dedicated clinic-side screens; the clinical encounter +
+  odontogram exist, and the Patient's own read-only Historia Clínica exists in the
+  portal, but there's no clinic-side record management screen yet).
+- Reports — pending.
+- Team — pending.
+- Subscription — pending.
+- Settings — pending.
 
 ---
 
 ## Patient Portal
 
-- Book Appointment
-- View Appointments
-- Appointment Confirmation
+- Book Appointment — pending ("Agendar nueva cita" is a placeholder button only).
+- View Appointments — done (`/portal/citas`, "Mis citas").
+- Appointment Confirmation — done (Confirmar asistencia, plus mock
+  reschedule-request and cancel-with-motivo flows — see Progress So Far).
 
 ---
 
@@ -178,15 +224,20 @@ Future integration will happen through APIs.
 Priority order:
 
 1. Design System — done.
-2. Authentication Screens — mock login done; Register/Forgot Password pending.
+2. Authentication Screens — mock login done (now 5 role profiles, incl. Patient);
+   Register/Forgot Password pending.
 3. Onboarding — pending.
-4. Dashboard — done (Agenda serves as the Clinic Admin's home).
+4. Dashboard — done (Agenda for clinic roles, `/admin` for Superadmin).
 5. Schedule — appointment board/creation/detail/encounter done; standalone Calendar view pending.
-6. Patients — pending (only exists inline as history within the appointment detail modal).
-7. Medical Records — pending (clinical encounter + odontogram exist; no dedicated record screens).
-8. Reports — pending.
-9. Settings — pending.
-10. Marketplace Entry Point — placeholder card exists; no real navigation yet.
+6. Patients — done (`/pacientes`: search/filters, list, detail modal).
+7. Patient Portal — done for viewing/requesting changes to appointments and
+   read-only health/record/clinic info (`/portal/*`); booking a new appointment and
+   the clinic's approval side of a pending reschedule are still pending.
+8. Medical Records — pending (clinical encounter + odontogram, and the Patient's own
+   read-only Historia Clínica, exist; no clinic-side record management screen).
+9. Reports — pending.
+10. Team / Subscription / Settings — pending.
+11. Marketplace Entry Point — placeholder card exists; no real navigation yet.
 
 ---
 

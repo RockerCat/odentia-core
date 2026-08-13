@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/shell/app-shell";
 import { AppointmentsCard } from "@/features/dashboard/appointments-card";
+import { ClinicIdentityCard } from "@/features/dashboard/clinic-identity-card";
 import { MarketplaceCard } from "@/features/dashboard/marketplace-card";
 import {
   CURRENT_WEEK_LABEL,
@@ -30,6 +31,7 @@ export default function AgendaPage() {
         </div>
 
         <div className="flex flex-col gap-7">
+          <ClinicIdentityCard />
           <SummaryCards
             // SummaryCards is a Client Component (needs state for the KPI
             // detail modal); a Server Component can only hand it already-

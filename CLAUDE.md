@@ -110,6 +110,12 @@ there; do not scatter session logic into feature folders. `src/dev/` is a
 separate, fully disposable dev-only shim — safe to delete once real auth
 lands.
 
+There are two shells: `AppShell` (clinic roles — Superadmin, Clinic Admin,
+Dentist, Assistant) and `PortalShell` (Patient only, its own simpler nav —
+see Roles below). Both share one role-gating hook,
+`src/components/shell/use-route-guard.ts`; add new gated routes through it
+rather than duplicating auth-redirect logic per shell.
+
 ---
 
 # Multi-Tenant
@@ -206,6 +212,22 @@ Does not manage users, subscriptions, or administrative configuration.
 Initially, assistants can work with every dentist in the clinic. The model
 must stay ready to support assigning assistants to specific dentists later,
 without requiring a major refactor.
+
+### Patient
+
+The person receiving care — not a clinic team member.
+
+Can, for their own data only:
+
+- View their own appointments, and request a reschedule or cancellation
+  (never edit the appointment directly — changes are proposals the clinic
+  approves)
+- View their own medical/dental record
+- View their own clinic's info
+
+Never sees other patients' data, clinic administration, or any clinic-team
+screen. Has its own portal experience, not a role variant of the clinic
+dashboard (see Architecture above).
 
 ---
 
