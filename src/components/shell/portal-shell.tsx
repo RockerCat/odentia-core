@@ -28,6 +28,15 @@ import { useRouteGuard } from "./use-route-guard";
 // mock Patient belongs to exactly one clinic. If/when a Patient can belong
 // to several, this becomes "Mi clínica" with a picker instead — not built
 // yet, see my-clinic-screen.tsx.
+// Mobile-only header branding: for the Patient, Odentia is the platform
+// behind the scenes, not the brand they're interacting with — that's their
+// clinic (see task scope: this replaces Odentia's own logo in the Patient's
+// mobile header only, never the desktop sidebar, and never for any other
+// role). Same mock asset as the Clinic Admin's own Clínica page/Agenda
+// identity card; hardcoded per this iteration's scope — no dynamic
+// per-clinic branding/slug resolution yet.
+const CLINIC_LOGO_URL = "/branding/sonrisa_perfecta.png";
+
 const PORTAL_NAV_ITEMS = [
   { label: "Mis citas", icon: CalendarIcon, href: "/portal/citas" },
   { label: "Mi salud dental", icon: ToothIcon, href: "/portal/salud" },
@@ -160,9 +169,17 @@ function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
           </div>
         </header>
 
-        {/* Mobile header — same user-menu pattern as shell/mobile-header.tsx. */}
+        {/* Mobile header — same user-menu pattern as shell/mobile-header.tsx,
+            but with the clinic's own logo instead of Odentia's (see
+            CLINIC_LOGO_URL above) — the Patient is interacting with their
+            clinic, not the Odentia platform itself. */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface px-4 md:hidden">
-          <Logo className="h-7 w-auto" />
+          {/* eslint-disable-next-line @next/next/no-img-element -- local mock asset, not worth Next/Image's optimization pipeline */}
+          <img
+            src={CLINIC_LOGO_URL}
+            alt={`Logo de ${CURRENT_PATIENT.clinicName}`}
+            className="h-9 w-auto shrink-0 object-contain"
+          />
           <div className="relative">
             <button
               type="button"

@@ -10,7 +10,7 @@ export default function PatientsPage() {
     <AppShell
       activeNavLabel="Pacientes"
       heading={<PatientsGreeting />}
-      allowedRoles={["clinic-admin", "dentist", "assistant", "superadmin"]}
+      allowedRoles={["clinic-admin", "dentist", "assistant"]}
     >
       <PatientsScreen />
     </AppShell>

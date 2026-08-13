@@ -177,6 +177,13 @@ export type Appointment = {
   // appointment. dentistId is always recorded, even when unchanged, so the
   // pending banner can always name the requested professional.
   pendingReschedule?: { day: string; time: string; dentistId: string };
+  // Set via the Patient portal's "Confirmar asistencia" (see
+  // my-appointments-screen.tsx) — the Patient confirming their own
+  // attendance for an already-scheduled Cita. Deliberately independent of
+  // `status`: per CLAUDE.md's Appointment Lifecycle, "Confirmada" (patient
+  // attendance) and the clinic scheduling/accepting the appointment are two
+  // different things that `status` alone can't distinguish yet.
+  attendanceConfirmed?: boolean;
 };
 
 // Orders appointments across the week (day index, then time-of-day) — a

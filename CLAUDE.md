@@ -249,6 +249,55 @@ seen by different dentists within the same clinic.
 
 ---
 
+## Appointment Lifecycle
+
+This is a permanent architectural decision, same standing as the rest of
+this Domain Model section — every appointment-related feature (Agenda, the
+Patient portal, any future clinic-side approval screen) must respect it.
+
+There are two distinct lifecycles. They are NOT the same state machine and
+must never be conflated:
+
+### Solicitud de Cita (appointment request)
+
+A Patient-initiated request, before the clinic has scheduled anything:
+
+`Pendiente → Aceptada / Rechazada`
+
+Accepting a request turns it into a scheduled `Cita` (below), starting at
+`Programada`. Rejecting it ends the request — no `Cita` is created.
+
+### Cita (appointment)
+
+Once scheduled, a `Cita` moves through:
+
+`Programada → Confirmada → Paciente llegó → En sala de espera → En curso → Completada`
+
+Rules:
+
+- `Confirmada` means the Patient confirmed their own attendance — this only
+  ever applies to an already-scheduled `Cita`, before it happens, and is
+  unrelated to `Solicitud de Cita`'s own `Pendiente`/`Aceptada`/`Rechazada`.
+- The Patient failing to confirm attendance never auto-cancels the `Cita`.
+- `Completada` only happens when the clinical encounter actually finished —
+  never inferred from the appointment's date/time having passed.
+- A past `Cita` left unresolved is an anomaly (`Sin cerrar`), not an
+  automatic `Completada`.
+- Final states: `Completada`, `No asistió`, `Cancelada`.
+  - `Cancelada` always happens before the encounter takes place.
+  - `No asistió` means the Patient genuinely did not show up.
+
+**Current implementation note:** `AppointmentStatus`
+(`confirmed | pending | in-progress | completed | cancelled | no-show`) is a
+simplified stand-in for this model — depending on context, `pending`/
+`confirmed` today overload meanings from both lifecycles above. Don't deepen
+that conflation in new work; prefer an additive field scoped to where it's
+actually needed (e.g. the Patient portal's own `attendanceConfirmed`,
+separate from `status`) over further overloading `status`, until this can
+be modeled properly.
+
+---
+
 ## Primary Use Case
 
 The system must natively support the most common scenario: an independent

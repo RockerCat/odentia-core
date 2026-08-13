@@ -4,9 +4,12 @@ import { CURRENT_USER } from "@/lib/current-user";
 // SaaS for Clinics): a card above the KPI grid identifying which clinic
 // this is, same bordered-card language as the rest of Agenda's right
 // column. Vertical composition on purpose — the logo reads as the clinic's
-// main identity, not a small inline thumbnail — with object-contain
-// (never object-cover) so horizontal, square, or vertical logos alike show
-// in full, uncropped, at their full available width.
+// own identity, not a small inline thumbnail — with object-contain (never
+// object-cover) so horizontal, square, or vertical logos alike show in
+// full, uncropped. Capped well under 100% of its box (~62%, after a first
+// pass at ~82%) so it stays clearly secondary to Odentia's own sidebar
+// logo — Odentia is the platform brand, this is just the current clinic's
+// context.
 export function ClinicIdentityCard() {
   return (
     <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-background px-5 py-5">
@@ -16,7 +19,7 @@ export function ClinicIdentityCard() {
           <img
             src={CURRENT_USER.clinicLogoUrl}
             alt={`Logo de ${CURRENT_USER.clinicName}`}
-            className="max-h-full max-w-full object-contain"
+            className="max-h-[62%] max-w-[62%] object-contain"
           />
         ) : null}
       </div>
