@@ -1,16 +1,17 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { CloseIcon, PhoneIcon } from "@/components/shell/icons";
+import { ClipboardIcon, CloseIcon, PhoneIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { FIELD_CLASS, HistoryEntry } from "@/features/dashboard/appointment-detail-modal";
 import { chronologicalKey, type Appointment, type Dentist, type WeekDay } from "@/features/dashboard/mock-data";
 import { getPatientVisitSummary, PATIENT_STATUS_LABELS, type Patient } from "./mock-data";
 
-const RECENT_HISTORY_LIMIT = 5;
+const RECENT_HISTORY_LIMIT = 10;
 
-function waLink(phone: string): string {
-  return `https://wa.me/${phone.replace(/[^\d]/g, "")}`;
+function waLink(phone: string, message?: string): string {
+  const base = `https://wa.me/${phone.replace(/[^\d]/g, "")}`;
+  return message ? `${base}?text=${encodeURIComponent(message)}` : base;
 }
 
 export function PatientDetailModal({
@@ -38,6 +39,27 @@ export function PatientDetailModal({
   const [phoneDraft, setPhoneDraft] = useState(patient.phone);
   const [emailDraft, setEmailDraft] = useState(patient.email);
   const [documentDraft, setDocumentDraft] = useState(patient.documentId);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // Opaque mock access link — only the patient's internal id, never their
+  // name/email/document/clinical data (see task scope). No real
+  // auth/token/backend behind it yet; a future version confirms the
+  // patient's info and lets them set a password (unregistered) or, if
+  // they already have a live session, continues straight into the portal
+  // (activated).
+  const accessUrl = `https://app.odentia.com/acceso/${patient.id}`;
+  const accessMessage = `Hola ${patient.name}, aquí tienes tu enlace de acceso seguro a tu portal de paciente en Odentia: ${accessUrl}`;
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(accessUrl);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      // Clipboard API can fail (permissions, non-secure context) — this is
+      // a convenience action, silently doing nothing is fine.
+    }
+  };
 
   const usualDentist = dentists.find((d) => d.id === patient.usualDentistId);
   const own = appointments
@@ -272,17 +294,77 @@ export function PatientDetailModal({
                   <p className="mt-0.5 text-[11px] text-label-foreground">Canceladas / no asistió</p>
                 </div>
               </div>
+
+              {/* Acceso del paciente — lets reception hand the patient a QR
+                  so they can continue on their own phone. Mock QR only (see
+                  accessUrl above): a public QR-image service renders it,
+                  same "external mock asset" pattern the app already uses
+                  for avatar photos (randomuser.me) — no QR-generation
+                  dependency added. Horizontal/compact on purpose: this
+                  column already carries Resumen clínico + KPIs above it. */}
+              <div className="rounded-xl border border-border p-4">
+                <p className="text-sm font-semibold">Acceso del paciente</p>
+
+                <div className="mt-3 flex items-center gap-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- mock QR image from a public QR-code service, not worth Next/Image's optimization pipeline */}
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&margin=8&data=${encodeURIComponent(accessUrl)}`}
+                    alt="Código QR de acceso del paciente"
+                    className="size-28 shrink-0 rounded-lg border border-border bg-white p-1"
+                  />
+
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-foreground">
+                      {patient.portalActivated ? "Ingresar al portal" : "Completar registro"}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {patient.portalActivated
+                        ? "Escanea para ingresar a tu portal de paciente."
+                        : "Escanea para completar tus datos y activar tu acceso."}
+                    </p>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCopyLink}
+                        className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10"
+                      >
+                        <ClipboardIcon className="size-3" />
+                        {linkCopied ? "Enlace copiado" : "Copiar enlace"}
+                      </button>
+                      {patient.phone && (
+                        <a
+                          href={waLink(patient.phone, accessMessage)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10"
+                        >
+                          <PhoneIcon className="size-3" />
+                          Enviar por WhatsApp
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Derecha — próxima cita + historial, reutilizando el mismo
-                timeline vertical (HistoryEntry) del preview de citas. */}
+                timeline vertical (HistoryEntry) del preview de citas. Sin
+                Acceso del paciente aquí (ver columna central) para dejarle
+                todo el resto de esta columna al historial. */}
             <div className="flex flex-col gap-4">
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
                 <p className="text-xs font-semibold text-primary uppercase">Próxima cita</p>
                 <p className="mt-1 text-sm font-medium text-foreground">{nextAppointmentLabel}</p>
               </div>
 
-              <div>
+              {/* Same bg-surface treatment the appointment detail modal's own
+                  Historial de citas panel already uses (see
+                  PatientHistoryPanel's wrapper in appointment-detail-modal.tsx)
+                  — a consistent visual identity for this section wherever it
+                  appears, not a new gray. */}
+              <div className="rounded-xl bg-surface p-4">
                 <h3 className="text-sm font-semibold">Historial de citas</h3>
                 <p className="mt-0.5 text-xs text-muted-foreground">Últimas atenciones del paciente</p>
 

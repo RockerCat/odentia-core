@@ -179,6 +179,12 @@ Also has all the clinical permissions of a Dentist.
 
 **The Clinic Admin never needs a second role to see patients.**
 
+Exception: authoring/editing a patient's clinical record entries (e.g.
+Antecedentes in Historia Clínica) stays Dentist-only. The Clinic Admin's
+clinical permissions cover operating the practice, not writing clinical
+documentation on a Dentist's behalf — she (and the Assistant, and the
+Patient) can always read it.
+
 ### Dentist
 
 Manages only their own clinical operation.

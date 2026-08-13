@@ -1,7 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { AlertTriangleIcon, CalendarIcon, NoteIcon, PlusIcon, SearchIcon, UsersIcon } from "@/components/shell/icons";
+import { AlertTriangleIcon, CalendarIcon, PlusIcon, SearchIcon, UsersIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
 import { DENTISTS, WEEK_APPOINTMENTS, WEEK_DAYS, type Appointment } from "@/features/dashboard/mock-data";
@@ -11,6 +12,7 @@ import { NewPatientModal } from "./new-patient-modal";
 import { PatientDetailModal } from "./patient-detail-modal";
 
 export function PatientsScreen() {
+  const router = useRouter();
   const [patients, setPatients] = useState<Patient[]>(PATIENTS);
   const [appointments, setAppointments] = useState<Appointment[]>(WEEK_APPOINTMENTS);
 
@@ -22,7 +24,6 @@ export function PatientsScreen() {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [showNewPatient, setShowNewPatient] = useState(false);
   const [newAppointmentForName, setNewAppointmentForName] = useState<string | null>(null);
-  const [historyPlaceholderFor, setHistoryPlaceholderFor] = useState<Patient | null>(null);
 
   const activeCount = patients.filter((p) => p.status === "active").length;
   const newThisMonthCount = patients.filter((p) => p.isNewThisMonth).length;
@@ -199,7 +200,7 @@ export function PatientsScreen() {
           onEdit={handleEditSelectedPatient}
           onNewAppointment={() => openNewAppointmentFor(selectedPatient.name)}
           onViewHistory={() => {
-            setHistoryPlaceholderFor(selectedPatient);
+            router.push(`/pacientes/${selectedPatient.id}/historia-clinica`);
             setSelectedPatientId(null);
           }}
         />
@@ -225,37 +226,6 @@ export function PatientsScreen() {
             setNewAppointmentForName(null);
           }}
         />
-      )}
-
-      {historyPlaceholderFor && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          onClick={() => setHistoryPlaceholderFor(null)}
-        >
-          <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Historia clínica"
-            onClick={(e) => e.stopPropagation()}
-            className="relative z-10 w-full max-w-sm rounded-xl bg-background p-6 text-center shadow-xl"
-          >
-            <span className="mx-auto flex size-11 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <NoteIcon className="size-5" />
-            </span>
-            <p className="mt-3 text-sm font-semibold">Historia clínica</p>
-            <p className="mt-1.5 text-sm text-muted-foreground">
-              La historia clínica completa de {historyPlaceholderFor.name} estará disponible en el próximo módulo.
-            </p>
-            <button
-              type="button"
-              onClick={() => setHistoryPlaceholderFor(null)}
-              className="mt-4 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-foreground/5"
-            >
-              Entendido
-            </button>
-          </div>
-        </div>
       )}
     </div>
   );

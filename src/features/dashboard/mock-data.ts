@@ -285,7 +285,7 @@ export const WEEK_APPOINTMENTS: Appointment[] = [
   // Wednesday — today, unchanged from the daily view. Deliberately mixed
   // coverage of the optional fields (room/phone/notes/duration) so every
   // "if present" branch in the detail modal gets exercised.
-  { id: "1", day: "wednesday", time: "8:00 AM", patientName: "María Gómez", initials: "MG", type: "Limpieza dental", status: "confirmed", dentistId: "d1", room: "Consultorio 1", patientPhone: "+57 300 452 1189" },
+  { id: "1", day: "wednesday", time: "8:00 AM", patientName: "Alejandra Vidal", initials: "AV", type: "Limpieza dental", status: "confirmed", dentistId: "d1", room: "Consultorio 1", patientPhone: "+57 300 452 1189" },
   { id: "2", day: "wednesday", time: "9:00 AM", patientName: "Carlos Rodríguez", initials: "CR", type: "Chequeo general", status: "completed", dentistId: "d2", room: "Consultorio 2", patientPhone: "+57 301 998 2234" },
   { id: "3", day: "wednesday", time: "9:30 AM", patientName: "Laura Martínez", initials: "LM", type: "Consulta de ortodoncia", status: "in-progress", dentistId: "d3", patientPhone: "+57 315 667 0091", notes: "Prefiere citas en la mañana." },
   { id: "4", day: "wednesday", time: "10:00 AM", patientName: "Andrés Torres", initials: "AT", type: "Extracción dental", status: "pending", dentistId: "d1", durationMinutes: 45, room: "Consultorio 1", notes: "Alergia a la penicilina." },

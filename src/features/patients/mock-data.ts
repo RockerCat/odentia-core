@@ -1,4 +1,5 @@
 import { chronologicalKey, type Appointment, type AppointmentStatus, type WeekDay } from "@/features/dashboard/mock-data";
+import type { OdontogramData } from "@/features/dashboard/odontogram-teeth";
 
 // Patients aren't a first-class entity in the Agenda's own mocks (see
 // appointment-detail-modal.tsx's getPatientHistory comment) — this module
@@ -8,6 +9,71 @@ import { chronologicalKey, type Appointment, type AppointmentStatus, type WeekDa
 // driftable dates.
 
 export type PatientStatus = "active" | "inactive";
+
+// Historia Clínica (Clinic Admin, see clinical-record-screen.tsx) —
+// structured "Antecedentes" tab content.
+export type Anamnesis = {
+  personalHistory?: string;
+  familyHistory?: string;
+  habits?: string;
+  surgicalHistory?: string; // Cirugías / hospitalizaciones
+  pregnancy?: string; // Embarazo — only set when actually applicable
+  otherRelevant?: string;
+  // Short, deliberately distinct wording from the fuller fields above —
+  // these back "Condiciones y factores relevantes"'s KPI cards, so that
+  // section never just repeats the same paragraph the Anamnesis grid
+  // already shows (see AntecedentesTab's own comment).
+  habitsSummary?: string;
+  oralHygieneSummary?: string;
+  familyHistorySummary?: string;
+  updatedLabel: string;
+  updatedByDentistId: string;
+};
+
+// Historia Clínica's "Atenciones" tab — deliberately its own record, not
+// reused straight off Appointment: an appointment's own `notes` is a
+// scheduling note (see e.g. "Prefiere citas en la mañana."), not a clinical
+// finding, and this tab needs the latter. `status` reuses AppointmentStatus
+// purely so this can share STATUS_LABELS/HISTORY_STATUS_BADGE_CLASS instead
+// of a second status vocabulary.
+export type ClinicalEncounterRecord = {
+  id: string;
+  dateLabel: string;
+  dentistId: string;
+  treatment: string;
+  findings: string;
+  status: AppointmentStatus;
+};
+
+// Historia Clínica's "Documentos" tab — mock metadata only, no real files.
+export type ClinicalDocumentKind = "radiografia" | "consentimiento" | "fotografia" | "otro";
+
+export type ClinicalDocument = {
+  id: string;
+  label: string;
+  kind: ClinicalDocumentKind;
+  dateLabel: string;
+  dentistId: string;
+};
+
+export const CLINICAL_DOCUMENT_KIND_LABELS: Record<ClinicalDocumentKind, string> = {
+  radiografia: "Radiografía",
+  consentimiento: "Consentimiento",
+  fotografia: "Fotografía clínica",
+  otro: "Documento",
+};
+
+// Historia Clínica's "Odontograma" tab — the "Hallazgos" side panel needs a
+// fecha/profesional per finding that OdontogramData's own ToothFinding
+// doesn't carry (that type is shared with the interactive clinical
+// encounter editor, which has no notion of either — not touching it here).
+// Keyed by ToothFinding.id so it stays a one-to-one supplement to whatever
+// is already in Patient.odontogramData, never a second copy of type/note.
+export type OdontogramFindingMeta = {
+  findingId: string;
+  dateLabel: string;
+  dentistId: string;
+};
 
 export type Patient = {
   id: string;
@@ -29,6 +95,31 @@ export type Patient = {
   // appointment exists.
   fallbackLastVisitLabel?: string;
   noRecentVisit?: boolean;
+  // Whether this patient has an activated Patient Portal account (see
+  // src/app/portal/) — drives the "Acceso del paciente" QR card's copy in
+  // PatientDetailModal. Only p11 (Valeria Muñoz, the demo CURRENT_PATIENT —
+  // see src/lib/current-user.ts) is actually wired to the portal in this
+  // mock, so she's the only one marked true; everyone else defaults to the
+  // "not yet activated" state, which is realistic this early.
+  portalActivated?: boolean;
+  // Historia Clínica (Clinic Admin, see clinical-record-screen.tsx) —
+  // Resumen tab fields. All optional and only populated for a few patients
+  // here; every other patient correctly shows "sin registrar"/"sin
+  // alertas" empty states, which is realistic this early and demonstrates
+  // both states without inventing data for all 14 mock patients.
+  medications?: string[];
+  conditions?: string[];
+  activeTreatments?: string[];
+  odontogramUpdatedLabel?: string;
+  clinicalNotes?: string;
+  // Remaining Historia Clínica tabs (Antecedentes/Odontograma/Atenciones/
+  // Documentos) — same "populate a few patients, everyone else gets a
+  // clean empty state" approach as the Resumen fields above.
+  anamnesis?: Anamnesis;
+  odontogramData?: OdontogramData;
+  odontogramFindingsMeta?: OdontogramFindingMeta[];
+  clinicalEncounters?: ClinicalEncounterRecord[];
+  clinicalDocuments?: ClinicalDocument[];
 };
 
 export const PATIENT_STATUS_LABELS: Record<PatientStatus, string> = {
@@ -38,12 +129,17 @@ export const PATIENT_STATUS_LABELS: Record<PatientStatus, string> = {
 
 export const PATIENTS: Patient[] = [
   {
+    // Deliberately NOT "María Gómez" — that's the Clinic Admin's own name
+    // (see CURRENT_USER, src/lib/current-user.ts), and having a patient
+    // share it read as confusing/wrong. Keep this id's appointment (id "1"
+    // in dashboard/mock-data.ts, Wednesday 8:00 AM) in sync if this ever
+    // changes again.
     id: "p1",
-    name: "María Gómez",
-    initials: "MG",
+    name: "Alejandra Vidal",
+    initials: "AV",
     age: 34,
     phone: "+57 300 452 1189",
-    email: "maria.gomez.paciente@gmail.com",
+    email: "alejandra.vidal@gmail.com",
     documentId: "CC 52.334.981",
     patientSinceLabel: "Ene 2023",
     isNewThisMonth: false,
@@ -64,6 +160,10 @@ export const PATIENTS: Patient[] = [
     status: "active",
   },
   {
+    // The flagship, fully-populated Historia Clínica demo patient — every
+    // tab has real mock content for her (see anamnesis/odontogramData/
+    // clinicalEncounters/clinicalDocuments below); everyone else in this
+    // list shows this feature's various empty states instead.
     id: "p3",
     name: "Laura Martínez",
     initials: "LM",
@@ -74,8 +174,82 @@ export const PATIENTS: Patient[] = [
     patientSinceLabel: "Jun 2022",
     isNewThisMonth: false,
     usualDentistId: "d3",
-    allergies: "Alergia a la lidocaína",
+    allergies: "Alergia a la penicilina",
     status: "active",
+    medications: ["Losartán 50mg (1 vez al día)"],
+    conditions: ["Hipertensión arterial controlada"],
+    odontogramUpdatedLabel: "18 Jun 2026",
+    clinicalNotes:
+      "Paciente hipertensa controlada; verificar presión arterial antes de procedimientos con anestesia. " +
+      "Evitar penicilina — usar alternativa antibiótica si se requiere profilaxis.",
+    anamnesis: {
+      personalHistory: "Hipertensión arterial diagnosticada hace 3 años, en tratamiento con losartán.",
+      familyHistory: "Madre con hipertensión arterial. Padre con diabetes tipo 2.",
+      habits: "No fuma. Consumo ocasional de alcohol. Cepillado dental 2 veces al día, uso irregular de hilo dental.",
+      surgicalHistory: "Sin cirugías ni hospitalizaciones previas relevantes.",
+      otherRelevant: "Sin antecedentes adicionales relevantes.",
+      habitsSummary: "No fuma · Alcohol ocasional",
+      oralHygieneSummary: "Cepillado 2 veces al día · Hilo dental irregular",
+      familyHistorySummary: "Madre: hipertensión · Padre: diabetes tipo 2",
+      updatedLabel: "18 Jun 2026",
+      updatedByDentistId: "d3",
+    },
+    odontogramData: {
+      16: [{ id: "f1", type: "caries", surfaces: ["oclusal"], note: "Caries oclusal activa." }],
+      26: [{ id: "f2", type: "restauracion", surfaces: ["oclusal", "distal"], note: "Resina compuesta." }],
+      38: [{ id: "f3", type: "ausente", surfaces: [], note: "Extraído — tercer molar." }],
+    },
+    // Same 3 findings as odontogramData above, just the fecha/profesional
+    // the "Hallazgos" panel needs (see OdontogramFindingMeta's own comment).
+    odontogramFindingsMeta: [
+      { findingId: "f1", dateLabel: "18 Jun 2026", dentistId: "d3" },
+      { findingId: "f2", dateLabel: "10 Ene 2026", dentistId: "d1" },
+      { findingId: "f3", dateLabel: "12 Mar 2025", dentistId: "d3" },
+    ],
+    clinicalEncounters: [
+      {
+        id: "ce1",
+        dateLabel: "18 Jun 2026",
+        dentistId: "d3",
+        treatment: "Control de ortodoncia",
+        findings: "Ajuste de brackets. Leve inflamación gingival; se refuerza técnica de cepillado.",
+        status: "completed",
+      },
+      {
+        id: "ce2",
+        dateLabel: "10 Ene 2026",
+        dentistId: "d1",
+        treatment: "Chequeo general",
+        findings:
+          "Sin caries activas al momento del control. Hipertensión controlada — verificar presión antes de anestesia.",
+        status: "completed",
+      },
+      {
+        id: "ce3",
+        dateLabel: "12 Mar 2025",
+        dentistId: "d3",
+        treatment: "Consulta de ortodoncia",
+        findings: "Evaluación inicial. Se indica tratamiento de ortodoncia fija. Buena higiene oral.",
+        status: "completed",
+      },
+    ],
+    clinicalDocuments: [
+      { id: "doc1", label: "Radiografía panorámica", kind: "radiografia", dateLabel: "12 Mar 2025", dentistId: "d3" },
+      {
+        id: "doc2",
+        label: "Consentimiento informado — tratamiento de ortodoncia",
+        kind: "consentimiento",
+        dateLabel: "12 Mar 2025",
+        dentistId: "d3",
+      },
+      {
+        id: "doc3",
+        label: "Fotografía clínica intraoral",
+        kind: "fotografia",
+        dateLabel: "18 Jun 2026",
+        dentistId: "d3",
+      },
+    ],
   },
   {
     id: "p4",
@@ -92,6 +266,8 @@ export const PATIENTS: Patient[] = [
     // mock-data.ts (id "4") — kept in sync on purpose.
     allergies: "Alergia a la penicilina",
     status: "active",
+    activeTreatments: ["Ortodoncia — fase 2"],
+    odontogramUpdatedLabel: "12 Jul 2026",
   },
   {
     id: "p5",
@@ -118,6 +294,8 @@ export const PATIENTS: Patient[] = [
     isNewThisMonth: false,
     usualDentistId: "d1",
     status: "active",
+    conditions: ["Diabetes tipo 2 controlada"],
+    medications: ["Metformina 850mg"],
   },
   {
     id: "p7",
@@ -131,6 +309,8 @@ export const PATIENTS: Patient[] = [
     isNewThisMonth: false,
     usualDentistId: "d1",
     status: "active",
+    conditions: ["Embarazo (segundo trimestre)"],
+    clinicalNotes: "Evitar radiografías dentales salvo urgencia; posponer procedimientos electivos no esenciales.",
   },
   {
     id: "p8",
@@ -186,6 +366,12 @@ export const PATIENTS: Patient[] = [
     // Also the demo Patient-role identity (see CURRENT_PATIENT in
     // src/lib/current-user.ts) — same photo for consistency.
     avatar_url: "https://randomuser.me/api/portraits/women/72.jpg",
+    portalActivated: true,
+    medications: ["Ibuprofeno 400mg (según necesidad)"],
+    conditions: ["Bruxismo leve"],
+    activeTreatments: ["Blanqueamiento dental — fase 2"],
+    odontogramUpdatedLabel: "5 Ago 2026",
+    clinicalNotes: "Sensibilidad dental reportada en la última cita. Evaluar en el próximo control.",
   },
   {
     id: "p12",
@@ -214,6 +400,9 @@ export const PATIENTS: Patient[] = [
     status: "inactive",
     fallbackLastVisitLabel: "Hace 8 meses",
     noRecentVisit: true,
+    conditions: ["Fibrilación auricular — anticoagulado"],
+    medications: ["Warfarina 5mg"],
+    clinicalNotes: "Alto riesgo de sangrado; coordinar con médico tratante antes de procedimientos invasivos.",
   },
   {
     id: "p14",

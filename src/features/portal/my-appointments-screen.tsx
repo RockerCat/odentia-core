@@ -376,8 +376,12 @@ export function MyAppointmentsScreen() {
                 Past appointments only ever resolve to Completada/No
                 asistió/Cancelada in the underlying mock data. The only
                 historial on this screen — "Ver historial completo" opens
-                the full list in a modal instead of a second card. */}
-            <div>
+                the full list in a modal instead of a second card.
+                bg-surface matches the appointment detail modal's own
+                Historial de citas panel (see PatientHistoryPanel's wrapper
+                in appointment-detail-modal.tsx) — same visual identity
+                everywhere this section appears. */}
+            <div className="rounded-xl bg-surface p-4">
               <h3 className="text-sm font-semibold">Historial de citas</h3>
               <p className="mt-0.5 text-xs text-muted-foreground">Últimas atenciones</p>
 
@@ -555,7 +559,11 @@ function HistoryModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        {/* bg-surface — same background the appointment detail modal's own
+            Historial de citas panel already uses (see PatientHistoryPanel's
+            wrapper in appointment-detail-modal.tsx); this whole scrollable
+            body IS the historial zone here. */}
+        <div className="flex-1 overflow-y-auto bg-surface px-5 py-4">
           {history.length === 0 ? (
             <p className="text-center text-sm text-muted-foreground">Aún no tienes citas pasadas.</p>
           ) : (
