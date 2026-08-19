@@ -1,9 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ProfessionalSelect } from "@/components/professional-select";
 import { AlertTriangleIcon, CalendarIcon, PlusIcon, SearchIcon, UsersIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
+import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
 import { DENTISTS, WEEK_APPOINTMENTS, WEEK_DAYS, type Appointment } from "@/features/dashboard/mock-data";
 import { NewAppointmentModal } from "@/features/dashboard/new-appointment-modal";
@@ -13,24 +15,56 @@ import { PatientDetailModal } from "./patient-detail-modal";
 
 export function PatientsScreen() {
   const router = useRouter();
+  const { role, dentistId } = useRole();
+  // Registering a new patient is an administrative intake action, not a
+  // clinical one. The list itself already shows every clinic patient
+  // regardless of role (patients belong to the Clinic, not a Dentist — see
+  // CLAUDE.md Domain Model) — this only gates the create action.
+  const canCreatePatient = role !== "dentist";
   const [patients, setPatients] = useState<Patient[]>(PATIENTS);
   const [appointments, setAppointments] = useState<Appointment[]>(WEEK_APPOINTMENTS);
 
   const [search, setSearch] = useState("");
+  // Odontólogo lands here with the Profesional filter defaulted to their
+  // own id (see task scope) — not an access restriction, just a starting
+  // point they're free to widen to "Todos los profesionales" or any other
+  // dentist. Clinic Admin keeps the existing "Todos" default.
   const [professionalFilter, setProfessionalFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<PatientStatus | "">("");
   const [lastVisitFilter, setLastVisitFilter] = useState<"" | "recent" | "stale">("");
+
+  // Applied via effect, not a useState initializer: role/dentistId come
+  // from a localStorage-backed session (see role-context.tsx) that reads as
+  // the SSR default on a fresh/hard load before hydration corrects it one
+  // tick later — a useState initializer would miss that correction and
+  // permanently default to "Todos" for a Dentist landing here via a direct
+  // URL or refresh, not just an in-app nav click. The ref keeps this a
+  // one-time "on arrival" default rather than fighting a later manual pick.
+  const appliedDentistDefault = useRef(false);
+  useEffect(() => {
+    if (role === "dentist" && !appliedDentistDefault.current) {
+      appliedDentistDefault.current = true;
+      setProfessionalFilter(dentistId);
+    }
+  }, [role, dentistId]);
 
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [showNewPatient, setShowNewPatient] = useState(false);
   const [newAppointmentForName, setNewAppointmentForName] = useState<string | null>(null);
 
-  const activeCount = patients.filter((p) => p.status === "active").length;
-  const newThisMonthCount = patients.filter((p) => p.isNewThisMonth).length;
-  const upcomingCount = patients.filter(
+  // KPIs follow the Profesional filter specifically (not search/estado/
+  // última atención — those stay list-only, unchanged) so that when it
+  // defaults to the logged-in Odontólogo, "Pacientes activos"/etc. read as
+  // their own numbers, not the whole clinic's — see task scope.
+  const professionalFilteredPatients = patients.filter(
+    (p) => !professionalFilter || p.usualDentistId === professionalFilter,
+  );
+  const activeCount = professionalFilteredPatients.filter((p) => p.status === "active").length;
+  const newThisMonthCount = professionalFilteredPatients.filter((p) => p.isNewThisMonth).length;
+  const upcomingCount = professionalFilteredPatients.filter(
     (p) => getPatientVisitSummary(p, appointments, WEEK_DAYS).nextAppointment !== null,
   ).length;
-  const staleCount = patients.filter((p) => p.noRecentVisit).length;
+  const staleCount = professionalFilteredPatients.filter((p) => p.noRecentVisit).length;
 
   const query = search.trim().toLowerCase();
   const filteredPatients = patients.filter((patient) => {
@@ -75,30 +109,27 @@ export function PatientsScreen() {
               className={`${FIELD_CLASS} pl-9`}
             />
           </div>
-          <button
-            type="button"
-            onClick={() => setShowNewPatient(true)}
-            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-          >
-            <PlusIcon className="size-4" />
-            Nuevo paciente
-          </button>
+          {canCreatePatient && (
+            <button
+              type="button"
+              onClick={() => setShowNewPatient(true)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+            >
+              <PlusIcon className="size-4" />
+              Nuevo paciente
+            </button>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">
           <div className="w-full sm:w-44">
-            <select
-              value={professionalFilter}
-              onChange={(e) => setProfessionalFilter(e.target.value)}
-              className={FIELD_CLASS}
-            >
-              <option value="">Profesional: todos</option>
-              {DENTISTS.map((dentist) => (
-                <option key={dentist.id} value={dentist.id}>
-                  {dentist.name}
-                </option>
-              ))}
-            </select>
+            <ProfessionalSelect
+              dentists={DENTISTS}
+              selectedId={professionalFilter}
+              onSelect={setProfessionalFilter}
+              includeAllOption
+              compactTrigger
+            />
           </div>
           <div className="w-full sm:w-40">
             <select

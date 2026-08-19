@@ -10,6 +10,7 @@ import {
   ClipboardIcon,
   ClockIcon,
   CloseIcon,
+  DownloadIcon,
   FlagIcon,
   ListIcon,
   NoteIcon,
@@ -29,6 +30,7 @@ import {
   WEEK_DAYS,
 } from "@/features/dashboard/mock-data";
 import { OdontogramPreview, type FindingType } from "@/features/dashboard/odontogram-teeth";
+import { CURRENT_USER } from "@/lib/current-user";
 import {
   CLINICAL_DOCUMENT_KIND_LABELS,
   getPatientVisitSummary,
@@ -38,17 +40,14 @@ import {
   type Patient,
 } from "./mock-data";
 
-// First stage of Historia Clínica — Clinic Admin only for now (see
-// allowedRoles on the route's page.tsx). Dentist/Assistant/Patient will
-// eventually see their own scoped variant of this same screen through that
-// same allowedRoles mechanism; nothing here hardcodes "only an admin can
-// ever see this" beyond the route gate itself, so extending access later
-// doesn't require rebuilding this component — just adding roles to the
-// gate and, when needed, branching what's rendered/editable. Editing
-// Antecedentes specifically is already role-gated below (see
-// canEditAntecedentes) even though only Clinic Admin can reach this screen
-// today — that check is correct regardless of who's viewing, so it's
-// already right once Dentist access opens up, no rework needed then.
+// Clinic Admin, Dentist and Assistant all reach this screen (see
+// allowedRoles on the route's page.tsx) — Assistant read-only, since
+// canEditAntecedentes below only ever allows Dentist. Patient will
+// eventually see its own scoped variant through that same allowedRoles
+// mechanism; nothing here hardcodes "only these roles can ever see this"
+// beyond the route gate itself, so extending access later doesn't require
+// rebuilding this component — just adding roles to the gate and, when
+// needed, branching what's rendered/editable.
 const TABS = ["Resumen", "Antecedentes", "Odontograma", "Atenciones", "Documentos"] as const;
 type Tab = (typeof TABS)[number];
 
@@ -56,8 +55,10 @@ const MONTH_ABBR = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep
 
 // Mock "fecha/hora" stamp for an antecedentes edit — real wall-clock time
 // since this is an in-session, non-persisted edit (see handleSaveAntecedentes),
-// formatted to match the rest of the app's "D Mmm YYYY" date labels.
-function formatUpdatedNowLabel(): string {
+// formatted to match the rest of the app's "D Mmm YYYY" date labels. Exported
+// so the PDF export (pdf/clinical-record-document.tsx) stamps its own
+// "generado el" timestamp in the exact same format instead of a second one.
+export function formatUpdatedNowLabel(): string {
   const now = new Date();
   const dateLabel = `${now.getDate()} ${MONTH_ABBR[now.getMonth()]} ${now.getFullYear()}`;
   const hours24 = now.getHours();
@@ -128,17 +129,67 @@ export function ClinicalRecordScreen({ patient }: { patient: Patient }) {
     setShowEditAntecedentes(false);
   };
 
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  // Available to every role that can reach this screen (see allowedRoles on
+  // the route's page.tsx) — downloading is a read action, never an edit
+  // capability, so it needs no role check of its own beyond that gate.
+  // @react-pdf/renderer is dynamically imported so it never lands in this
+  // screen's initial bundle for the common case of someone who never clicks
+  // this button.
+  const handleDownloadPdf = async () => {
+    setDownloadingPdf(true);
+    try {
+      const [{ pdf }, { ClinicalRecordDocument, getClinicalRecordPdfFilename }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("./pdf/clinical-record-document"),
+      ]);
+      const logoUrl = CURRENT_USER.clinicLogoUrl
+        ? new URL(CURRENT_USER.clinicLogoUrl, window.location.origin).toString()
+        : undefined;
+      const blob = await pdf(
+        <ClinicalRecordDocument
+          patient={effectivePatient}
+          clinicName={CURRENT_USER.clinicName}
+          clinicLogoUrl={logoUrl}
+        />,
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = getClinicalRecordPdfFilename(effectivePatient);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-5">
       {/* Header compacto del paciente */}
       <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
-        <Link
-          href="/pacientes"
-          className="inline-flex items-center gap-1 text-xs font-medium text-foreground/70 hover:text-foreground"
-        >
-          <ChevronIcon className="size-3.5" />
-          Volver a Pacientes
-        </Link>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Link
+            href="/pacientes"
+            className="inline-flex items-center gap-1 text-xs font-medium text-foreground/70 hover:text-foreground"
+          >
+            <ChevronIcon className="size-3.5" />
+            Volver a Pacientes
+          </Link>
+
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={downloadingPdf}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-foreground/5 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <DownloadIcon className="size-3.5" />
+            {downloadingPdf ? "Generando…" : "Descargar PDF"}
+          </button>
+        </div>
 
         <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
@@ -698,7 +749,9 @@ function EditField({ label, children }: { label: string; children: ReactNode }) 
   );
 }
 
-const FINDING_LEGEND: { type: FindingType; label: string; dotClass: string }[] = [
+// Exported so the Historia Clínica PDF (pdf/clinical-record-document.tsx)
+// reuses the exact same finding-type labels/order instead of a second copy.
+export const FINDING_LEGEND: { type: FindingType; label: string; dotClass: string }[] = [
   { type: "caries", label: "Caries", dotClass: "bg-danger" },
   { type: "restauracion", label: "Restauración", dotClass: "bg-info" },
   { type: "ausente", label: "Ausente", dotClass: "bg-muted-foreground" },
@@ -709,7 +762,7 @@ function dotClassForType(type: FindingType): string {
   return FINDING_LEGEND.find((entry) => entry.type === type)?.dotClass ?? "bg-muted-foreground";
 }
 
-function labelForType(type: FindingType): string {
+export function labelForType(type: FindingType): string {
   return FINDING_LEGEND.find((entry) => entry.type === type)?.label ?? "Otro";
 }
 
@@ -718,15 +771,15 @@ function labelForType(type: FindingType): string {
 // no "abrir odontograma" editor at this stage (see task scope). Desktop:
 // 75/25 split, odontograma left / Hallazgos panel right. Mobile: the same
 // grid collapses to one column, odontograma first — no forced 75/25.
-function OdontogramaTab({ patient }: { patient: Patient }) {
+// One row per pieza, same as what's actually colored on the chart (the
+// latest finding per tooth — see OdontogramPreview's own logic). Exported
+// (not just inlined in OdontogramaTab below) so the Historia Clínica PDF
+// (see pdf/clinical-record-document.tsx) reuses this exact derivation
+// instead of a second copy of the same "latest finding per tooth" logic.
+export function getOdontogramFindingRows(patient: Patient) {
   const odontogram = patient.odontogramData ?? {};
   const findingsMeta = patient.odontogramFindingsMeta ?? [];
-  const findingCount = Object.keys(odontogram).length;
-
-  // One row per pieza, same as what's actually colored on the chart (the
-  // latest finding per tooth — see OdontogramPreview's own logic) — keeps
-  // the panel's count exactly matching "N pieza(s) con hallazgos".
-  const findingRows = Object.entries(odontogram)
+  return Object.entries(odontogram)
     .map(([fdi, findings]) => {
       const latest = findings[findings.length - 1];
       if (!latest) return null;
@@ -742,6 +795,13 @@ function OdontogramaTab({ patient }: { patient: Patient }) {
     })
     .filter((row): row is NonNullable<typeof row> => row !== null)
     .sort((a, b) => a.fdi - b.fdi);
+}
+
+function OdontogramaTab({ patient }: { patient: Patient }) {
+  const odontogram = patient.odontogramData ?? {};
+  const findingCount = Object.keys(odontogram).length;
+  // Keeps the panel's count exactly matching "N pieza(s) con hallazgos".
+  const findingRows = getOdontogramFindingRows(patient);
 
   return (
     <div className="rounded-xl border border-border bg-background p-4 shadow-sm sm:p-5">
@@ -803,10 +863,18 @@ function OdontogramaTab({ patient }: { patient: Patient }) {
   );
 }
 
-// Distinct from Appointment/"Historial de citas" on purpose — an
-// appointment's own `notes` is a scheduling note, not a clinical finding
-// (see ClinicalEncounterRecord's own comment in mock-data.ts). Same
-// status-badge language as every other historial in Odentia.
+// The data model stays distinct from Appointment/"Historial de citas" on
+// purpose — an appointment's own `notes` is a scheduling note, not a
+// clinical finding (see ClinicalEncounterRecord's own comment in
+// mock-data.ts). The *visual* presentation below, though, deliberately
+// reuses the same "Historial de citas" pattern used elsewhere in Odentia
+// (bg-surface panel, vertical border-l line, per-record dot marker,
+// HISTORY_STATUS_BADGE_CLASS/STATUS_LABELS badge — see PatientHistoryPanel/
+// HistoryEntry in appointment-detail-modal.tsx) for visual consistency
+// across the app. Adapted, not reused as-is: this tab *is* the patient's
+// full history (not a compact preview), so every field renders inline as
+// its own line instead of being hidden behind that other pattern's hover
+// tooltip, and nothing is truncated/line-clamped.
 function AtencionesTab({ patient }: { patient: Patient }) {
   const encounters = patient.clinicalEncounters ?? [];
 
@@ -819,27 +887,34 @@ function AtencionesTab({ patient }: { patient: Patient }) {
   }
 
   return (
-    <ul className="flex flex-col gap-3">
-      {encounters.map((encounter) => {
-        const dentist = DENTISTS.find((d) => d.id === encounter.dentistId);
-        return (
-          <li key={encounter.id} className="rounded-xl border border-border bg-background p-4 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-foreground">{encounter.treatment}</p>
+    <div className="rounded-xl bg-surface p-4">
+      <ol className="flex flex-col gap-4 border-l border-border/70 pl-4">
+        {encounters.map((encounter) => {
+          const dentist = DENTISTS.find((d) => d.id === encounter.dentistId);
+          return (
+            <li key={encounter.id} className="relative">
               <span
-                className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${HISTORY_STATUS_BADGE_CLASS[encounter.status]}`}
-              >
-                {STATUS_LABELS[encounter.status]}
-              </span>
-            </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {encounter.dateLabel} · {dentist?.name ?? "Sin asignar"}
-            </p>
-            <p className="mt-2 text-sm text-foreground/80">{encounter.findings}</p>
-          </li>
-        );
-      })}
-    </ul>
+                className="absolute -left-[19px] top-1.5 size-1.5 rounded-full bg-muted-foreground/40 ring-4 ring-surface"
+                aria-hidden="true"
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-medium text-label-foreground">
+                  {encounter.dateLabel} · {encounter.timeLabel}
+                </span>
+                <span
+                  className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${HISTORY_STATUS_BADGE_CLASS[encounter.status]}`}
+                >
+                  {STATUS_LABELS[encounter.status]}
+                </span>
+              </div>
+              <p className="mt-0.5 text-[10px] text-label-foreground">{dentist?.name ?? "Sin asignar"}</p>
+              <p className="mt-1.5 text-sm font-medium text-foreground">{encounter.treatment}</p>
+              {encounter.findings && <p className="mt-1 text-sm text-foreground/80">{encounter.findings}</p>}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 

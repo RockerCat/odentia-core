@@ -30,18 +30,23 @@ export type Anamnesis = {
   updatedByDentistId: string;
 };
 
-// Historia Clínica's "Atenciones" tab — deliberately its own record, not
-// reused straight off Appointment: an appointment's own `notes` is a
-// scheduling note (see e.g. "Prefiere citas en la mañana."), not a clinical
-// finding, and this tab needs the latter. `status` reuses AppointmentStatus
-// purely so this can share STATUS_LABELS/HISTORY_STATUS_BADGE_CLASS instead
-// of a second status vocabulary.
+// Historia Clínica's "Atenciones" tab — the patient's single chronological
+// history of citas/atenciones (see clinical-record-screen.tsx's
+// AtencionesTab). Deliberately its own record, not reused straight off
+// Appointment: an appointment's own `notes` is a scheduling note (see e.g.
+// "Prefiere citas en la mañana."), not a clinical finding, and this tab
+// needs the latter. `status` reuses AppointmentStatus purely so this can
+// share STATUS_LABELS/HISTORY_STATUS_BADGE_CLASS instead of a second status
+// vocabulary — includes final states like "completed"/"no-show"/"cancelled".
+// `findings` is optional: a "no-show"/"cancelled" atención typically has no
+// clinical note, and the tab shows that plainly rather than a placeholder.
 export type ClinicalEncounterRecord = {
   id: string;
   dateLabel: string;
+  timeLabel: string;
   dentistId: string;
   treatment: string;
-  findings: string;
+  findings?: string;
   status: AppointmentStatus;
 };
 
@@ -206,10 +211,14 @@ export const PATIENTS: Patient[] = [
       { findingId: "f2", dateLabel: "10 Ene 2026", dentistId: "d1" },
       { findingId: "f3", dateLabel: "12 Mar 2025", dentistId: "d3" },
     ],
+    // Kept in reverse-chronological order (most recent first) — the
+    // Atenciones tab renders this array as-is, so any entry added later
+    // must be inserted in the right chronological position.
     clinicalEncounters: [
       {
         id: "ce1",
         dateLabel: "18 Jun 2026",
+        timeLabel: "10:30 AM",
         dentistId: "d3",
         treatment: "Control de ortodoncia",
         findings: "Ajuste de brackets. Leve inflamación gingival; se refuerza técnica de cepillado.",
@@ -217,7 +226,16 @@ export const PATIENTS: Patient[] = [
       },
       {
         id: "ce2",
+        dateLabel: "22 Abr 2026",
+        timeLabel: "9:00 AM",
+        dentistId: "d3",
+        treatment: "Control de ortodoncia",
+        status: "no-show",
+      },
+      {
+        id: "ce3",
         dateLabel: "10 Ene 2026",
+        timeLabel: "3:00 PM",
         dentistId: "d1",
         treatment: "Chequeo general",
         findings:
@@ -225,8 +243,17 @@ export const PATIENTS: Patient[] = [
         status: "completed",
       },
       {
-        id: "ce3",
+        id: "ce4",
+        dateLabel: "5 Dic 2025",
+        timeLabel: "11:00 AM",
+        dentistId: "d3",
+        treatment: "Limpieza dental",
+        status: "cancelled",
+      },
+      {
+        id: "ce5",
         dateLabel: "12 Mar 2025",
+        timeLabel: "8:30 AM",
         dentistId: "d3",
         treatment: "Consulta de ortodoncia",
         findings: "Evaluación inicial. Se indica tratamiento de ortodoncia fija. Buena higiene oral.",

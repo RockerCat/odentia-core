@@ -3,11 +3,10 @@
 import { useRef, useState } from "react";
 import { ClipboardIcon, CloseIcon, PhoneIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
-import { FIELD_CLASS, HistoryEntry } from "@/features/dashboard/appointment-detail-modal";
+import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
+import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
 import { chronologicalKey, type Appointment, type Dentist, type WeekDay } from "@/features/dashboard/mock-data";
 import { getPatientVisitSummary, PATIENT_STATUS_LABELS, type Patient } from "./mock-data";
-
-const RECENT_HISTORY_LIMIT = 10;
 
 function waLink(phone: string, message?: string): string {
   const base = `https://wa.me/${phone.replace(/[^\d]/g, "")}`;
@@ -33,6 +32,11 @@ export function PatientDetailModal({
   onNewAppointment: () => void;
   onViewHistory: () => void;
 }) {
+  const { role } = useRole();
+  // Editing name/phone/email/document is administrative patient-record
+  // data, not a clinical action — Odontólogo can view any clinic patient
+  // here but doesn't modify this restricted admin data (see task scope).
+  const canEditPatientData = role !== "dentist";
   const modalRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState(patient.name);
@@ -72,7 +76,6 @@ export function PatientDetailModal({
   const recentTreatments = Array.from(
     new Set(own.filter((a) => a.status === "completed").map((a) => a.type).filter(Boolean)),
   ).slice(0, 3) as string[];
-  const visibleHistory = own.slice(0, RECENT_HISTORY_LIMIT);
 
   const startEditing = () => {
     setNameDraft(patient.name);
@@ -146,7 +149,7 @@ export function PatientDetailModal({
                   {PATIENT_STATUS_LABELS[patient.status]}
                 </span>
 
-                {!editing && (
+                {!editing && canEditPatientData && (
                   <button
                     type="button"
                     onClick={startEditing}
@@ -349,53 +352,13 @@ export function PatientDetailModal({
               </div>
             </div>
 
-            {/* Derecha — próxima cita + historial, reutilizando el mismo
-                timeline vertical (HistoryEntry) del preview de citas. Sin
-                Acceso del paciente aquí (ver columna central) para dejarle
-                todo el resto de esta columna al historial. */}
+            {/* Derecha — próxima cita. El historial de citas completo vive
+                en el tab Atenciones de Historia Clínica (ver "Ver historia
+                clínica" en el footer) — ya no se duplica aquí. */}
             <div className="flex flex-col gap-4">
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
                 <p className="text-xs font-semibold text-primary uppercase">Próxima cita</p>
                 <p className="mt-1 text-sm font-medium text-foreground">{nextAppointmentLabel}</p>
-              </div>
-
-              {/* Same bg-surface treatment the appointment detail modal's own
-                  Historial de citas panel already uses (see
-                  PatientHistoryPanel's wrapper in appointment-detail-modal.tsx)
-                  — a consistent visual identity for this section wherever it
-                  appears, not a new gray. */}
-              <div className="rounded-xl bg-surface p-4">
-                <h3 className="text-sm font-semibold">Historial de citas</h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">Últimas atenciones del paciente</p>
-
-                {visibleHistory.length === 0 ? (
-                  <p className="mt-3 rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
-                    Este paciente aún no tiene historial de citas.
-                  </p>
-                ) : (
-                  <ol className="mt-3 flex flex-col gap-2 border-l border-border/70 pl-4">
-                    {visibleHistory.map((item) => (
-                      <HistoryEntry
-                        key={item.id}
-                        item={item}
-                        dentistName={dentists.find((d) => d.id === item.dentistId)?.name ?? "Sin asignar"}
-                        dayLabel={weekDays.find((d) => d.key === item.day)?.dateLabel ?? item.day}
-                        modalRef={modalRef}
-                        onClick={() => {}}
-                      />
-                    ))}
-                  </ol>
-                )}
-
-                {own.length > RECENT_HISTORY_LIMIT && (
-                  <button
-                    type="button"
-                    onClick={onViewHistory}
-                    className="mt-3 w-full rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-foreground/5"
-                  >
-                    Ver historial completo
-                  </button>
-                )}
               </div>
             </div>
           </div>

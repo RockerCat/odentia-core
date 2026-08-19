@@ -1,7 +1,10 @@
+import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Tooltip } from "@/components/tooltip";
 import { UserAvatar } from "@/components/user-avatar";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
+import { HISTORY_BACK_SESSION_KEY } from "@/features/patients/patient-appointment-history-screen";
+import { PATIENTS } from "@/features/patients/mock-data";
 import {
   AlertTriangleIcon,
   CalendarIcon,
@@ -133,6 +136,7 @@ export function AppointmentDetailModal({
   onUpdate: (updated: Appointment) => void;
   onStartEncounter: () => void;
 }) {
+  const router = useRouter();
   const [editingField, setEditingField] = useState<FieldKey | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
@@ -424,9 +428,17 @@ export function AppointmentDetailModal({
                 onItemClick={() =>
                   setInfoMessage("El detalle de esta atención estará disponible próximamente.")
                 }
-                onViewFullHistory={() =>
-                  setInfoMessage("El historial completo estará disponible próximamente.")
-                }
+                onViewFullHistory={() => {
+                  // Matched by patientName, same convention as getPatientHistory
+                  // above — no dedicated patient records on Appointment itself.
+                  const matchedPatient = PATIENTS.find((p) => p.name === appointment.patientName);
+                  if (matchedPatient) {
+                    sessionStorage.setItem(HISTORY_BACK_SESSION_KEY, "1");
+                    router.push(`/pacientes/${matchedPatient.id}/historial-citas`);
+                  } else {
+                    setInfoMessage("Historial completo no disponible para este paciente.");
+                  }
+                }}
               />
             </div>
           </div>

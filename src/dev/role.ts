@@ -48,10 +48,11 @@ export function homeRouteForRole(role: Role): string {
   }
 }
 
-// Clinic Admin has no separate "Inicio" — Agenda is the entry point, so
-// NAV_ITEMS itself no longer has an Inicio entry. Dentist/Assistant still
-// keep their original "Inicio" experience for now (unchanged per this
-// iteration's scope), so it's re-added explicitly for just those two.
+// Clinic Admin and Dentist have no separate "Inicio" — Agenda is their
+// entry point (see homeRouteForRole below), so NAV_ITEMS itself has no
+// Inicio entry and dentist's own ROLE_NAV_ITEMS list doesn't re-add one.
+// Assistant still keeps its original "Inicio" experience for now (unchanged
+// per this iteration's scope), so it's re-added explicitly just for it.
 const HOME_ITEM: NavItem = { label: "Inicio", icon: DashboardIcon, group: "work" };
 
 // Derived from the real Domain Model in CLAUDE.md:
@@ -63,10 +64,9 @@ const HOME_ITEM: NavItem = { label: "Inicio", icon: DashboardIcon, group: "work"
 // - Superadmin operates the platform, not a single clinic — a distinct set.
 export const ROLE_NAV_ITEMS: Record<Role, readonly NavItem[]> = {
   "clinic-admin": NAV_ITEMS,
-  dentist: [
-    HOME_ITEM,
-    ...NAV_ITEMS.filter((item) => item.label !== "Clínica" && item.label !== "Mi Suscripción"),
-  ],
+  // No Inicio for Dentist — Agenda (already first in NAV_ITEMS) is the
+  // entry point, matching homeRouteForRole's dentist landing below.
+  dentist: NAV_ITEMS.filter((item) => item.label !== "Clínica" && item.label !== "Mi Suscripción"),
   assistant: [
     HOME_ITEM,
     ...NAV_ITEMS.filter(
