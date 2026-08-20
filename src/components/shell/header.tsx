@@ -8,6 +8,7 @@ import { AdminProfileModal } from "@/features/dashboard/admin-profile-modal";
 import { DentistProfileModal } from "@/features/dashboard/appointments-card";
 import { AssistantProfileModal } from "@/features/dashboard/assistant-profile-modal";
 import { useAuthenticatedIdentity } from "@/features/dashboard/use-authenticated-identity";
+import { CURRENT_USER } from "@/lib/current-user";
 import { BellIcon, ChevronDownIcon, LogOutIcon, SearchIcon, UserIcon } from "./icons";
 
 // Desktop only — mobile uses MobileHeader + BottomTabBar instead.
@@ -148,9 +149,7 @@ export function Header() {
       {showProfile && dentistToShow && (
         <DentistProfileModal
           dentist={dentistToShow}
-          allAppointments={[]}
           onClose={() => setShowProfile(false)}
-          onDeactivate={() => {}}
           onSelfProfileChange={isDentistRole ? setSelfDentistOverride : handleAdminDentistProfileChange}
           initialProfile={
             !isDentistRole && adminProfessionalProfile
@@ -160,6 +159,11 @@ export function Header() {
                   scheduleDays: adminProfessionalProfile.scheduleDays,
                   scheduleStart: adminProfessionalProfile.scheduleStart,
                   scheduleEnd: adminProfessionalProfile.scheduleEnd,
+                  // Same "Mi perfil" identity fields shown/edited above,
+                  // not a second copy — see AdminProfileModal's own
+                  // displayEmail/displayPhone.
+                  email: adminIdentityOverride.email ?? CURRENT_USER.email,
+                  phone: adminIdentityOverride.phone ?? CURRENT_USER.phone,
                 }
               : undefined
           }

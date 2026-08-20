@@ -10,7 +10,7 @@ import { CURRENT_USER } from "@/lib/current-user";
 import { AnchoredPopover, AppointmentDetailModal, FIELD_CLASS } from "./appointment-detail-modal";
 import { ClinicalEncounterScreen } from "./clinical-encounter-screen";
 import type { Appointment, AppointmentStatus, Dentist, WeekDay } from "./mock-data";
-import { ADMIN_DENTIST_ID, STATUS_LABELS, STATUS_STYLES } from "./mock-data";
+import { ADMIN_DENTIST_ID, ROOMS, STATUS_LABELS, STATUS_STYLES } from "./mock-data";
 import { NewAppointmentModal } from "./new-appointment-modal";
 import { TIME_SLOTS } from "./schedule-config";
 
@@ -363,19 +363,6 @@ export function AppointmentsCard({
   const clearFilters = () => {
     setProfessionalFilter([]);
     setStatusFilter("all");
-  };
-
-  // Simulates the side effect of inactivating a professional: their active
-  // upcoming appointments are cancelled automatically (see the confirmation
-  // flow in DentistProfileModal below).
-  const deactivateDentistAppointments = (dentistId: string) => {
-    setAllAppointments((prev) =>
-      prev.map((a) =>
-        a.dentistId === dentistId && (a.status === "confirmed" || a.status === "pending" || a.status === "in-progress")
-          ? { ...a, status: "cancelled" }
-          : a,
-      ),
-    );
   };
 
   const openNewAppointment = (prefill: { dentistId: string; day: string; time: string } | null) => {
@@ -733,9 +720,7 @@ export function AppointmentsCard({
       {selectedDentist && (
         <DentistProfileModal
           dentist={selectedDentist}
-          allAppointments={allAppointments}
           onClose={() => setSelectedDentistId(null)}
-          onDeactivate={() => deactivateDentistAppointments(selectedDentist.id)}
           onSelfProfileChange={setSelfDentistOverride}
         />
       )}
@@ -994,6 +979,7 @@ function EditableProfileRow({
   onSave,
   onCancel,
   variant = "stacked",
+  options,
 }: {
   label: string;
   value: string;
@@ -1009,6 +995,11 @@ function EditableProfileRow({
   // "heading"/"subheading": Nombre/Especialidad inside that badge header
   // instead — centered, no <dt>/<dd> since they don't sit inside a <dl>.
   variant?: "stacked" | "heading" | "subheading";
+  // When set (e.g. Consultorio principal → ROOMS), edits as a <select>
+  // from this fixed catalog instead of free text — the same selector
+  // pattern AdminProfileModal's own "Consultorio principal" field already
+  // uses, reused here rather than inventing a second one.
+  options?: string[];
 }) {
   const centered = variant !== "stacked";
 
@@ -1016,12 +1007,27 @@ function EditableProfileRow({
     return (
       <div className={`flex flex-col gap-1.5 ${centered ? "items-center text-center" : ""}`}>
         <span className="text-[11px] text-label-foreground">{label}</span>
-        <input
-          autoFocus
-          value={draftValue}
-          onChange={(e) => onDraftChange(e.target.value)}
-          className={`${FIELD_CLASS} ${centered ? "text-center" : ""}`}
-        />
+        {options ? (
+          <select
+            autoFocus
+            value={draftValue}
+            onChange={(e) => onDraftChange(e.target.value)}
+            className={`${FIELD_CLASS} ${centered ? "text-center" : ""}`}
+          >
+            {options.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            autoFocus
+            value={draftValue}
+            onChange={(e) => onDraftChange(e.target.value)}
+            className={`${FIELD_CLASS} ${centered ? "text-center" : ""}`}
+          />
+        )}
         <div className={`flex gap-1.5 ${centered ? "justify-center" : "justify-end"}`}>
           <button
             type="button"
@@ -1070,6 +1076,53 @@ function EditableProfileRow({
         <span className="shrink-0">
           <FieldPencilButton label={`Editar ${label}`} onClick={onStartEdit} />
         </span>
+      )}
+    </div>
+  );
+}
+
+// Clínica's "Equipo > Editar" batched edit mode (see DentistProfileModal's
+// showEditChrome): every left-column field is a control at once, so there's
+// no per-field pencil/save here — same small-label-above-FIELD_CLASS-input
+// look EditableProfileRow's own editing branch already uses, just without
+// the individual Cancelar/Guardar (one shared pair covers the whole batch).
+function ChromeEditField({
+  label,
+  value,
+  onChange,
+  type = "text",
+  options,
+  centered = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  options?: string[];
+  centered?: boolean;
+}) {
+  return (
+    <div className={`flex flex-col gap-1 ${centered ? "w-full items-center text-center" : ""}`}>
+      <span className="text-[11px] text-label-foreground">{label}</span>
+      {options ? (
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={`${FIELD_CLASS} ${centered ? "text-center" : ""}`}
+        >
+          {options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={`${FIELD_CLASS} ${centered ? "text-center" : ""}`}
+        />
       )}
     </div>
   );
@@ -1196,33 +1249,46 @@ const KPI_HEADINGS: Record<KpiDetailKey, string> = {
 // point reading/writing the same RoleContext-shared self-profile data.
 export function DentistProfileModal({
   dentist,
-  allAppointments,
   onClose,
-  onDeactivate,
   onSelfProfileChange,
   initialProfile,
+  initialEditMode = false,
+  initialStatus,
 }: {
   dentist: Dentist;
-  allAppointments: Appointment[];
   onClose: () => void;
-  onDeactivate: () => void;
   // DEV TOOL — called with whichever of name/specialty/avatar_url changed
   // once the self-view edit flow saves, so every place this dentist is
   // rendered (Agenda board, filters, shell Header) reflects it for the
   // rest of the session — there's no real backend to persist to yet.
   onSelfProfileChange: (patch: { name?: string; specialty?: string; avatar_url?: string }) => void;
-  // DEV TOOL — seeds registrationNumber/mainRoom/schedule when `dentist.id`
-  // isn't one of DENTIST_PROFILE_MOCK's seeded entries (the Clinic Admin's
-  // own synthetic professional profile, see header.tsx) so this shows what
-  // they actually entered in "Configurar perfil profesional" instead of the
-  // generic DEFAULT_DENTIST_PROFILE_MOCK placeholders.
+  // DEV TOOL — seeds registrationNumber/mainRoom/schedule (and, so the
+  // Clinic Admin's own real contact info shows instead of
+  // DEFAULT_DENTIST_PROFILE_MOCK's generic placeholders, email/phone too)
+  // when `dentist.id` isn't one of DENTIST_PROFILE_MOCK's seeded entries
+  // (the Clinic Admin's own synthetic professional profile, see
+  // header.tsx/clinic-settings-screen.tsx) so this shows what they
+  // actually entered in "Configurar perfil profesional".
   initialProfile?: {
     registrationNumber?: string;
     mainRoom?: string;
     scheduleDays?: string[];
     scheduleStart?: string;
     scheduleEnd?: string;
+    email?: string;
+    phone?: string;
   };
+  // DEV TOOL — Clínica's own "Equipo > Editar" (see clinic-settings-screen.tsx)
+  // opens this exact modal straight into the whole-column edit chrome
+  // instead of the read-only view, rather than building a second profile
+  // UI. Previously that chrome only ever applied to isSelfView; both flags
+  // below widen it to also cover an admin editing someone else's record
+  // through this specific entry point (see isSelfView/isAdminView below).
+  initialEditMode?: boolean;
+  // `Dentist` itself carries no status field — without this, an already
+  // "Inactivo" team member would always open showing "Activo" (see
+  // `profile` below, which used to hardcode "active" unconditionally).
+  initialStatus?: DentistStatus;
 }) {
   const { role, dentistId: currentDentistId } = useRole();
   // DEV TOOL — see src/dev/role.ts. Viewing/editing someone ELSE's record is
@@ -1254,7 +1320,7 @@ export function DentistProfileModal({
     ...baseProfile,
     name: dentist.name,
     specialty: dentist.specialty,
-    status: "active" as DentistStatus,
+    status: initialStatus ?? ("active" as DentistStatus),
     avatarUrl: dentist.avatar_url,
   });
 
@@ -1263,19 +1329,58 @@ export function DentistProfileModal({
   // DEV TOOL — "Editar perfil" toggle for the self-view (Dentist editing
   // their own record): reuses the exact same EditableProfileRow pencils as
   // isAdminView, just gated behind an explicit "enter edit mode" tap
-  // instead of always-visible.
-  const [editingProfile, setEditingProfile] = useState(false);
+  // instead of always-visible. Also the toggle Clínica's "Equipo > Editar"
+  // pre-sets true via initialEditMode (see showEditChrome below) so that
+  // entry point opens straight into this same chrome instead of a second
+  // one.
+  const [editingProfile, setEditingProfile] = useState(initialEditMode);
+  // DEV TOOL — the whole-column edit chrome (photo, tinted box,
+  // Cancelar/Guardar cambios footer) used to be isSelfView-only; widened
+  // so Clínica's "Equipo > Editar" (isAdminView + initialEditMode) gets
+  // the exact same experience instead of a second one. isAdminView's
+  // individual field pencils stay always-on OUTSIDE this mode (see
+  // `editable` below, unchanged) — opening via the Agenda board still
+  // behaves exactly as it always has.
+  const showEditChrome = (isSelfView || isAdminView) && editingProfile;
+  // All 7 left-column fields open as controls simultaneously in this mode
+  // (see task scope) — a single batched draft, committed together by
+  // "Guardar cambios" or thrown away by "Cancelar", instead of each
+  // field's own individual pencil/save (that per-field mechanism —
+  // editingField/draftValue/saveField below — stays exactly as-is for the
+  // non-edit-chrome isAdminView case).
+  const makeEditDraft = (source: typeof profile) => ({
+    name: source.name,
+    specialty: source.specialty,
+    registrationNumber: source.registrationNumber,
+    phone: source.phone,
+    email: source.email,
+    mainRoom: source.mainRoom,
+  });
+  const [editDraft, setEditDraft] = useState(() => makeEditDraft(profile));
+  const updateEditDraft = <K extends keyof ReturnType<typeof makeEditDraft>>(key: K, value: string) =>
+    setEditDraft((prev) => ({ ...prev, [key]: value }));
   // DEV TOOL — the newly picked photo, previewed immediately but not
   // applied to `profile.avatarUrl` (and not reported via onAvatarChange)
   // until "Guardar foto"; "Cancelar" or exiting edit mode just discards it.
   const [photoDraft, setPhotoDraft] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [editingStatus, setEditingStatus] = useState(false);
-  const [pendingDeactivation, setPendingDeactivation] = useState(false);
-  const [editingSchedule, setEditingSchedule] = useState(false);
-  const [draftDays, setDraftDays] = useState<string[]>([]);
-  const [draftStart, setDraftStart] = useState("");
-  const [draftEnd, setDraftEnd] = useState("");
+  // Horario de atención joins the same batched draft as the other
+  // showEditChrome fields (see task scope) — its own existing editing UI
+  // (day pills + start/end selects, below) is reused as-is, just opened
+  // immediately instead of behind its own pencil, and committed/discarded
+  // together with everything else instead of its own mini Guardar/Cancelar.
+  const [editingSchedule, setEditingSchedule] = useState(initialEditMode);
+  const [draftDays, setDraftDays] = useState<string[]>(() => profile.scheduleDays);
+  const [draftStart, setDraftStart] = useState(() => profile.scheduleStart);
+  const [draftEnd, setDraftEnd] = useState(() => profile.scheduleEnd);
+  const enterEditMode = () => {
+    setEditDraft(makeEditDraft(profile));
+    setDraftDays(profile.scheduleDays);
+    setDraftStart(profile.scheduleStart);
+    setDraftEnd(profile.scheduleEnd);
+    setEditingSchedule(true);
+    setEditingProfile(true);
+  };
   const [selectedKpi, setSelectedKpi] = useState<KpiDetailKey>("citas-hoy");
 
   const startEditing = (field: EditableFieldKey, currentValue: string) => {
@@ -1310,37 +1415,36 @@ export function DentistProfileModal({
     reader.readAsDataURL(file);
   };
 
-  const savePhotoChange = () => {
-    if (!photoDraft) return;
-    setProfile((prev) => ({ ...prev, avatarUrl: photoDraft }));
-    onSelfProfileChange({ avatar_url: photoDraft });
-    setPhotoDraft(null);
-  };
-
-  const cancelPhotoChange = () => setPhotoDraft(null);
-
-  // This prototype's mock data only models a single week — "citas futuras"
-  // is approximated as this dentist's appointments that haven't already
-  // completed or been cancelled (see PROJECT_STATUS.md's mock-data phase).
-  const hasActiveUpcomingAppointments = allAppointments.some(
-    (a) =>
-      a.dentistId === dentist.id &&
-      (a.status === "confirmed" || a.status === "pending" || a.status === "in-progress"),
-  );
-
-  const requestStatusChange = (next: DentistStatus) => {
-    setEditingStatus(false);
-    if (next === "inactive" && hasActiveUpcomingAppointments) {
-      setPendingDeactivation(true);
-      return;
+  // Activo/Inactivo is never editable from this form anymore — see task
+  // scope: Equipo's own dedicated Desactivar/Reactivar flow (with its
+  // citas-reassignment logic) is now the only place status changes,
+  // replacing this modal's former inline toggle + deactivation-cascade
+  // warning entirely. `profile.status` stays purely for display.
+  const commitAllChanges = () => {
+    setProfile((prev) => ({
+      ...prev,
+      ...editDraft,
+      scheduleDays: draftDays,
+      scheduleStart: draftStart,
+      scheduleEnd: draftEnd,
+      avatarUrl: photoDraft ?? prev.avatarUrl,
+    }));
+    if (isSelfView) {
+      onSelfProfileChange({
+        name: editDraft.name,
+        specialty: editDraft.specialty,
+        ...(photoDraft ? { avatar_url: photoDraft } : {}),
+      });
     }
-    setProfile((prev) => ({ ...prev, status: next }));
+    setPhotoDraft(null);
+    setEditingSchedule(false);
+    setEditingProfile(false);
   };
 
-  const confirmDeactivation = () => {
-    setProfile((prev) => ({ ...prev, status: "inactive" }));
-    onDeactivate();
-    setPendingDeactivation(false);
+  const cancelAllChanges = () => {
+    setPhotoDraft(null);
+    setEditingSchedule(false);
+    setEditingProfile(false);
   };
 
   const startEditingSchedule = () => {
@@ -1375,7 +1479,13 @@ export function DentistProfileModal({
         aria-modal="true"
         aria-label={dentist.name}
         onClick={(e) => e.stopPropagation()}
-        className="relative z-10 flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-background shadow-xl sm:max-h-[80vh] sm:w-full sm:max-w-2xl sm:rounded-xl md:max-w-4xl"
+        className={`relative z-10 flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-background shadow-xl sm:max-h-[80vh] sm:w-full sm:max-w-2xl sm:rounded-xl ${
+          // A touch more width for the edit-mode layout below (36/32/32 —
+          // see task scope) — only past lg so this never forces horizontal
+          // overflow on a narrower desktop window; the read-only modal
+          // keeps its exact original max-w-4xl ceiling.
+          showEditChrome ? "md:max-w-4xl xl:max-w-5xl" : "md:max-w-4xl"
+        }`}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3">
           <div>
@@ -1394,13 +1504,21 @@ export function DentistProfileModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto md:grid md:grid-cols-[1fr_1.15fr_1.15fr] md:overflow-hidden">
+        <div
+          className={`flex-1 overflow-y-auto md:grid md:overflow-hidden ${
+            // Edit mode gets a wider left column (36/32/32 vs the read-only
+            // view's 1fr/1.15fr/1.15fr ≈ 30/35/35) — Disponibilidad/Agenda
+            // del día keep their existing design, just a touch narrower,
+            // not aggressively compressed (see task scope).
+            showEditChrome ? "md:grid-cols-[36%_32%_32%]" : "md:grid-cols-[1fr_1.15fr_1.15fr]"
+          }`}
+        >
           {/* Left — Tarjeta de identidad profesional (credencial) */}
           <div className="border-b border-border p-5 md:min-h-0 md:overflow-y-auto md:border-r md:border-b-0">
             <div className="rounded-xl border border-border bg-[color-mix(in_oklab,var(--primary)_10%,transparent)] p-4 shadow-sm">
               {/* Encabezado tipo credencial — siempre centrado, incluso en desktop. */}
-              <div className="flex flex-col items-center gap-2 text-center">
-              {isSelfView && editingProfile ? (
+              <div className={`flex flex-col items-center text-center ${showEditChrome ? "gap-1.5" : "gap-2"}`}>
+              {showEditChrome ? (
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -1411,7 +1529,7 @@ export function DentistProfileModal({
                     name={dentist.name}
                     initials={dentist.initials}
                     avatar_url={photoDraft ?? profile.avatarUrl}
-                    sizeClassName="size-20"
+                    sizeClassName="size-16"
                   />
                   <span className="pointer-events-none absolute inset-0 rounded-full bg-foreground/0 transition-colors group-hover:bg-foreground/40" />
                   <span className="pointer-events-none absolute -right-0.5 -bottom-0.5 flex size-5 items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground">
@@ -1427,7 +1545,7 @@ export function DentistProfileModal({
                 />
               )}
 
-              {isSelfView && editingProfile && (
+              {showEditChrome && (
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1437,88 +1555,67 @@ export function DentistProfileModal({
                 />
               )}
 
-              <EditableProfileRow
-                variant="heading"
-                label="Nombre"
-                value={profile.name}
-                editable={isAdminView || (isSelfView && editingProfile)}
-                isEditing={editingField === "name"}
-                draftValue={draftValue}
-                onDraftChange={setDraftValue}
-                onStartEdit={() => startEditing("name", profile.name)}
-                onSave={saveField}
-                onCancel={cancelEditing}
-              />
-
-              <EditableProfileRow
-                variant="subheading"
-                label="Especialidad"
-                value={profile.specialty}
-                editable={isAdminView || (isSelfView && editingProfile)}
-                isEditing={editingField === "specialty"}
-                draftValue={draftValue}
-                onDraftChange={setDraftValue}
-                onStartEdit={() => startEditing("specialty", profile.specialty)}
-                onSave={saveField}
-                onCancel={cancelEditing}
-              />
-
-              {isAdminView ? (
-                editingStatus ? (
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => requestStatusChange("active")}
-                      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                        profile.status === "active"
-                          ? "border-primary/25 bg-primary/10 text-primary"
-                          : "border-border text-muted-foreground hover:bg-foreground/5"
-                      }`}
-                    >
-                      Activo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => requestStatusChange("inactive")}
-                      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                        profile.status === "inactive"
-                          ? "border-danger/25 bg-danger/10 text-danger"
-                          : "border-border text-muted-foreground hover:bg-foreground/5"
-                      }`}
-                    >
-                      Inactivo
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setEditingStatus(true)}
-                    className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                      profile.status === "active"
-                        ? "border-primary/25 bg-primary/10 text-primary hover:bg-primary/15"
-                        : "border-danger/25 bg-danger/10 text-danger hover:bg-danger/15"
-                    }`}
-                  >
-                    {profile.status === "active" ? "Activo" : "Inactivo"}
-                    <PencilIcon className="size-3" />
-                  </button>
-                )
+              {showEditChrome ? (
+                <ChromeEditField
+                  label="Nombre"
+                  value={editDraft.name}
+                  onChange={(v) => updateEditDraft("name", v)}
+                  centered
+                />
               ) : (
-                <span
-                  className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                    profile.status === "active"
-                      ? "border-primary/25 bg-primary/10 text-primary"
-                      : "border-danger/25 bg-danger/10 text-danger"
-                  }`}
-                >
-                  {profile.status === "active" ? "Activo" : "Inactivo"}
-                </span>
+                <EditableProfileRow
+                  variant="heading"
+                  label="Nombre"
+                  value={profile.name}
+                  editable={isAdminView}
+                  isEditing={editingField === "name"}
+                  draftValue={draftValue}
+                  onDraftChange={setDraftValue}
+                  onStartEdit={() => startEditing("name", profile.name)}
+                  onSave={saveField}
+                  onCancel={cancelEditing}
+                />
               )}
+
+              {showEditChrome ? (
+                <ChromeEditField
+                  label="Especialidad"
+                  value={editDraft.specialty}
+                  onChange={(v) => updateEditDraft("specialty", v)}
+                  centered
+                />
+              ) : (
+                <EditableProfileRow
+                  variant="subheading"
+                  label="Especialidad"
+                  value={profile.specialty}
+                  editable={isAdminView}
+                  isEditing={editingField === "specialty"}
+                  draftValue={draftValue}
+                  onDraftChange={setDraftValue}
+                  onStartEdit={() => startEditing("specialty", profile.specialty)}
+                  onSave={saveField}
+                  onCancel={cancelEditing}
+                />
+              )}
+
+              {/* Informational only — never editable from this form (see
+                  task scope: Equipo's own Desactivar/Reactivar is the only
+                  place Activo/Inactivo actually changes). */}
+              <span
+                className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                  profile.status === "active"
+                    ? "border-primary/25 bg-primary/10 text-primary"
+                    : "border-danger/25 bg-danger/10 text-danger"
+                }`}
+              >
+                {profile.status === "active" ? "Activo" : "Inactivo"}
+              </span>
 
               {isSelfView && !editingProfile && (
                 <button
                   type="button"
-                  onClick={() => setEditingProfile(true)}
+                  onClick={enterEditMode}
                   className="text-xs font-medium text-primary hover:underline"
                 >
                   Editar perfil
@@ -1526,62 +1623,57 @@ export function DentistProfileModal({
               )}
             </div>
 
-            {pendingDeactivation && (
-              <div className="mt-3 rounded-lg border border-warning/25 bg-warning/10 p-3 text-xs text-warning">
-                <p className="font-medium">Este profesional tiene citas activas próximas.</p>
-                <p className="mt-1">Al inactivarlo, esas citas se cancelarán automáticamente.</p>
-                <div className="mt-2.5 flex justify-end gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setPendingDeactivation(false)}
-                    className="rounded-lg px-2.5 py-1 text-xs font-medium text-warning/80 hover:bg-warning/15"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={confirmDeactivation}
-                    className="rounded-lg bg-warning px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
-                  >
-                    Inactivar y cancelar citas
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* Separación visual sutil entre el gafete y los datos profesionales. */}
-            <div className="mt-5 border-t border-border" />
+            <div className={showEditChrome ? "mt-4 border-t border-border" : "mt-5 border-t border-border"} />
 
             <dl
-              className={`mt-5 flex flex-col gap-4 text-sm ${
-                isSelfView && editingProfile ? "rounded-lg border border-primary/15 bg-primary/[0.03] p-3" : ""
+              className={`flex flex-col text-sm ${
+                showEditChrome
+                  ? "mt-4 gap-3 rounded-lg border border-primary/15 bg-primary/[0.03] p-3"
+                  : "mt-5 gap-4"
               }`}
             >
-              <EditableProfileRow
-                label="Registro profesional"
-                value={profile.registrationNumber}
-                editable={isAdminView || (isSelfView && editingProfile)}
-                isEditing={editingField === "registrationNumber"}
-                draftValue={draftValue}
-                onDraftChange={setDraftValue}
-                onStartEdit={() => startEditing("registrationNumber", profile.registrationNumber)}
-                onSave={saveField}
-                onCancel={cancelEditing}
-              />
-              <div>
+              {showEditChrome ? (
+                <ChromeEditField
+                  label="Registro profesional"
+                  value={editDraft.registrationNumber}
+                  onChange={(v) => updateEditDraft("registrationNumber", v)}
+                />
+              ) : (
                 <EditableProfileRow
-                  label="Teléfono"
-                  value={profile.phone}
-                  editable={isAdminView || (isSelfView && editingProfile)}
-                  isEditing={editingField === "phone"}
+                  label="Registro profesional"
+                  value={profile.registrationNumber}
+                  editable={isAdminView}
+                  isEditing={editingField === "registrationNumber"}
                   draftValue={draftValue}
                   onDraftChange={setDraftValue}
-                  onStartEdit={() => startEditing("phone", profile.phone)}
+                  onStartEdit={() => startEditing("registrationNumber", profile.registrationNumber)}
                   onSave={saveField}
                   onCancel={cancelEditing}
                 />
+              )}
+              <div>
+                {showEditChrome ? (
+                  <ChromeEditField label="Teléfono" value={editDraft.phone} onChange={(v) => updateEditDraft("phone", v)} />
+                ) : (
+                  <EditableProfileRow
+                    label="Teléfono"
+                    value={profile.phone}
+                    editable={isAdminView}
+                    isEditing={editingField === "phone"}
+                    draftValue={draftValue}
+                    onDraftChange={setDraftValue}
+                    onStartEdit={() => startEditing("phone", profile.phone)}
+                    onSave={saveField}
+                    onCancel={cancelEditing}
+                  />
+                )}
                 {/* Compact contact action, right next to the phone it uses —
-                    always this professional's own number, whoever's viewing. */}
+                    always this professional's own number, whoever's viewing.
+                    Kept as-is in edit mode too (see task scope) — not
+                    replaced by redundant content, and points at the still-
+                    current profile.phone until Guardar cambios applies the
+                    draft. */}
                 {editingField !== "phone" && profile.phone && (
                   <a
                     href={`https://wa.me/${profile.phone.replace(/\D/g, "")}`}
@@ -1594,48 +1686,67 @@ export function DentistProfileModal({
                   </a>
                 )}
               </div>
-              <EditableProfileRow
-                label="Correo electrónico"
-                value={profile.email}
-                editable={isAdminView || (isSelfView && editingProfile)}
-                isEditing={editingField === "email"}
-                draftValue={draftValue}
-                onDraftChange={setDraftValue}
-                onStartEdit={() => startEditing("email", profile.email)}
-                onSave={saveField}
-                onCancel={cancelEditing}
-              />
-              <EditableProfileRow
-                label="Consultorio principal"
-                value={profile.mainRoom}
-                editable={isAdminView || (isSelfView && editingProfile)}
-                isEditing={editingField === "mainRoom"}
-                draftValue={draftValue}
-                onDraftChange={setDraftValue}
-                onStartEdit={() => startEditing("mainRoom", profile.mainRoom)}
-                onSave={saveField}
-                onCancel={cancelEditing}
-              />
+              {showEditChrome ? (
+                <ChromeEditField
+                  label="Correo electrónico"
+                  value={editDraft.email}
+                  onChange={(v) => updateEditDraft("email", v)}
+                  type="email"
+                />
+              ) : (
+                <EditableProfileRow
+                  label="Correo electrónico"
+                  value={profile.email}
+                  editable={isAdminView}
+                  isEditing={editingField === "email"}
+                  draftValue={draftValue}
+                  onDraftChange={setDraftValue}
+                  onStartEdit={() => startEditing("email", profile.email)}
+                  onSave={saveField}
+                  onCancel={cancelEditing}
+                />
+              )}
+              {showEditChrome ? (
+                <ChromeEditField
+                  label="Consultorio principal"
+                  value={editDraft.mainRoom}
+                  onChange={(v) => updateEditDraft("mainRoom", v)}
+                  options={ROOMS}
+                />
+              ) : (
+                <EditableProfileRow
+                  label="Consultorio principal"
+                  value={profile.mainRoom}
+                  editable={isAdminView}
+                  isEditing={editingField === "mainRoom"}
+                  draftValue={draftValue}
+                  onDraftChange={setDraftValue}
+                  onStartEdit={() => startEditing("mainRoom", profile.mainRoom)}
+                  onSave={saveField}
+                  onCancel={cancelEditing}
+                  options={ROOMS}
+                />
+              )}
             </dl>
 
-            {isSelfView && editingProfile && (
-              <div className="mt-4 flex justify-end gap-1.5">
+            {showEditChrome && (
+              // Sticky to the nearest scrolling ancestor (this column at
+              // md+, the whole modal below it — see task scope: "nunca
+              // deben quedar cortadas debajo del viewport"). Bleeds to the
+              // credential card's own edges (-mx-4/-mb-4 cancel its p-4)
+              // with a matching background/rounding so it reads as that
+              // same card's footer, not a separate floating bar.
+              <div className="sticky bottom-0 -mx-4 -mb-4 mt-4 flex justify-end gap-1.5 rounded-b-xl border-t border-primary/15 bg-[color-mix(in_oklab,var(--primary)_10%,transparent)] px-4 py-3">
                 <button
                   type="button"
-                  onClick={() => {
-                    cancelPhotoChange();
-                    setEditingProfile(false);
-                  }}
+                  onClick={cancelAllChanges}
                   className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-foreground/70 hover:bg-foreground/5"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    savePhotoChange();
-                    setEditingProfile(false);
-                  }}
+                  onClick={commitAllChanges}
                   className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
                 >
                   Guardar cambios
@@ -1684,22 +1795,28 @@ export function DentistProfileModal({
                       ))}
                     </select>
                   </div>
-                  <div className="flex justify-end gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setEditingSchedule(false)}
-                      className="rounded-lg px-2.5 py-1 text-xs font-medium text-foreground/70 hover:bg-foreground/5"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={saveSchedule}
-                      className="rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
-                    >
-                      Guardar
-                    </button>
-                  </div>
+                  {/* Its own mini Guardar/Cancelar only makes sense
+                      outside showEditChrome — inside it, this is just
+                      another field in the same global Cancelar/Guardar
+                      cambios (see task scope). */}
+                  {!showEditChrome && (
+                    <div className="flex justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setEditingSchedule(false)}
+                        className="rounded-lg px-2.5 py-1 text-xs font-medium text-foreground/70 hover:bg-foreground/5"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={saveSchedule}
+                        className="rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
+                      >
+                        Guardar
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex items-center justify-between gap-3 text-sm">

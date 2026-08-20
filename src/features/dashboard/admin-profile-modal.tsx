@@ -28,6 +28,7 @@ export function AdminProfileModal({
   adminIdentityOverride,
   setAdminIdentityOverride,
   setAdminProfessionalProfile,
+  autoConfigureProfessional = false,
 }: {
   onClose: () => void;
   // Called right after the first-ever "Perfil profesional" save, so
@@ -36,6 +37,13 @@ export function AdminProfileModal({
   adminIdentityOverride: AdminIdentityOverride;
   setAdminIdentityOverride: (patch: AdminIdentityOverride) => void;
   setAdminProfessionalProfile: (profile: AdminProfessionalProfile | null) => void;
+  // Skips the "¿También atiendes pacientes...?" empty state and opens
+  // straight into the Perfil profesional form — only for the
+  // "Clínica > Mi perfil profesional" entry point (see
+  // clinic-settings-screen.tsx), which is itself the deliberate act of
+  // turning that on; the normal avatar/header entry point never passes
+  // this, so it keeps showing the read/empty state exactly as before.
+  autoConfigureProfessional?: boolean;
 }) {
   const displayName = adminIdentityOverride.name ?? CURRENT_USER.name;
   const displayEmail = adminIdentityOverride.email ?? CURRENT_USER.email;
@@ -84,7 +92,7 @@ export function AdminProfileModal({
     reader.readAsDataURL(file);
   };
 
-  const [configuringProfessional, setConfiguringProfessional] = useState(false);
+  const [configuringProfessional, setConfiguringProfessional] = useState(autoConfigureProfessional);
   const [specialtyDraft, setSpecialtyDraft] = useState("");
   const [registrationDraft, setRegistrationDraft] = useState("");
   const [mainRoomDraft, setMainRoomDraft] = useState(ROOMS[0]);

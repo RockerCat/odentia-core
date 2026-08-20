@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDownIcon, SearchIcon } from "@/components/shell/icons";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { AnchoredPopover, FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
 
 // Shared searchable single-select — collapsed to just a search field until
 // it gains focus or the user types, opening a dropdown of live-filtered
@@ -43,6 +43,12 @@ export function Combobox<T>({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  // The search input is present in the DOM whenever `open` can be true
+  // (see the ternary below), so it doubles as AnchoredPopover's anchor —
+  // that's what lets the dropdown escape this modal/card's own
+  // overflow-hidden/scroll clipping and repaint above a sticky footer,
+  // instead of the plain `absolute` positioning this used before.
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -79,6 +85,7 @@ export function Combobox<T>({
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
+            ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => {
@@ -92,33 +99,37 @@ export function Combobox<T>({
         </div>
       )}
 
-      {open && (
-        <div className="absolute z-20 mt-1 max-h-44 w-full overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
-          {filtered.length === 0 ? (
-            <p className="px-3 py-4 text-center text-xs text-muted-foreground">{emptyText}</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {filtered.map((item) => {
-                const key = getKey(item);
-                const active = selectedItem ? getKey(selectedItem) === key : false;
-                return (
-                  <li key={key}>
-                    <button
-                      type="button"
-                      onClick={() => handleSelect(item)}
-                      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors ${
-                        active ? "bg-primary/10" : "hover:bg-foreground/5"
-                      }`}
-                    >
-                      {renderItem(item, false)}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      )}
+      <AnchoredPopover
+        open={open}
+        anchorRef={inputRef}
+        onClose={() => setOpen(false)}
+        matchAnchorWidth
+        className="max-h-44 overflow-y-auto rounded-lg border border-border bg-background shadow-lg"
+      >
+        {filtered.length === 0 ? (
+          <p className="px-3 py-4 text-center text-xs text-muted-foreground">{emptyText}</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {filtered.map((item) => {
+              const key = getKey(item);
+              const active = selectedItem ? getKey(selectedItem) === key : false;
+              return (
+                <li key={key}>
+                  <button
+                    type="button"
+                    onClick={() => handleSelect(item)}
+                    className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors ${
+                      active ? "bg-primary/10" : "hover:bg-foreground/5"
+                    }`}
+                  >
+                    {renderItem(item, false)}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </AnchoredPopover>
     </div>
   );
 }

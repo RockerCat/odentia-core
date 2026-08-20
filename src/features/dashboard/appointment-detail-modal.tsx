@@ -759,16 +759,28 @@ export function AnchoredPopover({
   anchorRef,
   onClose,
   widthClass = "w-64",
+  matchAnchorWidth = false,
+  className,
   children,
 }: {
   open: boolean;
   anchorRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   widthClass?: string;
+  // Tracks the anchor's own measured width instead of widthClass — for a
+  // picker like Combobox, whose dropdown must stay exactly as wide as its
+  // trigger regardless of where it's placed.
+  matchAnchorWidth?: boolean;
+  // Full override for the panel's own visual classes (default: a plain
+  // bordered/shadowed/padded card). `fixed z-30` — the actual escape-
+  // clipping/stacking mechanism — always applies underneath this and is
+  // never overridable, so a caller only ever replaces cosmetics, never
+  // the positioning behavior itself.
+  className?: string;
   children: ReactNode;
 }) {
   const popoverRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+  const [position, setPosition] = useState<{ top: number; left: number; width?: number } | null>(null);
   const MARGIN = 8;
   const GAP = 6;
 
@@ -780,6 +792,7 @@ export function AnchoredPopover({
 
     const anchorRect = anchor.getBoundingClientRect();
     const popoverRect = popover.getBoundingClientRect();
+    const width = matchAnchorWidth ? anchorRect.width : undefined;
 
     let top = anchorRect.bottom + GAP;
     if (top + popoverRect.height + MARGIN > window.innerHeight) {
@@ -789,11 +802,11 @@ export function AnchoredPopover({
 
     const left = Math.min(
       Math.max(anchorRect.left, MARGIN),
-      window.innerWidth - popoverRect.width - MARGIN,
+      window.innerWidth - (width ?? popoverRect.width) - MARGIN,
     );
 
-    setPosition({ top, left });
-  }, [open, anchorRef]);
+    setPosition({ top, left, ...(width !== undefined ? { width } : {}) });
+  }, [open, anchorRef, matchAnchorWidth]);
 
   useEffect(() => {
     if (!open) return;
@@ -813,7 +826,7 @@ export function AnchoredPopover({
       ref={popoverRef}
       role="dialog"
       style={position ?? { top: 0, left: -9999 }}
-      className={`fixed z-30 ${widthClass} rounded-lg border border-border bg-background p-3 shadow-lg`}
+      className={`fixed z-30 ${className ?? `${widthClass} rounded-lg border border-border bg-background p-3 shadow-lg`}`}
     >
       {children}
     </div>

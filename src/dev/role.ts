@@ -73,7 +73,8 @@ export const ROLE_NAV_ITEMS: Record<Role, readonly NavItem[]> = {
       (item) =>
         item.label !== "Clínica" &&
         item.label !== "Mi Suscripción" &&
-        item.label !== "Configuración",
+        item.label !== "Configuración" &&
+        item.label !== "Reportes",
     ),
   ],
   // Superadmin manages the platform itself, not a clinic's operation —

@@ -31,7 +31,7 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { label: "Agenda", icon: CalendarIcon, group: "work", href: "/agenda" },
   { label: "Pacientes", icon: UserIcon, group: "work", href: "/pacientes" },
-  { label: "Reportes", icon: BarChartIcon, group: "work" },
+  { label: "Reportes", icon: BarChartIcon, group: "work", href: "/reportes" },
   { label: "Marketplace", icon: StoreIcon, group: "marketplace" },
   { label: "Clínica", icon: BuildingIcon, group: "admin", href: "/clinica" },
   { label: "Mi Suscripción", icon: CreditCardIcon, group: "admin" },

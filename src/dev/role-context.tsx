@@ -52,6 +52,11 @@ export type AdminProfessionalProfile = {
   scheduleDays: string[];
   scheduleStart: string;
   scheduleEnd: string;
+  // Optional: only the Clínica screen's own, narrower "Mi perfil
+  // profesional" form collects this (see clinic-settings-screen.tsx) —
+  // the fuller Header → "Mi perfil" → "Perfil profesional" flow
+  // (admin-profile-modal.tsx) doesn't ask for it and leaves it unset.
+  phone?: string;
 };
 
 type RoleContextValue = {
