@@ -35,5 +35,5 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Marketplace", icon: StoreIcon, group: "marketplace" },
   { label: "Clínica", icon: BuildingIcon, group: "admin", href: "/clinica" },
   { label: "Mi Suscripción", icon: CreditCardIcon, group: "admin", href: "/suscripcion" },
-  { label: "Configuración", icon: SlidersIcon, group: "admin" },
+  { label: "Configuración", icon: SlidersIcon, group: "admin", href: "/configuracion" },
 ];
