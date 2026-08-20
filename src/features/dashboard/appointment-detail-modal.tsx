@@ -146,7 +146,7 @@ export function AppointmentDetailModal({
   const leftColumnRef = useRef<HTMLDivElement>(null);
   // DEV TOOL — see src/dev/role.ts. An Assistant handles scheduling/front
   // desk work but never clinical attention (see CLAUDE.md Domain Model).
-  const { role } = useRole();
+  const { role, soloDentistClinic } = useRole();
   const isAssistant = role === "assistant";
 
   // DEV TOOL — Assistant's read-only operational timer (see
@@ -189,7 +189,10 @@ export function AppointmentDetailModal({
     onUpdate(updated);
   };
 
-  const dentist = dentists.find((d) => d.id === appointment.dentistId);
+  // "Administrador Odontólogo Único" (see role-context.tsx): every
+  // appointment belongs to the clinic's one dentist by definition, even
+  // when the seeded mock still carries a d1/d2/d3 id underneath.
+  const dentist = soloDentistClinic ? dentists[0] : dentists.find((d) => d.id === appointment.dentistId);
   const day = weekDays.find((d) => d.key === appointment.day);
   const duration = appointment.durationMinutes ?? DEFAULT_APPOINTMENT_DURATION;
   const endTime = addMinutesToSlot(appointment.time, duration);

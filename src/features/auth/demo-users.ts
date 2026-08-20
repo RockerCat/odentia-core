@@ -1,4 +1,5 @@
 import { ROLE_LABELS, type Role } from "@/dev/role";
+import { SOLO_DENTIST_SCENARIO_LABEL, SOLO_PRACTITIONER_PROFILE } from "@/dev/role-context";
 import { DENTISTS } from "@/features/dashboard/mock-data";
 import { CURRENT_ASSISTANT, CURRENT_PATIENT, CURRENT_SUPERADMIN, CURRENT_USER } from "@/lib/current-user";
 
@@ -11,6 +12,9 @@ export type DemoUser = {
   roleLabel: string;
   contextLabel: string;
   avatar_url?: string;
+  // "Administrador Odontólogo Único" demo scenario — see
+  // src/dev/role-context.tsx. Always paired with role: "clinic-admin".
+  soloDentistClinic?: boolean;
 };
 
 const demoDentist = DENTISTS[0];
@@ -29,6 +33,17 @@ export const DEMO_USERS: DemoUser[] = [
     roleLabel: ROLE_LABELS["clinic-admin"],
     contextLabel: CURRENT_USER.clinicName,
     avatar_url: CURRENT_USER.avatar_url,
+  },
+  {
+    role: "clinic-admin",
+    email: "admin-unico.demo@odentia.com",
+    password: "demo1234",
+    name: CURRENT_USER.name,
+    initials: CURRENT_USER.initials,
+    roleLabel: SOLO_DENTIST_SCENARIO_LABEL,
+    contextLabel: SOLO_PRACTITIONER_PROFILE.specialty,
+    avatar_url: CURRENT_USER.avatar_url,
+    soloDentistClinic: true,
   },
   {
     role: "dentist",

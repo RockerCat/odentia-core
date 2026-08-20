@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { BuildingIcon, PencilIcon, PlusIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
@@ -32,6 +32,15 @@ export function ClinicSettingsScreen() {
   return (
     <div className="flex flex-col gap-6">
       <InformacionGeneralSection />
+      {/* "Administrador Odontólogo Único" (see role-context.tsx) means the
+          clinic CURRENTLY has a single professional, not that it's
+          permanently capped at one — Equipo (with "+ Agregar miembro")
+          stays visible so the clinic can grow into the normal
+          multi-professional experience; it just starts empty (see
+          EquipoSection's own soloDentistClinic handling below). Her own
+          professional info shows separately via MiPerfilProfesionalSection,
+          reframed as "Mi información profesional" in that scenario — never
+          duplicated as a row in Equipo. */}
       <EquipoSection />
       <MiPerfilProfesionalSection />
       <ConsultoriosSection />
@@ -288,8 +297,28 @@ function InfoField({
 type TeamRow = { kind: "dentist"; member: TeamDentist } | { kind: "assistant"; member: TeamAssistant };
 
 function EquipoSection() {
-  const [dentists, setDentists] = useState<TeamDentist[]>(TEAM_DENTISTS);
-  const [assistants, setAssistants] = useState<TeamAssistant[]>(TEAM_ASSISTANTS);
+  const { soloDentistClinic } = useRole();
+  // "Administrador Odontólogo Único" starts with no other team members —
+  // the seeded roster (other dentists + asistentes) belongs to the normal
+  // multi-professional demo, not this one. Adding someone here (via
+  // "+ Agregar miembro" below) only updates this local mock list — see
+  // task scope: no automatic role/scenario change yet.
+  const [dentists, setDentists] = useState<TeamDentist[]>(soloDentistClinic ? [] : TEAM_DENTISTS);
+  const [assistants, setAssistants] = useState<TeamAssistant[]>(soloDentistClinic ? [] : TEAM_ASSISTANTS);
+  // Same "on arrival" correction as patients-screen.tsx's own
+  // appliedDentistDefault: soloDentistClinic hydrates one tick after the
+  // server-safe first paint (see role-context.tsx), and the lazy
+  // initializers above only run once — so if they fired during that
+  // transient false flash, this corrects the seed a single time once the
+  // real value lands, without fighting a later manual "+ Agregar miembro".
+  const appliedSoloDefault = useRef(false);
+  useEffect(() => {
+    if (soloDentistClinic && !appliedSoloDefault.current) {
+      appliedSoloDefault.current = true;
+      setDentists([]);
+      setAssistants([]);
+    }
+  }, [soloDentistClinic]);
   // "+ Agregar miembro" (either kind) and editing an existing Asistente
   // still go through the simple TeamMemberModal — this task's scope is
   // only Equipo > Editar for odontólogos (see editingDentist below), which
@@ -334,42 +363,48 @@ function EquipoSection() {
         </button>
       </div>
 
-      <ul className="mt-4 divide-y divide-border overflow-hidden rounded-xl border border-border">
-        {rows.map((row) => (
-          <li key={`${row.kind}-${row.member.id}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <UserAvatar name={row.member.name} initials={row.member.initials} avatar_url={row.member.avatar_url} sizeClassName="size-9" />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{row.member.name}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {row.kind === "dentist" ? `Odontólogo · ${row.member.specialty}` : "Asistente"}
-                </p>
+      {rows.length === 0 ? (
+        <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+          Todavía no tienes otros miembros en tu equipo.
+        </p>
+      ) : (
+        <ul className="mt-4 divide-y divide-border overflow-hidden rounded-xl border border-border">
+          {rows.map((row) => (
+            <li key={`${row.kind}-${row.member.id}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <UserAvatar name={row.member.name} initials={row.member.initials} avatar_url={row.member.avatar_url} sizeClassName="size-9" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{row.member.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {row.kind === "dentist" ? `Odontólogo · ${row.member.specialty}` : "Asistente"}
+                  </p>
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <StatusBadge status={row.member.status} />
-              <button
-                type="button"
-                onClick={() => (row.kind === "dentist" ? setEditingDentist(row.member) : setModal(row))}
-                className="text-xs font-medium text-primary hover:text-primary/80"
-              >
-                Editar
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setStatusModal({ ...row, action: row.member.status === "active" ? "deactivate" : "reactivate" })
-                }
-                className={`text-xs font-medium ${
-                  row.member.status === "active" ? "text-danger/80 hover:text-danger" : "text-primary hover:text-primary/80"
-                }`}
-              >
-                {row.member.status === "active" ? "Desactivar" : "Reactivar"}
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
+              <div className="flex items-center gap-3">
+                <StatusBadge status={row.member.status} />
+                <button
+                  type="button"
+                  onClick={() => (row.kind === "dentist" ? setEditingDentist(row.member) : setModal(row))}
+                  className="text-xs font-medium text-primary hover:text-primary/80"
+                >
+                  Editar
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setStatusModal({ ...row, action: row.member.status === "active" ? "deactivate" : "reactivate" })
+                  }
+                  className={`text-xs font-medium ${
+                    row.member.status === "active" ? "text-danger/80 hover:text-danger" : "text-primary hover:text-primary/80"
+                  }`}
+                >
+                  {row.member.status === "active" ? "Desactivar" : "Reactivar"}
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {modal !== "closed" && (
         <TeamMemberModal
@@ -430,8 +465,13 @@ function EquipoSection() {
 // looking at the exact same single source of truth — nothing here is a
 // second copy of that state or of the form that edits it.
 function MiPerfilProfesionalSection() {
-  const { adminProfessionalProfile, setAdminProfessionalProfile, adminIdentityOverride, setAdminIdentityOverride } =
-    useRole();
+  const {
+    adminProfessionalProfile,
+    setAdminProfessionalProfile,
+    adminIdentityOverride,
+    setAdminIdentityOverride,
+    soloDentistClinic,
+  } = useRole();
   const { professionalRecord } = useAuthenticatedIdentity();
   const isActive = adminProfessionalProfile !== null;
 
@@ -467,20 +507,36 @@ function MiPerfilProfesionalSection() {
 
   return (
     <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
-      <h2 className="text-base font-semibold">Mi perfil profesional</h2>
-      <p className="mt-0.5 text-xs text-muted-foreground">
-        Sigues siendo Administrador — esto solo agrega que también atiendes pacientes en tu clínica.
-      </p>
+      {/* "Administrador Odontólogo Único" (see role-context.tsx): she's
+          always the practicing dentist by definition — a "también atiendo
+          pacientes" opt-in checkbox doesn't apply here, so this reframes as
+          a straightforward "Mi información profesional" instead (see task
+          scope), reusing the same details block/edit flow below. */}
+      {soloDentistClinic ? (
+        <>
+          <h2 className="text-base font-semibold">Mi información profesional</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Tu especialidad, registro y horario como odontóloga de la clínica.
+          </p>
+        </>
+      ) : (
+        <>
+          <h2 className="text-base font-semibold">Mi perfil profesional</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Sigues siendo Administrador — esto solo agrega que también atiendes pacientes en tu clínica.
+          </p>
 
-      <label className="mt-4 flex items-center gap-2.5 text-sm">
-        <input
-          type="checkbox"
-          checked={isActive}
-          onChange={handleToggle}
-          className="size-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
-        />
-        <span className="font-medium">También atiendo pacientes en esta clínica</span>
-      </label>
+          <label className="mt-4 flex items-center gap-2.5 text-sm">
+            <input
+              type="checkbox"
+              checked={isActive}
+              onChange={handleToggle}
+              className="size-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
+            />
+            <span className="font-medium">También atiendo pacientes en esta clínica</span>
+          </label>
+        </>
+      )}
 
       {isActive && adminProfessionalProfile && (
         <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
@@ -518,7 +574,7 @@ function MiPerfilProfesionalSection() {
         </div>
       )}
 
-      {isActive && (
+      {isActive && !soloDentistClinic && (
         <p className="mt-3 text-xs text-muted-foreground">Aparecerás como profesional en la Agenda de tu clínica.</p>
       )}
 

@@ -17,6 +17,7 @@ export function PatientDetailModal({
   patient,
   appointments,
   dentists,
+  soloDentistClinic = false,
   weekDays,
   onClose,
   onEdit,
@@ -26,6 +27,7 @@ export function PatientDetailModal({
   patient: Patient;
   appointments: Appointment[];
   dentists: Dentist[];
+  soloDentistClinic?: boolean;
   weekDays: WeekDay[];
   onClose: () => void;
   onEdit: (patch: Partial<Patient>) => void;
@@ -65,7 +67,9 @@ export function PatientDetailModal({
     }
   };
 
-  const usualDentist = dentists.find((d) => d.id === patient.usualDentistId);
+  // "Administrador Odontólogo Único" (see role-context.tsx): every patient
+  // is treated by the clinic's one dentist by definition.
+  const usualDentist = soloDentistClinic ? dentists[0] : dentists.find((d) => d.id === patient.usualDentistId);
   const own = appointments
     .filter((a) => a.patientName === patient.name)
     .sort((a, b) => chronologicalKey(b, weekDays) - chronologicalKey(a, weekDays));

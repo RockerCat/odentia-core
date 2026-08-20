@@ -279,6 +279,7 @@ export function AppointmentsCard({
     setSelfDentistOverride,
     adminIdentityOverride,
     adminProfessionalProfile,
+    soloDentistClinic,
   } = useRole();
   // DEV TOOL — Superadmin doesn't do clinical scheduling (see CLAUDE.md Domain Model).
   const canCreateAppointments = process.env.NODE_ENV !== "development" || role !== "superadmin";
@@ -308,8 +309,13 @@ export function AppointmentsCard({
         avatar_url: adminIdentityOverride.avatar_url ?? CURRENT_USER.avatar_url,
       }
     : null;
+  // "Administrador Odontólogo Único" (see role-context.tsx): a one-person
+  // clinic has no other dentists to show at all, so the admin's own
+  // synthetic entry REPLACES the seeded DENTISTS instead of joining them.
   const effectiveDentists = adminDentistEntry
-    ? [...dentistsWithPhotoOverride, adminDentistEntry]
+    ? soloDentistClinic
+      ? [adminDentistEntry]
+      : [...dentistsWithPhotoOverride, adminDentistEntry]
     : dentistsWithPhotoOverride;
   const currentDentist = effectiveDentists.find((d) => d.id === currentDentistId) ?? null;
   const scopedDentists = isDentist && currentDentist ? [currentDentist] : effectiveDentists;
@@ -546,7 +552,10 @@ export function AppointmentsCard({
         {/* Filtros — esta fila queda exclusivamente para Profesional y
             Estado; la leyenda de convenciones vive debajo de la grilla. */}
         <div className="mt-3 flex flex-wrap items-center justify-start gap-2 md:flex-nowrap md:justify-end md:gap-3">
-          {!isDentist && (
+          {/* Hidden with a single effective dentist (Odontólogo's own scoped
+              view, or a solo-practitioner clinic — see soloDentistClinic
+              above): a filter with only one possible value adds nothing. */}
+          {!isDentist && effectiveDentists.length > 1 && (
             <ProfessionalFilterChips
               dentists={effectiveDentists}
               selectedIds={professionalFilter}
@@ -578,7 +587,13 @@ export function AppointmentsCard({
           the page itself scrolls, nothing scrolls internally. */}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4 p-5">
         {visibleDentists.map((dentist) => {
-          const dentistAppointments = statusFilteredDayAppointments.filter((a) => a.dentistId === dentist.id);
+          // "Administrador Odontólogo Único" (see role-context.tsx): every
+          // appointment belongs to the clinic's one dentist by definition
+          // — seeded mock appointments still carry d1/d2/d3 ids underneath,
+          // but there's only ever this one column to show them in.
+          const dentistAppointments = soloDentistClinic
+            ? statusFilteredDayAppointments
+            : statusFilteredDayAppointments.filter((a) => a.dentistId === dentist.id);
           const occupied = dentistAppointments.length;
 
           return (
@@ -711,7 +726,9 @@ export function AppointmentsCard({
           weekDays={weekDays}
           existingAppointments={allAppointments}
           prefill={newAppointmentPrefill ?? undefined}
-          lockedDentist={isDentist ? (currentDentist ?? undefined) : undefined}
+          lockedDentist={
+            isDentist ? (currentDentist ?? undefined) : soloDentistClinic ? (adminDentistEntry ?? undefined) : undefined
+          }
           onClose={closeNewAppointment}
           onCreate={addAppointment}
         />

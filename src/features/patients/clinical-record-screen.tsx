@@ -21,8 +21,10 @@ import {
 } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
+import { useEffectiveDentists } from "@/dev/use-effective-dentists"; // DEV TOOL — see src/dev/role.ts
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
 import {
+  ADMIN_DENTIST_ID,
   DENTISTS,
   HISTORY_STATUS_BADGE_CLASS,
   STATUS_LABELS,
@@ -72,8 +74,16 @@ export function ClinicalRecordScreen({ patient }: { patient: Patient }) {
   // DEV TOOL — see src/dev/role.ts. Editing Antecedentes is Odontólogo-only
   // (see task scope); every other role — including this screen's only
   // currently-reachable one, Clinic Admin — can read but never edit.
-  const { role, dentistId } = useRole();
-  const canEditAntecedentes = role === "dentist";
+  // Exception: "Administrador Odontólogo Único" (soloDentistClinic) is
+  // herself the clinic's only practicing dentist, so she authors under
+  // that same capacity — never a general grant for any Clinic Admin who's
+  // separately configured a "Perfil profesional" (see role-context.tsx).
+  const { role, dentistId, soloDentistClinic } = useRole();
+  const canEditAntecedentes = role === "dentist" || soloDentistClinic;
+  // Attributes a solo-clinic Admin's own edits to her synthetic dentist id
+  // instead of the unrelated mock Odontólogo session id (DEV_DENTIST_ID).
+  const actingDentistId = soloDentistClinic ? ADMIN_DENTIST_ID : dentistId;
+  const { dentists: effectiveDentists, resolveDentist } = useEffectiveDentists();
 
   const [activeTab, setActiveTab] = useState<Tab>("Resumen");
   const [showEditAntecedentes, setShowEditAntecedentes] = useState(false);
@@ -90,7 +100,9 @@ export function ClinicalRecordScreen({ patient }: { patient: Patient }) {
 
   const effectivePatient: Patient = { ...patient, allergies, medications, conditions, anamnesis };
 
-  const dentist = DENTISTS.find((d) => d.id === patient.usualDentistId);
+  // "Administrador Odontólogo Único" (see role-context.tsx): every patient
+  // is treated by the clinic's one dentist by definition.
+  const dentist = soloDentistClinic ? effectiveDentists[0] : DENTISTS.find((d) => d.id === patient.usualDentistId);
   const { lastVisitLabel, nextAppointmentLabel } = getPatientVisitSummary(
     effectivePatient,
     WEEK_APPOINTMENTS,
@@ -124,7 +136,7 @@ export function ClinicalRecordScreen({ patient }: { patient: Patient }) {
       otherRelevant: edited.otherRelevant,
       oralHygieneSummary: edited.oralHygieneSummary,
       updatedLabel: formatUpdatedNowLabel(),
-      updatedByDentistId: dentistId,
+      updatedByDentistId: actingDentistId,
     });
     setShowEditAntecedentes(false);
   };
@@ -152,6 +164,7 @@ export function ClinicalRecordScreen({ patient }: { patient: Patient }) {
           patient={effectivePatient}
           clinicName={CURRENT_USER.clinicName}
           clinicLogoUrl={logoUrl}
+          resolveDentist={resolveDentist}
         />,
       ).toBlob();
       const url = URL.createObjectURL(blob);
@@ -443,8 +456,9 @@ function AntecedentesTab({
   canEdit: boolean;
   onRequestEdit: () => void;
 }) {
+  const { resolveDentist } = useEffectiveDentists();
   const anamnesis = patient.anamnesis;
-  const updatedByDentist = anamnesis ? DENTISTS.find((d) => d.id === anamnesis.updatedByDentistId) : undefined;
+  const updatedByDentist = anamnesis ? resolveDentist(anamnesis.updatedByDentistId) : undefined;
 
   return (
     <div className="flex flex-col gap-6">
@@ -776,7 +790,17 @@ export function labelForType(type: FindingType): string {
 // (not just inlined in OdontogramaTab below) so the Historia Clínica PDF
 // (see pdf/clinical-record-document.tsx) reuses this exact derivation
 // instead of a second copy of the same "latest finding per tooth" logic.
-export function getOdontogramFindingRows(patient: Patient) {
+// resolveDentist defaults to a plain DENTISTS lookup so every existing call
+// site keeps working unchanged; pass useEffectiveDentists()'s own
+// resolveDentist to also account for "Administrador Odontólogo Único" (see
+// role-context.tsx) — can't call that hook in here directly, since this
+// also runs from the Historia Clínica PDF export's own isolated render
+// tree (pdf/clinical-record-document.tsx), which sits outside RoleProvider.
+export function getOdontogramFindingRows(
+  patient: Patient,
+  resolveDentist: (id: string | undefined) => { name: string } | undefined = (id) =>
+    DENTISTS.find((d) => d.id === id),
+) {
   const odontogram = patient.odontogramData ?? {};
   const findingsMeta = patient.odontogramFindingsMeta ?? [];
   return Object.entries(odontogram)
@@ -784,7 +808,7 @@ export function getOdontogramFindingRows(patient: Patient) {
       const latest = findings[findings.length - 1];
       if (!latest) return null;
       const meta: OdontogramFindingMeta | undefined = findingsMeta.find((m) => m.findingId === latest.id);
-      const dentist = meta ? DENTISTS.find((d) => d.id === meta.dentistId) : undefined;
+      const dentist = meta ? resolveDentist(meta.dentistId) : undefined;
       return {
         fdi: Number(fdi),
         type: latest.type,
@@ -798,10 +822,11 @@ export function getOdontogramFindingRows(patient: Patient) {
 }
 
 function OdontogramaTab({ patient }: { patient: Patient }) {
+  const { resolveDentist } = useEffectiveDentists();
   const odontogram = patient.odontogramData ?? {};
   const findingCount = Object.keys(odontogram).length;
   // Keeps the panel's count exactly matching "N pieza(s) con hallazgos".
-  const findingRows = getOdontogramFindingRows(patient);
+  const findingRows = getOdontogramFindingRows(patient, resolveDentist);
 
   return (
     <div className="rounded-xl border border-border bg-background p-4 shadow-sm sm:p-5">
@@ -876,6 +901,7 @@ function OdontogramaTab({ patient }: { patient: Patient }) {
 // its own line instead of being hidden behind that other pattern's hover
 // tooltip, and nothing is truncated/line-clamped.
 function AtencionesTab({ patient }: { patient: Patient }) {
+  const { resolveDentist } = useEffectiveDentists();
   const encounters = patient.clinicalEncounters ?? [];
 
   if (encounters.length === 0) {
@@ -890,7 +916,7 @@ function AtencionesTab({ patient }: { patient: Patient }) {
     <div className="rounded-xl bg-surface p-4">
       <ol className="flex flex-col gap-4 border-l border-border/70 pl-4">
         {encounters.map((encounter) => {
-          const dentist = DENTISTS.find((d) => d.id === encounter.dentistId);
+          const dentist = resolveDentist(encounter.dentistId);
           return (
             <li key={encounter.id} className="relative">
               <span
@@ -921,6 +947,7 @@ function AtencionesTab({ patient }: { patient: Patient }) {
 // Mock metadata only (label/kind/fecha/profesional) — no real files, no
 // upload/download, per task scope.
 function DocumentosTab({ patient }: { patient: Patient }) {
+  const { resolveDentist } = useEffectiveDentists();
   const documents = patient.clinicalDocuments ?? [];
 
   if (documents.length === 0) {
@@ -934,7 +961,7 @@ function DocumentosTab({ patient }: { patient: Patient }) {
   return (
     <ul className="flex flex-col gap-2">
       {documents.map((doc) => {
-        const dentist = DENTISTS.find((d) => d.id === doc.dentistId);
+        const dentist = resolveDentist(doc.dentistId);
         return (
           <li key={doc.id} className="flex items-center gap-3 rounded-lg border border-border px-3.5 py-2.5">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">

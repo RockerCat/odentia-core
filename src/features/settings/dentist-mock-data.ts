@@ -1,3 +1,5 @@
+import { ADMIN_DENTIST_ID } from "@/features/dashboard/mock-data";
+
 // Odontólogo > Configuración — mock-only data. Ausencias are temporary
 // exceptions to the dentist's regular availability (which continues to be
 // managed from their profile, see task scope) — nothing persisted, no
@@ -58,6 +60,17 @@ export const ABSENCES_BY_DENTIST: Record<string, Absence[]> = {
     },
   ],
   d3: [],
+  // "Administrador Odontólogo Único" (see role-context.tsx) — her own
+  // ausencias when she's the clinic's only dentist.
+  [ADMIN_DENTIST_ID]: [
+    {
+      id: "absence-admin-self-1",
+      reason: "Vacaciones",
+      startDate: "2026-09-15",
+      endDate: "2026-09-19",
+      allDay: true,
+    },
+  ],
 };
 
 export type DentistNotificationKey =

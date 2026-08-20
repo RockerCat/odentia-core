@@ -6,16 +6,32 @@ import { ProfessionalSelect } from "@/components/professional-select";
 import { AlertTriangleIcon, CalendarIcon, PlusIcon, SearchIcon, UsersIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
+import { useEffectiveDentists } from "@/dev/use-effective-dentists"; // DEV TOOL — see src/dev/role.ts
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
-import { DENTISTS, WEEK_APPOINTMENTS, WEEK_DAYS, type Appointment } from "@/features/dashboard/mock-data";
+import { ADMIN_DENTIST_ID, DENTISTS, WEEK_APPOINTMENTS, WEEK_DAYS, type Appointment } from "@/features/dashboard/mock-data";
 import { NewAppointmentModal } from "@/features/dashboard/new-appointment-modal";
 import { getPatientVisitSummary, PATIENT_STATUS_LABELS, PATIENTS, type Patient, type PatientStatus } from "./mock-data";
 import { NewPatientModal } from "./new-patient-modal";
 import { PatientDetailModal } from "./patient-detail-modal";
 
+// "Administrador Odontólogo Único" (see role-context.tsx) drops the
+// "Profesional habitual" column entirely (see task scope) — every other
+// column gets a little more room instead of leaving a gap. Literal class
+// strings (not built at runtime) so Tailwind's static scanner picks up
+// every variant actually used.
+const PATIENT_HEADER_GRID_COLS = (soloDentistClinic: boolean) =>
+  soloDentistClinic
+    ? "grid-cols-[minmax(0,1.8fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1.2fr)]"
+    : "grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.1fr)]";
+const PATIENT_ROW_GRID_COLS = (soloDentistClinic: boolean) =>
+  soloDentistClinic
+    ? "sm:grid-cols-[minmax(0,1.8fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1.2fr)]"
+    : "sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.1fr)]";
+
 export function PatientsScreen() {
   const router = useRouter();
-  const { role, dentistId } = useRole();
+  const { role, dentistId, soloDentistClinic } = useRole();
+  const { dentists: effectiveDentists } = useEffectiveDentists();
   // Registering a new patient is an administrative intake action, not a
   // clinical one. The list itself already shows every clinic patient
   // regardless of role (patients belong to the Clinic, not a Dentist — see
@@ -122,15 +138,20 @@ export function PatientsScreen() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <div className="w-full sm:w-44">
-            <ProfessionalSelect
-              dentists={DENTISTS}
-              selectedId={professionalFilter}
-              onSelect={setProfessionalFilter}
-              includeAllOption
-              compactTrigger
-            />
-          </div>
+          {/* "Administrador Odontólogo Único" (see role-context.tsx): a
+              one-person clinic has nobody else to filter by (see task
+              scope). */}
+          {!soloDentistClinic && (
+            <div className="w-full sm:w-44">
+              <ProfessionalSelect
+                dentists={DENTISTS}
+                selectedId={professionalFilter}
+                onSelect={setProfessionalFilter}
+                includeAllOption
+                compactTrigger
+              />
+            </div>
+          )}
           <div className="w-full sm:w-40">
             <select
               value={statusFilter}
@@ -160,10 +181,12 @@ export function PatientsScreen() {
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-sm">
-        <div className="hidden grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.1fr)] gap-4 border-b border-border px-4 py-2.5 text-[11px] font-semibold tracking-wide text-label-foreground uppercase sm:grid">
+        <div
+          className={`hidden gap-4 border-b border-border px-4 py-2.5 text-[11px] font-semibold tracking-wide text-label-foreground uppercase sm:grid ${PATIENT_HEADER_GRID_COLS(soloDentistClinic)}`}
+        >
           <span>Paciente</span>
           <span>Contacto</span>
-          <span>Profesional habitual</span>
+          {!soloDentistClinic && <span>Profesional habitual</span>}
           <span>Última atención</span>
           <span>Próxima cita</span>
         </div>
@@ -186,7 +209,7 @@ export function PatientsScreen() {
                   <button
                     type="button"
                     onClick={() => setSelectedPatientId(patient.id)}
-                    className="grid w-full grid-cols-1 gap-2 px-4 py-3 text-left transition-colors hover:bg-primary/[0.03] sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.1fr)] sm:items-center sm:gap-4"
+                    className={`grid w-full grid-cols-1 gap-2 px-4 py-3 text-left transition-colors hover:bg-primary/[0.03] sm:items-center sm:gap-4 ${PATIENT_ROW_GRID_COLS(soloDentistClinic)}`}
                   >
                     <div className="flex min-w-0 items-center gap-3">
                       <UserAvatar name={patient.name} initials={patient.initials} sizeClassName="size-9" />
@@ -199,7 +222,9 @@ export function PatientsScreen() {
                       <p className="truncate text-xs text-foreground/80 sm:text-sm">{patient.phone}</p>
                       <p className="truncate text-[11px] text-muted-foreground">{patient.email || "Sin correo"}</p>
                     </div>
-                    <p className="truncate text-xs text-foreground/80 sm:text-sm">{dentist?.name ?? "Sin asignar"}</p>
+                    {!soloDentistClinic && (
+                      <p className="truncate text-xs text-foreground/80 sm:text-sm">{dentist?.name ?? "Sin asignar"}</p>
+                    )}
                     <p className="truncate text-xs text-muted-foreground sm:text-sm">{lastVisitLabel}</p>
                     {nextAppointment ? (
                       <div className="min-w-0">
@@ -225,7 +250,8 @@ export function PatientsScreen() {
         <PatientDetailModal
           patient={selectedPatient}
           appointments={appointments}
-          dentists={DENTISTS}
+          dentists={effectiveDentists}
+          soloDentistClinic={soloDentistClinic}
           weekDays={WEEK_DAYS}
           onClose={() => setSelectedPatientId(null)}
           onEdit={handleEditSelectedPatient}
@@ -239,7 +265,7 @@ export function PatientsScreen() {
 
       {showNewPatient && (
         <NewPatientModal
-          defaultDentistId={DENTISTS[0].id}
+          defaultDentistId={soloDentistClinic ? ADMIN_DENTIST_ID : DENTISTS[0].id}
           onClose={() => setShowNewPatient(false)}
           onCreate={(created) => setPatients((prev) => [created, ...prev])}
         />
@@ -247,10 +273,11 @@ export function PatientsScreen() {
 
       {newAppointmentForName !== null && (
         <NewAppointmentModal
-          dentists={DENTISTS}
+          dentists={effectiveDentists}
           weekDays={WEEK_DAYS}
           existingAppointments={appointments}
           prefill={{ patientName: newAppointmentForName }}
+          lockedDentist={soloDentistClinic ? effectiveDentists[0] : undefined}
           onClose={() => setNewAppointmentForName(null)}
           onCreate={(created) => {
             setAppointments((prev) => [...prev, created]);

@@ -3,9 +3,9 @@
 import { useRouter } from "next/navigation";
 import { ChevronIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
+import { useEffectiveDentists } from "@/dev/use-effective-dentists"; // DEV TOOL — see src/dev/role.ts
 import {
   chronologicalKey,
-  DENTISTS,
   HISTORY_STATUS_BADGE_CLASS,
   STATUS_LABELS,
   WEEK_APPOINTMENTS,
@@ -163,6 +163,7 @@ export const HISTORY_BACK_SESSION_KEY = "odentia:historial-citas:back-ok";
 // entry point routes to, instead of growing a second variant.
 export function PatientAppointmentHistoryScreen({ patient }: { patient: Patient }) {
   const router = useRouter();
+  const { resolveDentist } = useEffectiveDentists();
 
   const handleBack = () => {
     const canGoBack = typeof window !== "undefined" && sessionStorage.getItem(HISTORY_BACK_SESSION_KEY) === "1";
@@ -228,7 +229,7 @@ export function PatientAppointmentHistoryScreen({ patient }: { patient: Patient 
         <div className="rounded-xl bg-surface p-4">
           <ol className="flex flex-col gap-4 border-l border-border/70 pl-4">
             {history.map((item) => {
-              const dentist = DENTISTS.find((d) => d.id === item.dentistId);
+              const dentist = resolveDentist(item.dentistId);
               const dayLabel = WEEK_DAYS.find((d) => d.key === item.day)?.dateLabel ?? item.day;
               return (
                 <li key={item.id} className="relative">

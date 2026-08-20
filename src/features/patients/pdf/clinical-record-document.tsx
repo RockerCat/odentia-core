@@ -1,6 +1,6 @@
 import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import type { ReactNode } from "react";
-import { DENTISTS, STATUS_LABELS } from "@/features/dashboard/mock-data";
+import { DENTISTS, STATUS_LABELS, type Dentist } from "@/features/dashboard/mock-data";
 import {
   getToothKind,
   LOWER_LEFT,
@@ -424,8 +424,14 @@ function FindingRow({ row }: { row: ReturnType<typeof getOdontogramFindingRows>[
   );
 }
 
-function EncounterRow({ encounter }: { encounter: NonNullable<Patient["clinicalEncounters"]>[number] }) {
-  const dentist = DENTISTS.find((d) => d.id === encounter.dentistId);
+function EncounterRow({
+  encounter,
+  resolveDentist,
+}: {
+  encounter: NonNullable<Patient["clinicalEncounters"]>[number];
+  resolveDentist: (id: string | undefined) => Dentist | undefined;
+}) {
+  const dentist = resolveDentist(encounter.dentistId);
   const statusColor = PDF_STATUS_COLORS[encounter.status];
   return (
     <CompactRow color={statusColor}>
@@ -443,9 +449,15 @@ function EncounterRow({ encounter }: { encounter: NonNullable<Patient["clinicalE
   );
 }
 
-function OdontogramSection({ patient }: { patient: Patient }) {
+function OdontogramSection({
+  patient,
+  resolveDentist,
+}: {
+  patient: Patient;
+  resolveDentist: (id: string | undefined) => Dentist | undefined;
+}) {
   const odontogram = patient.odontogramData;
-  const findingRows = getOdontogramFindingRows(patient);
+  const findingRows = getOdontogramFindingRows(patient, resolveDentist);
   const [firstFinding, ...restFindings] = findingRows;
 
   return (
@@ -508,7 +520,13 @@ function OdontogramSection({ patient }: { patient: Patient }) {
   );
 }
 
-function AtencionesSection({ patient }: { patient: Patient }) {
+function AtencionesSection({
+  patient,
+  resolveDentist,
+}: {
+  patient: Patient;
+  resolveDentist: (id: string | undefined) => Dentist | undefined;
+}) {
   // Same pre-sorted-newest-first invariant AtencionesTab already relies on
   // (see clinical-record-screen.tsx's own comment on clinicalEncounters in
   // mock-data.ts) — reused as-is, not re-sorted here.
@@ -525,16 +543,25 @@ function AtencionesSection({ patient }: { patient: Patient }) {
   }
 
   return (
-    <Section title="Atenciones" lead={<EncounterRow encounter={firstEncounter} />}>
+    <Section
+      title="Atenciones"
+      lead={<EncounterRow encounter={firstEncounter} resolveDentist={resolveDentist} />}
+    >
       {restEncounters.map((encounter) => (
-        <EncounterRow key={encounter.id} encounter={encounter} />
+        <EncounterRow key={encounter.id} encounter={encounter} resolveDentist={resolveDentist} />
       ))}
     </Section>
   );
 }
 
-function DocumentRow({ doc }: { doc: NonNullable<Patient["clinicalDocuments"]>[number] }) {
-  const dentist = DENTISTS.find((d) => d.id === doc.dentistId);
+function DocumentRow({
+  doc,
+  resolveDentist,
+}: {
+  doc: NonNullable<Patient["clinicalDocuments"]>[number];
+  resolveDentist: (id: string | undefined) => Dentist | undefined;
+}) {
+  const dentist = resolveDentist(doc.dentistId);
   return (
     <View style={styles.tableRow} wrap={false}>
       <Text style={[styles.tableCellDoc, styles.tableDocLabel]}>{doc.label}</Text>
@@ -545,7 +572,13 @@ function DocumentRow({ doc }: { doc: NonNullable<Patient["clinicalDocuments"]>[n
   );
 }
 
-function DocumentosSection({ patient }: { patient: Patient }) {
+function DocumentosSection({
+  patient,
+  resolveDentist,
+}: {
+  patient: Patient;
+  resolveDentist: (id: string | undefined) => Dentist | undefined;
+}) {
   const documents = patient.clinicalDocuments ?? [];
   const [firstDoc, ...restDocs] = documents;
 
@@ -566,12 +599,12 @@ function DocumentosSection({ patient }: { patient: Patient }) {
             <Text style={[styles.tableCellDate, styles.tableHeaderCell]}>Fecha</Text>
             <Text style={[styles.tableCellDentist, styles.tableHeaderCell]}>Profesional</Text>
           </View>
-          <DocumentRow doc={firstDoc} />
+          <DocumentRow doc={firstDoc} resolveDentist={resolveDentist} />
         </View>
       }
     >
       {restDocs.map((doc) => (
-        <DocumentRow key={doc.id} doc={doc} />
+        <DocumentRow key={doc.id} doc={doc} resolveDentist={resolveDentist} />
       ))}
     </Section>
   );
@@ -595,14 +628,20 @@ export function ClinicalRecordDocument({
   patient,
   clinicName,
   clinicLogoUrl,
+  // This document renders in an isolated tree outside RoleProvider (see
+  // clinical-record-screen.tsx's handleDownloadPdf, which computes the
+  // real one via useEffectiveDentists() and passes it in) — defaults to a
+  // plain DENTISTS lookup so nothing else calling this needs to change.
+  resolveDentist = (id) => DENTISTS.find((d) => d.id === id),
 }: {
   patient: Patient;
   clinicName: string;
   clinicLogoUrl?: string;
+  resolveDentist?: (id: string | undefined) => Dentist | undefined;
 }) {
-  const usualDentist = DENTISTS.find((d) => d.id === patient.usualDentistId);
+  const usualDentist = resolveDentist(patient.usualDentistId);
   const anamnesis = patient.anamnesis;
-  const updatedByDentist = anamnesis ? DENTISTS.find((d) => d.id === anamnesis.updatedByDentistId) : undefined;
+  const updatedByDentist = anamnesis ? resolveDentist(anamnesis.updatedByDentistId) : undefined;
   const hasAlerts = Boolean(
     patient.allergies || (patient.conditions && patient.conditions.length > 0) || (patient.medications && patient.medications.length > 0),
   );
@@ -725,9 +764,9 @@ export function ClinicalRecordDocument({
           }
         />
 
-        <OdontogramSection patient={patient} />
+        <OdontogramSection patient={patient} resolveDentist={resolveDentist} />
 
-        <AtencionesSection patient={patient} />
+        <AtencionesSection patient={patient} resolveDentist={resolveDentist} />
 
         <Section
           title="Notas clínicas relevantes"
@@ -742,7 +781,7 @@ export function ClinicalRecordDocument({
           }
         />
 
-        <DocumentosSection patient={patient} />
+        <DocumentosSection patient={patient} resolveDentist={resolveDentist} />
 
         <View style={styles.footer} fixed>
           <Text>

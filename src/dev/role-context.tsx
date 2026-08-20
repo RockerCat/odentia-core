@@ -23,6 +23,31 @@ import { DEFAULT_ROLE, DEV_DENTIST_ID, type Role } from "./role";
 const getServerRole = (): Role => DEFAULT_ROLE;
 const getClientRole = (): Role => readSession()?.role ?? DEFAULT_ROLE;
 
+// "Administrador Odontólogo Único" demo scenario (see role-switcher.tsx) —
+// a Clinic Admin (role stays "clinic-admin", never a new Role — see
+// CLAUDE.md Domain Model's Primary Use Case) who is ALSO the clinic's only
+// practicing dentist, with no other dentists and no assistants. Same
+// server/client-snapshot pattern as getServerRole/getClientRole above, for
+// the same hydration-safety reason.
+const getServerSolo = (): boolean => false;
+const getClientSolo = (): boolean => readSession()?.soloDentistClinic ?? false;
+
+// Shared label so role-switcher.tsx and demo-users.ts never drift apart.
+export const SOLO_DENTIST_SCENARIO_LABEL = "Administrador Odontólogo Único";
+
+// Auto-configured "Perfil profesional" for the solo-practitioner scenario —
+// same shape/values format as the manual "Mi perfil profesional" flow
+// (see clinic-settings-screen.tsx / admin-profile-modal.tsx), just
+// pre-filled instead of asking the demo user to fill the form themselves.
+export const SOLO_PRACTITIONER_PROFILE: AdminProfessionalProfile = {
+  specialty: "Odontología general",
+  registrationNumber: "T.P. 55210",
+  mainRoom: "Consultorio 1",
+  scheduleDays: ["L", "M", "X", "J", "V"],
+  scheduleStart: "8:00 AM",
+  scheduleEnd: "5:00 PM",
+};
+
 // DEV TOOL — the mutable subset of the authenticated dentist's own identity
 // that the self-service "Editar perfil" flow (DentistProfileModal) can
 // change during the session. Lives here — not in feature mock data — so the
@@ -62,6 +87,10 @@ export type AdminProfessionalProfile = {
 type RoleContextValue = {
   role: Role;
   setRole: (role: Role) => void;
+  // DEV TOOL — "Administrador Odontólogo Único" (see SOLO_PRACTITIONER_PROFILE
+  // above and role-switcher.tsx). Always implies role === "clinic-admin".
+  soloDentistClinic: boolean;
+  setSoloDentistClinic: (next: boolean) => void;
   // DEV TOOL — which mock dentist "I am" when role is "dentist". Fixed for
   // now (see DEV_DENTIST_ID); not user-settable since nothing needs to
   // switch it independently of role yet.
@@ -86,6 +115,8 @@ const NO_ASSISTANT_OVERRIDE: AssistantIdentityOverride = {};
 const RoleContext = createContext<RoleContextValue>({
   role: DEFAULT_ROLE,
   setRole: () => {},
+  soloDentistClinic: false,
+  setSoloDentistClinic: () => {},
   dentistId: DEV_DENTIST_ID,
   selfDentistOverride: NO_SELF_OVERRIDE,
   setSelfDentistOverride: () => {},
@@ -105,10 +136,19 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   // and subscribeToSession's notification re-runs getClientRole so this
   // re-renders with the new value.
   const role = useSyncExternalStore(subscribeToSession, getClientRole, getServerRole);
+  const soloDentistClinic = useSyncExternalStore(subscribeToSession, getClientSolo, getServerSolo);
   const [selfDentistOverride, setSelfDentistOverrideState] = useState<SelfDentistOverride>(NO_SELF_OVERRIDE);
   const [adminIdentityOverride, setAdminIdentityOverrideState] =
     useState<AdminIdentityOverride>(NO_ADMIN_OVERRIDE);
-  const [adminProfessionalProfile, setAdminProfessionalProfile] = useState<AdminProfessionalProfile | null>(null);
+  // Plain in-memory override, exactly as before soloDentistClinic existed —
+  // the effective value below just adds a fallback to the solo-scenario
+  // preset when this override is untouched (null), so entering/leaving the
+  // scenario (or a fresh page mount while it's active) doesn't depend on
+  // the demo user ever visiting "Mi perfil profesional" themselves.
+  const [adminProfessionalProfileOverride, setAdminProfessionalProfile] =
+    useState<AdminProfessionalProfile | null>(null);
+  const adminProfessionalProfile =
+    adminProfessionalProfileOverride ?? (soloDentistClinic ? SOLO_PRACTITIONER_PROFILE : null);
   const [assistantIdentityOverride, setAssistantIdentityOverrideState] =
     useState<AssistantIdentityOverride>(NO_ASSISTANT_OVERRIDE);
 
@@ -116,6 +156,15 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   // RoleSwitcher survive a refresh through the exact same mechanism.
   const setRole = (next: Role) => {
     writeSession({ role: next });
+  };
+
+  // Always forces role to "clinic-admin" (the scenario only ever applies
+  // there) and drops any manual "Perfil profesional" edit made earlier in
+  // the session, so toggling the scenario always lands on a clean, known
+  // state — see adminProfessionalProfile above.
+  const setSoloDentistClinic = (next: boolean) => {
+    writeSession({ role: "clinic-admin", soloDentistClinic: next });
+    setAdminProfessionalProfile(null);
   };
 
   const logout = () => {
@@ -139,6 +188,8 @@ export function RoleProvider({ children }: { children: ReactNode }) {
       value={{
         role,
         setRole,
+        soloDentistClinic,
+        setSoloDentistClinic,
         dentistId: DEV_DENTIST_ID,
         selfDentistOverride,
         setSelfDentistOverride,

@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CloseIcon } from "@/components/shell/icons";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
+import { useEffectiveDentists } from "@/dev/use-effective-dentists"; // DEV TOOL — see src/dev/role.ts
 import { AppointmentDetailModal } from "./appointment-detail-modal";
 import { ClinicalEncounterScreen } from "./clinical-encounter-screen";
 import type { Appointment, Dentist, OperationalAlert, WeekDay } from "./mock-data";
@@ -46,12 +47,22 @@ export function SummaryCards({
   dentists: Dentist[];
   alerts: OperationalAlert[];
 }) {
-  const { role, dentistId: currentDentistId } = useRole();
+  const { role, dentistId: currentDentistId, soloDentistClinic } = useRole();
   // DEV TOOL — see src/dev/role.ts. A Dentist's KPIs/alerts must represent
   // only their own operation, same scoping AppointmentsCard applies to the
   // board itself.
   const isDentist = role === "dentist";
-  const scopedDentists = isDentist ? dentists.filter((d) => d.id === currentDentistId) : dentists;
+  // "Administrador Odontólogo Único" (see role-context.tsx): every
+  // appointment belongs to the clinic's one dentist by definition — unlike
+  // isDentist, this never touches scopedAlerts below, since she (unlike a
+  // literal Dentist) still manages clinic-wide billing/admin matters.
+  const isSoloDentist = isDentist || soloDentistClinic;
+  const { dentists: effectiveDentists } = useEffectiveDentists();
+  const scopedDentists = isDentist
+    ? dentists.filter((d) => d.id === currentDentistId)
+    : soloDentistClinic
+      ? effectiveDentists
+      : dentists;
   // OPERATIONAL_ALERTS is clinic-wide (billing/administrative) data with no
   // per-dentist ownership in the current mocks — a Dentist doesn't manage
   // subscriptions/clinic-wide config (see CLAUDE.md Domain Model), so none
@@ -74,7 +85,7 @@ export function SummaryCards({
   // just the record list behind those existing numbers. Scoped to just this
   // dentist's own appointments when role is "dentist".
   const todayAppointments = allAppointments.filter(
-    (a) => a.day === todayDay?.key && (!isDentist || a.dentistId === currentDentistId),
+    (a) => a.day === todayDay?.key && (soloDentistClinic || !isDentist || a.dentistId === currentDentistId),
   );
 
   const updateAppointment = (updated: Appointment) => {
@@ -120,7 +131,7 @@ export function SummaryCards({
   const percentOfToday = (count: number) =>
     todayAppointments.length > 0 ? `${Math.round((count / todayAppointments.length) * 100)}% del total` : "0% del total";
 
-  const displayMetrics: DisplayMetric[] = isDentist
+  const displayMetrics: DisplayMetric[] = isSoloDentist
     ? metrics.map((m) => {
         switch (m.label) {
           case "Citas hoy":
@@ -170,6 +181,7 @@ export function SummaryCards({
           title={openMetric.label}
           records={recordsForKey(openKpi)}
           dentists={scopedDentists}
+          soloDentistClinic={soloDentistClinic}
           todayDateLabel={todayDay?.dateLabel ?? ""}
           onClose={() => setOpenKpi(null)}
           onOpenPending={() => setOpenKpi("pendientes")}
@@ -215,6 +227,7 @@ function KpiDetailModal({
   title,
   records,
   dentists,
+  soloDentistClinic,
   todayDateLabel,
   onClose,
   onOpenPending,
@@ -223,6 +236,7 @@ function KpiDetailModal({
   title: string;
   records: { kind: "appointments"; items: Appointment[] } | { kind: "alerts"; items: OperationalAlert[] };
   dentists: Dentist[];
+  soloDentistClinic: boolean;
   todayDateLabel: string;
   onClose: () => void;
   onOpenPending: () => void;
@@ -273,7 +287,8 @@ function KpiDetailModal({
                       key={appointment.id}
                       appointment={appointment}
                       dentistName={
-                        dentists.find((d) => d.id === appointment.dentistId)?.name ?? "Sin asignar"
+                        (soloDentistClinic ? dentists[0] : dentists.find((d) => d.id === appointment.dentistId))
+                          ?.name ?? "Sin asignar"
                       }
                       dateLabel={todayDateLabel}
                       onSelect={() => onSelectAppointment(appointment.id)}

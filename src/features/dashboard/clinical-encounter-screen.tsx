@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { UserAvatar } from "@/components/user-avatar";
+import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import {
   AlertTriangleIcon,
   CalendarIcon,
@@ -64,6 +65,7 @@ export function ClinicalEncounterScreen({
   onCreateAppointment: (appointment: Appointment) => void;
   onUpdateAppointment: (appointment: Appointment) => void;
 }) {
+  const { soloDentistClinic } = useRole();
   const [notes, setNotes] = useState("");
   const [indications, setIndications] = useState("");
   const [procedures, setProcedures] = useState<ProcedureRow[]>([]);
@@ -144,7 +146,9 @@ export function ClinicalEncounterScreen({
     onComplete();
   };
 
-  const dentist = dentists.find((d) => d.id === appointment.dentistId);
+  // "Administrador Odontólogo Único" (see role-context.tsx): every
+  // appointment belongs to the clinic's one dentist by definition.
+  const dentist = soloDentistClinic ? dentists[0] : dentists.find((d) => d.id === appointment.dentistId);
   const day = weekDays.find((d) => d.key === appointment.day);
   const dayLabel = day ? `${day.label}, ${day.dateLabel}` : appointment.day;
   const duration = appointment.durationMinutes ?? DEFAULT_APPOINTMENT_DURATION;
@@ -169,7 +173,10 @@ export function ClinicalEncounterScreen({
     ? (scheduledDay ? `${scheduledDay.label}, ${scheduledDay.dateLabel}` : scheduledNextAppointment.day)
     : "";
   const scheduledDentistName = scheduledNextAppointment
-    ? (dentists.find((d) => d.id === scheduledNextAppointment.dentistId)?.name ?? "Sin asignar")
+    ? ((soloDentistClinic
+        ? dentists[0]
+        : dentists.find((d) => d.id === scheduledNextAppointment.dentistId)
+      )?.name ?? "Sin asignar")
     : "";
 
   return (
@@ -592,6 +599,7 @@ export function ClinicalEncounterScreen({
             patientName: appointment.patientName,
             type: nextTreatment || undefined,
           }}
+          lockedDentist={soloDentistClinic ? dentists[0] : undefined}
           onClose={() => setShowNewAppointmentModal(false)}
           onCreate={(created) => {
             onCreateAppointment(created);

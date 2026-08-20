@@ -45,12 +45,18 @@ const defaultCustomStart = toISODate(new Date(today.getFullYear(), today.getMont
 const defaultCustomEnd = toISODate(today);
 
 export function ReportsScreen() {
-  const { role, dentistId } = useRole();
+  const { role, dentistId, soloDentistClinic } = useRole();
   // Odontólogo always sees only their own activity — never a selectable
   // filter, so there's nothing for them to widen back to "todos" (see task
   // scope: the Profesional filter is hidden entirely for this role, not
   // just defaulted).
   const isDentist = role === "dentist";
+  // "Administrador Odontólogo Único" (see role-context.tsx): a one-person
+  // clinic has no comparison to make either, so it reuses the same
+  // simplified view as Odontólogo — but keeps reading clinic-wide (never
+  // scoped to a single dentistId below), since here "toda la clínica" and
+  // "mi actividad" are the exact same numbers anyway.
+  const isSoloView = isDentist || soloDentistClinic;
 
   const [period, setPeriod] = useState<ReportPeriodKey>("this-month");
   const [professionalFilter, setProfessionalFilter] = useState(""); // "" = todos los profesionales — Clinic Admin only
@@ -84,7 +90,7 @@ export function ReportsScreen() {
   return (
     <div className="flex flex-col gap-6">
       <p className="-mt-4 text-sm text-muted-foreground">
-        {isDentist ? "Analiza tu actividad y evolución clínica." : "Analiza la actividad y evolución de tu clínica."}
+        {isSoloView ? "Analiza tu actividad y evolución clínica." : "Analiza la actividad y evolución de tu clínica."}
       </p>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
@@ -122,7 +128,7 @@ export function ReportsScreen() {
           </div>
         )}
 
-        {!isDentist && (
+        {!isSoloView && (
           <div className="w-full sm:w-64">
             <ProfessionalSelect
               dentists={DENTISTS}
@@ -145,12 +151,13 @@ export function ReportsScreen() {
         <KpiCard icon={UsersIcon} value={String(kpis.patientsAttended)} label="Pacientes atendidos" />
       </div>
 
-      {isDentist ? (
-        // No comparative "Actividad por profesional" for Odontólogo (never
-        // sees other dentists' individual metrics — see task scope), so
-        // "Mi actividad" is free to use the full row instead of the 50/50
-        // split below. A dedicated replacement for that second column is a
-        // later iteration, not this one.
+      {isSoloView ? (
+        // No comparative "Actividad por profesional" for Odontólogo, nor
+        // for a solo-practitioner clinic (never sees other dentists'
+        // individual metrics — see task scope), so "Mi actividad" is free
+        // to use the full row instead of the 50/50 split below. A
+        // dedicated replacement for that second column is a later
+        // iteration, not this one.
         <ReportSection title="Mi actividad" description="Atenciones completadas a través del tiempo.">
           <TimeSeriesBarChart data={activitySeries} />
         </ReportSection>
@@ -166,12 +173,12 @@ export function ReportsScreen() {
         </div>
       )}
 
-      <ReportSection title={isDentist ? "Mis pacientes" : "Pacientes"}>
+      <ReportSection title={isSoloView ? "Mis pacientes" : "Pacientes"}>
         <div className="grid grid-cols-2 gap-x-2 gap-y-5 sm:grid-cols-5 sm:gap-x-0 sm:divide-x sm:divide-border">
           <PatientStat
             icon={UsersIcon}
             value={String(patientsStats.active)}
-            label={isDentist ? "Atendidos" : "Activos"}
+            label={isSoloView ? "Atendidos" : "Activos"}
           />
           <PatientStat icon={PlusIcon} value={String(patientsStats.newInPeriod)} label="Nuevos en el período" />
           <PatientStat icon={RefreshIcon} value={String(patientsStats.recurrent)} label="Recurrentes" />
@@ -184,7 +191,7 @@ export function ReportsScreen() {
         </div>
       </ReportSection>
 
-      <ReportSection title={isDentist ? "Mis tratamientos más realizados" : "Tratamientos más realizados"}>
+      <ReportSection title={isSoloView ? "Mis tratamientos más realizados" : "Tratamientos más realizados"}>
         <HorizontalRankingChart rows={treatmentRanking} />
       </ReportSection>
     </div>

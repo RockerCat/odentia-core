@@ -2,7 +2,11 @@ import type { Role } from "@/dev/role";
 
 const SESSION_STORAGE_KEY = "odentia:session";
 
-export type DemoSession = { role: Role };
+// soloDentistClinic: the "Administrador Odontólogo Único" demo scenario —
+// still role "clinic-admin" (see src/dev/role-context.tsx), never a
+// separate Role value, so it rides along in the same session object
+// instead of needing its own storage key.
+export type DemoSession = { role: Role; soloDentistClinic?: boolean };
 
 // Mock "auth" persistence — a role saved to localStorage, nothing more.
 // No tokens, no backend call: just enough to survive a refresh until real
@@ -12,9 +16,9 @@ export function readSession(): DemoSession | null {
   try {
     const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { role?: unknown };
+    const parsed = JSON.parse(raw) as { role?: unknown; soloDentistClinic?: unknown };
     if (typeof parsed.role !== "string") return null;
-    return { role: parsed.role as Role };
+    return { role: parsed.role as Role, soloDentistClinic: parsed.soloDentistClinic === true };
   } catch {
     return null;
   }

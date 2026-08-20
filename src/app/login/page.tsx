@@ -33,7 +33,7 @@ export default function LoginPage() {
       setError("No reconocemos ese usuario. Usa uno de los accesos de demostración.");
       return;
     }
-    writeSession({ role: match.role });
+    writeSession({ role: match.role, soloDentistClinic: match.soloDentistClinic });
     router.push(homeRouteForRole(match.role));
   };
 
@@ -106,7 +106,7 @@ export default function LoginPage() {
           <div className="flex flex-col gap-1">
             {DEMO_USERS.map((user) => (
               <button
-                key={user.role}
+                key={user.email}
                 type="button"
                 onClick={() => selectDemoUser(user)}
                 className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/60 px-2.5 py-1.5 text-left opacity-70 transition-all hover:border-primary/30 hover:bg-primary/5 hover:opacity-100"
