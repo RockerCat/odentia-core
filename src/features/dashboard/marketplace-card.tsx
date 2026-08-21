@@ -1,4 +1,5 @@
 import { ArrowRightIcon, StoreIcon } from "@/components/shell/icons";
+import { MARKETPLACE_URL } from "@/components/shell/nav-items";
 
 export function MarketplaceCard() {
   return (
@@ -23,13 +24,13 @@ export function MarketplaceCard() {
           Compra insumos dentales desde Odentia con nuestro proveedor, LopaDent.
         </p>
 
-        <button
-          type="button"
+        <a
+          href={MARKETPLACE_URL}
           className="mt-5 inline-flex items-center gap-1.5 rounded-lg border border-primary/25 bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/15"
         >
           Ir al Marketplace
           <ArrowRightIcon className="size-4" />
-        </button>
+        </a>
       </div>
     </div>
   );

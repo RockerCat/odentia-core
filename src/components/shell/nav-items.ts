@@ -10,6 +10,10 @@ import {
 
 export type NavGroup = "work" | "marketplace" | "admin" | "platform" | "business";
 
+// Marketplace is an independent product (see CLAUDE.md) — every clinic-facing
+// access to it is an external link, never an internal route.
+export const MARKETPLACE_URL = "https://odentia-marketplace.vercel.app";
+
 export type NavItem = {
   label: string;
   icon: typeof CalendarIcon;
@@ -32,7 +36,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Agenda", icon: CalendarIcon, group: "work", href: "/agenda" },
   { label: "Pacientes", icon: UserIcon, group: "work", href: "/pacientes" },
   { label: "Reportes", icon: BarChartIcon, group: "work", href: "/reportes" },
-  { label: "Marketplace", icon: StoreIcon, group: "marketplace" },
+  { label: "Marketplace", icon: StoreIcon, group: "marketplace", href: MARKETPLACE_URL },
   { label: "Clínica", icon: BuildingIcon, group: "admin", href: "/clinica" },
   { label: "Mi Suscripción", icon: CreditCardIcon, group: "admin", href: "/suscripcion" },
   { label: "Configuración", icon: SlidersIcon, group: "admin", href: "/configuracion" },
