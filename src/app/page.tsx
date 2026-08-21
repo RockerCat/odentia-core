@@ -1,7 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Fragment } from "react";
-import { Logo } from "@/components/shell/logo";
+import { LandingFooter } from "@/components/landing/landing-footer";
+import { LandingHeader } from "@/components/landing/landing-header";
 import {
   ArrowRightIcon,
   BarChartIcon,
@@ -54,35 +55,7 @@ const FLOW_STEPS = [
 export default function LandingPage() {
   return (
     <div className="flex min-h-dvh flex-col bg-surface text-foreground">
-      <header className="sticky top-0 z-10 border-b border-border bg-background/90 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
-          <Logo className="h-7 w-auto sm:h-8" />
-
-          <nav className="hidden items-center gap-6 text-sm font-medium text-foreground/80 md:flex">
-            <a href="#funcionalidades" className="hover:text-foreground">
-              Funcionalidades
-            </a>
-            <a href="#marketplace" className="hover:text-foreground">
-              Marketplace
-            </a>
-          </nav>
-
-          <div className="flex items-center gap-1.5 sm:gap-3">
-            <Link
-              href="/login"
-              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-foreground/5 sm:border sm:border-border sm:px-4 sm:py-2 sm:text-sm"
-            >
-              Iniciar sesión
-            </Link>
-            <button
-              type="button"
-              className="rounded-lg bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 sm:px-4 sm:py-2 sm:text-sm"
-            >
-              Registra tu clínica
-            </button>
-          </div>
-        </div>
-      </header>
+      <LandingHeader />
 
       <main className="flex-1">
         {/* Hero */}
@@ -400,9 +373,7 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <footer className="border-t border-border px-4 py-6 sm:px-6">
-        <p className="text-center text-xs text-muted-foreground">© {new Date().getFullYear()} Odentia</p>
-      </footer>
+      <LandingFooter />
     </div>
   );
 }
