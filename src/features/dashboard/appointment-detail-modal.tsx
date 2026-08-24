@@ -127,6 +127,7 @@ export function AppointmentDetailModal({
   onClose,
   onUpdate,
   onStartEncounter,
+  onViewPatient,
 }: {
   appointment: Appointment;
   allAppointments: Appointment[];
@@ -135,6 +136,12 @@ export function AppointmentDetailModal({
   onClose: () => void;
   onUpdate: (updated: Appointment) => void;
   onStartEncounter: () => void;
+  // Matched by patientName, same convention as getPatientHistory/"Ver
+  // historial completo" above — Appointment carries no patientId. Optional
+  // so this modal still works for any future caller that doesn't need the
+  // patient's quick profile (see PatientDetailModal in the patients feature
+  // — the single shared implementation, reused as-is from here).
+  onViewPatient?: (patientId: string) => void;
 }) {
   const router = useRouter();
   const [editingField, setEditingField] = useState<FieldKey | null>(null);
@@ -463,7 +470,16 @@ export function AppointmentDetailModal({
             )}
             <button
               type="button"
-              onClick={() => setInfoMessage("La ficha del paciente estará disponible próximamente.")}
+              onClick={() => {
+                // Matched by patientName, same convention as getPatientHistory
+                // above — no dedicated patientId on Appointment itself.
+                const matchedPatient = PATIENTS.find((p) => p.name === appointment.patientName);
+                if (matchedPatient && onViewPatient) {
+                  onViewPatient(matchedPatient.id);
+                } else {
+                  setInfoMessage("La ficha del paciente estará disponible próximamente.");
+                }
+              }}
               className="flex flex-col items-center gap-1 rounded-lg border border-border px-2 py-2.5 text-center text-[11px] font-medium text-foreground/80 transition-colors hover:bg-foreground/5"
             >
               <UserIcon className="size-[18px]" />

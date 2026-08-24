@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ClipboardIcon, CloseIcon, PhoneIcon } from "@/components/shell/icons";
+import { ChevronIcon, ClipboardIcon, CloseIcon, PhoneIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
@@ -20,6 +20,7 @@ export function PatientDetailModal({
   soloDentistClinic = false,
   weekDays,
   onClose,
+  onBack,
   onEdit,
   onNewAppointment,
   onViewHistory,
@@ -30,6 +31,13 @@ export function PatientDetailModal({
   soloDentistClinic?: boolean;
   weekDays: WeekDay[];
   onClose: () => void;
+  // Only passed by a caller that opened this profile from within another
+  // modal's own context (e.g. Agenda's "Ver paciente" from the appointment
+  // detail) — shows "Volver a la cita" instead of the plain "Paciente"
+  // title so the user can return there instead of closing everything.
+  // Absent when opened directly from Pacientes, which keeps its current
+  // close-only behavior.
+  onBack?: () => void;
   onEdit: (patch: Partial<Patient>) => void;
   onNewAppointment: () => void;
   onViewHistory: () => void;
@@ -111,7 +119,18 @@ export function PatientDetailModal({
         className="relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-background shadow-xl sm:max-h-[85vh] sm:w-full sm:max-w-5xl sm:rounded-xl"
       >
         <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3">
-          <p className="text-sm font-semibold">Paciente</p>
+          {onBack ? (
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 -ml-2 text-sm font-medium text-foreground/70 transition-colors hover:bg-foreground/5 hover:text-foreground"
+            >
+              <ChevronIcon className="size-4" />
+              Volver a la cita
+            </button>
+          ) : (
+            <p className="text-sm font-semibold">Paciente</p>
+          )}
           <button
             type="button"
             onClick={onClose}

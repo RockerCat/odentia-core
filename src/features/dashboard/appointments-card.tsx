@@ -1,5 +1,6 @@
 "use client"; // needed for day-selection state and the useRole() gate below.
 
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Tooltip } from "@/components/tooltip";
 import { UserAvatar } from "@/components/user-avatar";
@@ -7,6 +8,8 @@ import { ChevronDownIcon, ChevronIcon, CloseIcon, PencilIcon, PhoneIcon, PlusIco
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { firstName } from "@/lib/format";
 import { CURRENT_USER } from "@/lib/current-user";
+import { PATIENTS, type Patient } from "@/features/patients/mock-data";
+import { PatientDetailModal } from "@/features/patients/patient-detail-modal";
 import { AnchoredPopover, AppointmentDetailModal, FIELD_CLASS } from "./appointment-detail-modal";
 import { ClinicalEncounterScreen } from "./clinical-encounter-screen";
 import type { Appointment, AppointmentStatus, Dentist, WeekDay } from "./mock-data";
@@ -272,6 +275,7 @@ export function AppointmentsCard({
   weekDays: WeekDay[];
   weekLabel: string;
 }) {
+  const router = useRouter();
   const {
     role,
     dentistId: currentDentistId,
@@ -343,14 +347,29 @@ export function AppointmentsCard({
   const [professionalFilter, setProfessionalFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | "all">("all");
   const [showNewAppointment, setShowNewAppointment] = useState(false);
-  // Set only when opened from an empty calendar slot; the "Nueva cita"
-  // button always opens with this null, keeping that flow exactly as it
-  // was before this change.
+  // Set only when opened from an empty calendar slot or from "Nueva cita"
+  // inside the patient's quick profile (see PatientDetailModal below); the
+  // board's own "Nueva cita" button always opens with this null, keeping
+  // that flow exactly as it was before this change.
   const [newAppointmentPrefill, setNewAppointmentPrefill] = useState<{
-    dentistId: string;
-    day: string;
-    time: string;
+    dentistId?: string;
+    day?: string;
+    time?: string;
+    patientName?: string;
   } | null>(null);
+
+  // Owns its own patient records locally, same "simulate CRUD with local
+  // state" prototype pattern as allAppointments above and as Pacientes'
+  // own PatientsScreen — each screen mount keeps its own working copy of
+  // the shared PATIENTS mock (see PROJECT_STATUS.md). Only populated by
+  // "Ver paciente" below; the board itself never lists patients.
+  const [patients, setPatients] = useState<Patient[]>(PATIENTS);
+  // Reuses PatientDetailModal — the same quick-profile component/pattern
+  // as Pacientes (see task scope) — instead of a second, Agenda-specific
+  // patient view. Kept separate from selectedAppointmentId (not cleared
+  // when it opens) precisely so "Volver a la cita" can restore the same
+  // appointment detail modal underneath.
+  const [viewingPatientId, setViewingPatientId] = useState<string | null>(null);
 
   const updateAppointment = (updated: Appointment) => {
     setAllAppointments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
@@ -358,6 +377,10 @@ export function AppointmentsCard({
 
   const addAppointment = (created: Appointment) => {
     setAllAppointments((prev) => [...prev, created]);
+  };
+
+  const editPatient = (patientId: string, patch: Partial<Patient>) => {
+    setPatients((prev) => prev.map((p) => (p.id === patientId ? { ...p, ...patch } : p)));
   };
 
   const toggleProfessionalFilter = (dentistId: string) => {
@@ -371,7 +394,9 @@ export function AppointmentsCard({
     setStatusFilter("all");
   };
 
-  const openNewAppointment = (prefill: { dentistId: string; day: string; time: string } | null) => {
+  const openNewAppointment = (
+    prefill: { dentistId?: string; day?: string; time?: string; patientName?: string } | null,
+  ) => {
     setNewAppointmentPrefill(prefill);
     setShowNewAppointment(true);
   };
@@ -410,6 +435,7 @@ export function AppointmentsCard({
   const selectedAppointment = allAppointments.find((a) => a.id === selectedAppointmentId) ?? null;
   const selectedDentist = effectiveDentists.find((d) => d.id === selectedDentistId) ?? null;
   const encounterAppointment = allAppointments.find((a) => a.id === encounterAppointmentId) ?? null;
+  const viewingPatient = patients.find((p) => p.id === viewingPatientId) ?? null;
 
   // Estado filter thins out which appointments show in each dentist's slot
   // grid (non-matching slots simply render as free); Profesional filter
@@ -689,7 +715,7 @@ export function AppointmentsCard({
         ))}
       </div>
 
-      {selectedAppointment && (
+      {selectedAppointment && !viewingPatientId && (
         <AppointmentDetailModal
           appointment={selectedAppointment}
           allAppointments={allAppointments}
@@ -700,6 +726,38 @@ export function AppointmentsCard({
           onStartEncounter={() => {
             setSelectedAppointmentId(null);
             setEncounterAppointmentId(selectedAppointment.id);
+          }}
+          onViewPatient={(patientId) => setViewingPatientId(patientId)}
+        />
+      )}
+
+      {/* Same PatientDetailModal/quick-profile as Pacientes — no second,
+          Agenda-specific patient view. Mutually exclusive with the modal
+          above (never both open at once); "Volver a la cita" (onBack)
+          just clears viewingPatientId, which reveals the still-selected
+          appointment's detail modal underneath again. */}
+      {viewingPatient && (
+        <PatientDetailModal
+          patient={viewingPatient}
+          appointments={allAppointments}
+          dentists={scopedDentists}
+          soloDentistClinic={soloDentistClinic}
+          weekDays={weekDays}
+          onClose={() => {
+            setViewingPatientId(null);
+            setSelectedAppointmentId(null);
+          }}
+          onBack={selectedAppointment ? () => setViewingPatientId(null) : undefined}
+          onEdit={(patch) => editPatient(viewingPatient.id, patch)}
+          onNewAppointment={() => {
+            setViewingPatientId(null);
+            setSelectedAppointmentId(null);
+            openNewAppointment({ patientName: viewingPatient.name });
+          }}
+          onViewHistory={() => {
+            setViewingPatientId(null);
+            setSelectedAppointmentId(null);
+            router.push(`/pacientes/${viewingPatient.id}/historia-clinica`);
           }}
         />
       )}
