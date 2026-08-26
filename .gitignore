@@ -37,4 +37,4 @@ coverage
 
 # Typescript
 *.tsbuildinfo
-next-env.d.ts
+next-env.d.tssupabase/.temp/

@@ -21,8 +21,9 @@ import { formatCOP, LOPADENT_BENEFIT_MOCK, SUBSCRIPTION_MOCK } from "@/features/
 // (src/app/page.tsx). Reuses the subscription feature's mock price/goal
 // (src/features/subscription/mock-data.ts) so the numbers shown here never
 // drift from what a logged-in Clinic Admin sees in Mi Suscripción.
-// "Comenzar mes gratis" opens the mock onboarding wizard at /registro, same
-// as "Registra tu clínica" on the home page (see src/features/onboarding).
+// "Probar Odentia gratis" and "Comenzar mes gratis" both open the mock
+// onboarding wizard at /registro, same as "Registra tu clínica" on the home
+// page (see src/features/onboarding).
 
 export const metadata: Metadata = {
   title: "Planes | Odentia",
@@ -91,12 +92,12 @@ export default function PlanesPage() {
 
                 <p className="mt-4 flex-1 text-sm text-muted-foreground">Prueba Odentia sin costo.</p>
 
-                <button
-                  type="button"
-                  className="mt-5 w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium whitespace-nowrap text-primary-foreground hover:opacity-90"
+                <Link
+                  href="/registro"
+                  className="mt-5 block w-full rounded-lg bg-primary px-4 py-2.5 text-center text-sm font-medium whitespace-nowrap text-primary-foreground hover:opacity-90"
                 >
                   Probar Odentia gratis
-                </button>
+                </Link>
               </div>
 
               <ArrowRightIcon className="mx-auto size-5 shrink-0 rotate-90 text-primary/40 lg:my-auto lg:rotate-0" />
