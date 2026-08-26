@@ -5,9 +5,8 @@ import { Logo } from "@/components/shell/logo";
 // and every other public marketing page (e.g. /planes) so nav links and
 // the CTA buttons never drift between pages. "Funcionalidades" and
 // "Marketplace" are anchors into sections on the home page, so they route
-// through "/" from any other page. "Registra tu clínica" is intentionally
-// not wired to a real flow yet (see PROJECT_STATUS.md: no real
-// registration this phase).
+// through "/" from any other page. "Registra tu clínica" opens the mock
+// onboarding wizard at /registro (see src/features/onboarding).
 type LandingHeaderProps = {
   active?: "planes";
 };
@@ -40,12 +39,12 @@ export function LandingHeader({ active }: LandingHeaderProps) {
           >
             Iniciar sesión
           </Link>
-          <button
-            type="button"
+          <Link
+            href="/registro"
             className="rounded-lg bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 sm:px-4 sm:py-2 sm:text-sm"
           >
             Registra tu clínica
-          </button>
+          </Link>
         </div>
       </div>
     </header>

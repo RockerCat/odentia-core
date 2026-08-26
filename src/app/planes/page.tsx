@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import Link from "next/link";
 import {
   ArrowRightIcon,
   BarChartIcon,
@@ -20,9 +21,8 @@ import { formatCOP, LOPADENT_BENEFIT_MOCK, SUBSCRIPTION_MOCK } from "@/features/
 // (src/app/page.tsx). Reuses the subscription feature's mock price/goal
 // (src/features/subscription/mock-data.ts) so the numbers shown here never
 // drift from what a logged-in Clinic Admin sees in Mi Suscripción.
-// "Comenzar mes gratis" is intentionally not wired to a real flow yet (see
-// PROJECT_STATUS.md: no real registration this phase), same as "Registra tu
-// clínica" on the home page.
+// "Comenzar mes gratis" opens the mock onboarding wizard at /registro, same
+// as "Registra tu clínica" on the home page (see src/features/onboarding).
 
 export const metadata: Metadata = {
   title: "Planes | Odentia",
@@ -212,12 +212,12 @@ export default function PlanesPage() {
                 Un mes gratis, sin complicaciones, y la posibilidad de que tu suscripción salga gratis
                 cada mes.
               </p>
-              <button
-                type="button"
-                className="mt-6 rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90"
+              <Link
+                href="/registro"
+                className="mt-6 inline-block rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90"
               >
                 Comenzar mes gratis
-              </button>
+              </Link>
             </div>
           </div>
         </section>

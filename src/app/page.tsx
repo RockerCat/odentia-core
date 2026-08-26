@@ -20,8 +20,8 @@ import {
 } from "@/components/shell/icons";
 
 // Public marketing landing — reuses the same branding/tokens/icons as the
-// authenticated app. "Registra tu clínica" is intentionally not wired to a
-// real flow yet (see PROJECT_STATUS.md: no real registration this phase).
+// authenticated app. "Registra tu clínica" opens the mock onboarding
+// wizard at /registro (see src/features/onboarding).
 // The hero/marketplace "product mockups" below are plain HTML/CSS built
 // from the same visual language as the real Agenda (see mock-data.ts's
 // STATUS_STYLES) — not screenshots or generated assets.
@@ -90,12 +90,12 @@ export default function LandingPage() {
                 />
               </div>
               <div className="mt-8 flex items-center gap-2 sm:gap-3">
-                <button
-                  type="button"
+                <Link
+                  href="/registro"
                   className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium whitespace-nowrap text-primary-foreground hover:opacity-90 sm:px-6 sm:py-3"
                 >
                   Registra tu clínica
-                </button>
+                </Link>
                 <Link
                   href="/login"
                   className="rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-medium whitespace-nowrap text-foreground hover:bg-foreground/5 sm:px-6 sm:py-3"
@@ -362,12 +362,12 @@ export default function LandingPage() {
               <p className="mx-auto mt-3 max-w-lg text-sm text-muted-foreground sm:text-base">
                 Empieza a gestionar tu clínica y descubre un ecosistema creado para odontología.
               </p>
-              <button
-                type="button"
-                className="mt-6 rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90"
+              <Link
+                href="/registro"
+                className="mt-6 inline-block rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90"
               >
                 Registra tu clínica
-              </button>
+              </Link>
             </div>
           </div>
         </section>
