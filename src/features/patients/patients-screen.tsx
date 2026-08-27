@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { PlusIcon, SearchIcon, UsersIcon } from "@/components/shell/icons";
+import { AlertTriangleIcon, CalendarIcon, PlusIcon, SearchIcon, UsersIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
 import type { Patient } from "./data";
@@ -26,12 +26,13 @@ function isNewThisMonth(patient: Patient): boolean {
 
 // Real /pacientes listing — clinicId/canCreatePatient come from the real
 // membership resolved server-side (see src/app/pacientes/page.tsx), never
-// from useRole()/RoleContext/the DEV role switcher (see CLAUDE.md task
-// scope, section 3/15). "Profesional habitual" and "última atención"/
-// "próxima cita" are gone entirely — patients belong to the Clinic, not a
-// Dentist (see CLAUDE.md Domain Model), and no appointments table exists
-// yet to back a visit history (see task scope, section 4: don't fabricate
-// what has no real column).
+// from useRole()/RoleContext/the DEV role switcher. "Profesional habitual"
+// is gone entirely — patients belong to the Clinic, not a Dentist (see
+// CLAUDE.md Domain Model). The 4-KPI grid restores the approved demo
+// layout exactly (icons/labels/spacing) — "Con cita próxima"/"Sin
+// atención +6 meses" show "—", not 0: no appointments table exists yet to
+// compute either, and 0 would misrepresent "computed, zero" as opposed to
+// "not computable yet".
 export function PatientsScreen({
   initialPatients,
   clinicId,
@@ -67,9 +68,13 @@ export function PatientsScreen({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid grid-cols-2 gap-3 sm:max-w-md">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KpiCard icon={UsersIcon} value={String(activeCount)} label="Pacientes activos" />
         <KpiCard icon={PlusIcon} value={String(newThisMonthCount)} label="Nuevos este mes" />
+        {/* Sin tabla de appointments todavía — "—" honesto, nunca 0 (ver
+            CLAUDE.md task scope). */}
+        <KpiCard icon={CalendarIcon} value="—" label="Con cita próxima" />
+        <KpiCard icon={AlertTriangleIcon} value="—" label="Sin atención +6 meses" />
       </div>
 
       <div className="flex flex-col gap-3">
@@ -174,6 +179,7 @@ export function PatientsScreen({
       {selectedPatient && (
         <PatientRecordModal
           patient={selectedPatient}
+          clinicId={clinicId}
           canEditPatientData={canCreatePatient}
           onClose={() => setSelectedPatientId(null)}
           onUpdated={handlePatientUpdated}

@@ -104,11 +104,20 @@ Unless explicitly instructed otherwise:
 - Clean folder organization.
 - Avoid unnecessary global state.
 
-Until real authentication exists, the mock login/session lives in
-`src/features/auth/` (not real auth — no backend credential check). Keep it
-there; do not scatter session logic into feature folders. `src/dev/` is a
-separate, fully disposable dev-only shim — safe to delete once real auth
-lands.
+Real authentication (Supabase Auth) lives in `src/features/session/` —
+`resolveClinicContext()` is the single source of truth for the
+authenticated user's clinic/role/professional-profile context. Every real
+feature derives permissions from that, server-side, never from the legacy
+mock session below.
+
+The real resolved role is also bridged into the legacy mock
+`src/features/auth/session.ts` / `RoleContext` store
+(`src/features/session/role-bridge.ts`), so screens not yet converted from
+Phase 1's mock data (see PROJECT_STATUS.md) keep working unmodified. Do
+not scatter session logic into feature folders. `src/dev/` (role switcher,
+mock dentist resolver) is a separate, disposable dev-only shim, still used
+by those unconverted screens — never a source of authorization for a real
+feature, and not yet safe to delete.
 
 There are two shells: `AppShell` (clinic roles — Superadmin, Clinic Admin,
 Dentist, Assistant) and `PortalShell` (Patient only, its own simpler nav —

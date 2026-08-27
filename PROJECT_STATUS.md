@@ -2,292 +2,283 @@
 
 # Odentia Core
 
-**Last Updated:** 2026-08-13
+**Last Updated:** 2026-08-27
 
 ---
 
 # Current Phase
 
-## Phase 1 — Interactive UI Prototype
+## Phase 1 — Interactive UI Prototype — done
 
-The current objective is to build a fully navigable frontend prototype using mock data only.
+A fully navigable frontend prototype, mock data only, was built and deployed to
+Vercel. It validated UX, navigation, information architecture, and workflows across
+every major screen. See "Phase 1 legacy — screens still mock" below for what's still
+running on that original mock data.
 
-The prototype will be deployed to Vercel and validated with real users before any backend implementation begins.
+## Phase 2 — Real Backend (Supabase) — in progress
 
-This phase focuses exclusively on validating:
+Backend implementation has started. It is being done **incrementally, one vertical at
+a time**, converting screens from Phase 1's mock data to real Supabase-backed data —
+never all at once, never by redesigning the already-approved UI. The standing rule for
+every conversion is:
 
-- User Experience (UX)
-- Navigation
-- Information Architecture
-- Screen hierarchy
-- User workflows
+> **REAL DATA OR HONEST EMPTY STATE — never use a mock as fallback.**
 
-Backend implementation is intentionally postponed.
+Converted so far (real Supabase Auth + Postgres + Storage, real RLS, tenant-isolated):
+real authentication, real clinic onboarding, `/clinica`, `/pacientes`, and
+`/pacientes/[id]/historia-clinica` (all five tabs, plus a real PDF export). Everything
+else (Agenda, `/admin`, Configuración, Mi Suscripción, Reportes, the Patient Portal)
+is still exactly the Phase 1 mock prototype, deliberately untouched — see each
+section below.
 
 ---
 
 # Current Objective
 
-Deliver a high-quality clickable prototype that feels like a finished application.
-
-Every important user journey should be navigable.
-
-The application should look production-ready even though all data is mocked.
+Keep converting Odentia Core from the validated mock prototype to a real,
+multi-tenant Supabase backend — one feature vertical at a time, always real data or
+an honest empty state, never a redesign of the already-approved UI, and never
+breaking a still-mock screen (Agenda above all) while its own conversion is pending.
 
 ---
 
 # Progress So Far
 
-What exists today in the clickable prototype (mock data only, no backend):
+## Autenticación (real)
 
-## Shell & Access
+- Real Supabase Auth (`signInWithPassword`) at `/login` — replaced the old mock demo
+  login entirely. `src/features/session/resolve-clinic-context.ts` is the single
+  source of truth for "who is this real user, and what's their clinic/role/
+  professional-profile context," used by the real route guard
+  (`src/lib/supabase/proxy.ts`), the login flow, and the shell's own identity display.
+- **Compatibility bridge**: the real resolved role is written into the legacy mock
+  `src/features/auth/session.ts` / `RoleContext` store
+  (`src/features/session/role-bridge.ts`) so every still-mock screen (Agenda above
+  all) keeps working completely unmodified while its own real-data conversion is
+  still pending. New real features must read `resolveClinicContext()` directly and
+  never derive permissions from `RoleContext`/`useRole()`/the DEV role switcher.
+- `src/dev/` (role switcher, effective-dentists mock resolver) is still present —
+  still used by every not-yet-converted mock screen — and remains a disposable,
+  never-a-source-of-real-authorization shim, not deleted yet.
+- Route guard (`proxy.ts`) enforces real auth on every request, including
+  `npm run dev` — no `NODE_ENV === 'development'` bypass.
 
-- Two shells: `AppShell` for clinic roles (desktop sidebar + header, mobile bottom
-  tab bar + mobile header) and `PortalShell` for the Patient role — its own simpler
-  nav, no clinic-dashboard chrome (see Patient Portal below). Both share one
-  role-gating hook (`useRouteGuard`).
-- Mock demo login at `/login` — no real backend. Lets a tester pick one of five demo
-  profiles (Clinic Admin, Dentist, Assistant, Superadmin, Patient), each with its own
-  mock identity, and enter the app as that role.
-- The selected role is saved to `localStorage` so it survives a refresh, and drives
-  header, greeting, avatar, "Mi perfil", permissions, and nav everywhere. "Salir"
-  clears it and returns to `/login`.
-- Role-based navigation (different nav items per role, per the Domain Model in
-  CLAUDE.md).
-- A separate dev-only role switcher (hidden outside `development`) still exists for
-  fast manual testing without going through `/login`.
+## Onboarding (real)
 
-## Agenda (the Clinic Admin's operational home)
+- `/registro` — a real 3-step wizard (Cuenta → Clínica → Rol) that creates a real
+  Supabase Auth user, a real `clinics` row (name, slug, sede principal with a real
+  Leaflet/Nominatim map picker + geocoding, logo upload to a public Storage bucket),
+  and the founding `clinic_admin` membership via a `SECURITY DEFINER` bootstrap RPC.
+  Handles "already onboarded" (real sign-out) and email-confirmation-pending states.
+- Real RLS + GRANTs for every table/RPC this flow touches (see
+  `supabase/migrations/2026082*`).
 
-- Weekly appointment board scoped per role (a Dentist sees only their own column; a
-  Clinic Admin/Assistant see all professionals), with professional/status filters.
-- A compact clinic identity card above the KPI grid — the clinic's own logo
-  (`object-contain`, capped well under its box so it stays clearly secondary to
-  Odentia's own sidebar logo) centered above the clinic name.
-- KPI summary cards, clickable for detail, plus an alerts modal.
-- Appointment creation flow.
-- Appointment detail modal with patient history timeline, cancel flow, and
-  "start attention" flow.
-- Clinical encounter screen (attending a patient) with an interactive odontogram.
-- Marketplace card — placeholder only, no real integration (see Marketplace Status).
+## Clínica (real, Clinic Admin)
 
-## Clínica (the Clinic Admin's own clinic settings)
+- `/clinica` — **Información general** (real, editable inline: name, contact info,
+  sede principal with the same real map/geocoding editor as onboarding, logo
+  upload/removal against the public `clinic-logos` Storage bucket). **Equipo** (real,
+  read-only list of the clinic's real members + their professional profile/
+  specialty). **Mi perfil profesional** (real display of the caller's own
+  professional profile; editing intentionally disabled — `professional_profiles` has
+  no INSERT/UPDATE RLS policy yet, reserved for a future column-whitelisted RPC).
+  **Consultorios** — still a placeholder; no real table exists for it yet.
 
-- `/clinica` — general clinic info plus a "Logo de la clínica" field: a horizontal
-  (never square/avatar-style), `object-contain` preview so horizontal, square, or
-  vertical logos alike show in full, plus "Cambiar logo" (a real local file picker,
-  mock only — nothing is uploaded) and "Eliminar logo." Clinic Admin only.
+## Pacientes (real, Clinic Admin/Dentist/Assistant)
 
-## Admin (the Superadmin's platform-wide home)
+- `/pacientes` — real, tenant-scoped `patients` table. Search/filter, list, 4-KPI
+  header (Pacientes activos / Nuevos este mes are real counts; Con cita próxima / Sin
+  atención +6 meses show an honest `—`, not `0` — no real appointments table exists
+  yet to compute either), create/edit, and a 3-column patient quick-profile modal
+  (`PatientRecordModal`) matching the approved design.
+- Tenant isolation and role-based permissions come from
+  `resolveClinicContext()`/`clinical-permissions.ts` server-side — never the DEV role
+  switcher.
 
-- `/admin` — platform KPIs, monthly activity, a Marketplace overview, a recent-clinics
-  list, and an attention list. Gated to the Superadmin role.
-- The Superadmin is also now locked out of clinic-operational routes (`/agenda`,
-  `/pacientes`) at the route level, not just hidden from their own sidebar — visiting
-  either URL directly redirects to `/admin` via the same shared route guard every
-  other gated route already uses.
+## Historia Clínica (real, all five tabs)
 
-## Pacientes (the Clinic Admin's patient directory)
+- `/pacientes/[id]/historia-clinica` — real, tenant-scoped patient identity header
+  (estado, "odontólogo habitual" — honestly "Aún sin odontólogo" until that real
+  relationship exists in the schema, paciente desde) plus a real "Alertas clínicas"
+  banner (alergias/condiciones/medicamentos), all fed by real data, never fabricated.
+- **Resumen** — real KPI grid + Alertas, driven by the same real
+  `patient_medical_histories` row Antecedentes reads/writes.
+- **Antecedentes** — real, one row per patient (`patient_medical_histories`),
+  editable ("Actualizar antecedentes") by `dentist`/`clinic_admin` with an active
+  `professional_profile` (never `clinic_admin` alone) via a `SECURITY DEFINER` RPC.
+  Shows real "Actualizado {fecha} · {profesional}" traceability.
+- **Odontograma** — real, individual finding records
+  (`patient_tooth_findings` — one row per hallazgo, not a JSON blob), reusing the
+  approved tooth-chart component exactly. Always renders, including empty. Editable
+  ("Actualizar odontograma": select a piece, register/remove hallazgos) under the
+  same authorization rule as Antecedentes. Header shows real "Actualizado {fecha} ·
+  {profesional}" from the most recently updated finding.
+- **Atenciones** — real, `patient_clinical_encounters` (motivo, diagnóstico,
+  tratamiento, notas, profesional, fecha/hora). Read-only in this screen by design:
+  the approved UI has no "register" action here — encounters are meant to be created
+  by completing a real appointment in Agenda, which is still fully mock, so no second
+  creation flow was invented. The write RPC exists and is permission-gated, ready for
+  that future Agenda integration.
+- **Documentos** — real, `patient_clinical_documents` + a private `clinical-documents`
+  Storage bucket (20MB limit; JPG/PNG/WEBP/PDF/DOC/DOCX). Two-column layout (list +
+  preview: images `object-contain`, PDFs embedded, DOC/DOCX as a file-info card).
+  Upload, edit metadata (título/categoría only), and logical archive
+  (`archived_at`/`archived_by` — never a physical delete, file stays in Storage) by
+  `dentist`/`clinic_admin`; read-only for `assistant`/plain admin (flagged, not yet
+  explicitly requested otherwise).
+- **Descargar PDF** — real, generated client-side from the same real rows this screen
+  already holds (`@react-pdf/renderer`, dynamically imported). Same approved visual
+  design as the original mock PDF (colors/layout/typography untouched); patient name
+  keeps normal capitalization; footer "Generado por odentia.co" on every page.
+- Every write in this feature goes through a `SECURITY DEFINER` RPC, never a direct
+  table INSERT/UPDATE/DELETE — `clinic_id` and the acting professional are always
+  resolved server-side from `auth.uid()`, never client-supplied.
+- Gated to Clinic Admin/Dentist/Assistant roles today; not yet built: Patient access
+  to this screen, and any Agenda-driven creation of a real Atención.
 
-- `/pacientes` — search/filters over the clinic's patients, a compact list, and a
-  detail modal with an editable patient card plus the same appointment-history
-  timeline component Agenda uses. New-patient and new-appointment-from-patient flows.
-- The patient detail modal also has an "Acceso del paciente" card: a mock QR (a real
-  scannable QR image encoding an opaque per-patient link — no name/email/documento/
-  clinical data in it) plus "Copiar enlace"/"Enviar por WhatsApp", with copy that
-  adapts to whether that patient's own Portal account is activated yet.
-- "Ver historia clínica" now opens a real page instead of a placeholder dialog — see
-  Historia Clínica below.
+---
 
-## Historia Clínica (Clinic Admin)
+# Phase 1 legacy — screens still mock
 
-- `/pacientes/[id]/historia-clinica` — reached from the patient detail modal. Compact
-  patient header (identity, estado, "odontólogo habitual" as a real avatar+nombre+
-  especialidad row, paciente desde) plus an always-visible "Alertas clínicas" banner
-  derived from that patient's alergias/condiciones/medicamentos.
-- Five tabs — `Resumen | Antecedentes | Odontograma | Atenciones | Documentos`:
-  - **Resumen** — a KPI-card grid (icon + label + value; strict 3/2/1 columns, no
-    column spans; a row's height always matches its tallest card, never truncated)
-    for alergias, medicamentos, condiciones, última atención, tratamientos activos,
-    próxima cita, última actualización del odontograma, and notas clínicas.
-  - **Antecedentes** — same card-grid language for a structured Anamnesis
-    (antecedentes personales/familiares, hábitos, cirugías/hospitalizaciones,
-    embarazo only when it applies, otros antecedentes) plus a "Condiciones y
-    factores relevantes" section with short, differently-worded summaries of the
-    same facts (never repeating Anamnesis's own longer text). Shows "Actualizado
-    {fecha/hora} · {odontólogo}" traceability. Editing ("Actualizar antecedentes," a
-    modal, not a navigation) is Dentist-only — Clinic Admin/Assistant/Patient can
-    read but never see the edit action. Only Clinic Admin can reach this screen
-    today, so the button is always hidden in practice, but the role check itself is
-    already correct for whenever Dentist access to this route opens up.
-  - **Odontograma** — reuses the same tooth-chart component the clinical encounter
-    flow already draws (read-only here), plus a "Hallazgos" side panel (75/25 on
-    desktop, stacked on mobile) listing every finding with pieza/tipo/descripción/
-    fecha/profesional.
-  - **Atenciones** — past clinical encounters (fecha, odontólogo, tratamiento,
-    hallazgos, estado) as their own record type — not reused straight off
-    Appointment, whose own `notes` field is a scheduling note, not a clinical
-    finding.
-  - **Documentos** — mock metadata rows (radiografía/consentimiento/fotografía
-    clínica) with fecha and profesional; no real files.
-- Gated to the Clinic Admin role today (`allowedRoles`); nothing else hardcodes
-  "admin only," so Dentist/Assistant/Patient variants are a matter of opening that
-  gate later, not rebuilding the screen.
-- Mock data: only Laura Martínez has every tab fully populated (the flagship demo —
-  alergia a la penicilina, losartán, hipertensión arterial controlada). A few other
-  patients (Camilo Ríos, Isabella Fonseca, Ricardo Peláez, Andrés Torres) carry
-  targeted clinical alerts (diabetes, embarazo, anticoagulantes, alergia); everyone
-  else correctly shows this feature's empty states. The mock patient formerly named
-  "María Gómez" (a naming collision with the Clinic Admin's own identity) is now
-  "Alejandra Vidal."
-- Not built yet: Dentist/Assistant/Patient access to this screen, adding/editing
-  Odontograma findings or Atenciones/Documentos entries (all three are read-only
-  mock data this stage), and any real persistence for an "Actualizar antecedentes"
-  save (it only updates local component state for the current session).
+Everything below is unchanged since Phase 1 and still runs entirely on mock data —
+not yet converted, not on the current backend-conversion roadmap until their turn
+comes.
 
-## Patient Portal
+## Shell & Access (mock parts)
 
-- `/portal/*` — the Patient's own experience, fully separate from the clinic
-  dashboard. Nav: Mis citas, Mi salud dental, Mi Historia Clínica, and the clinic's
-  own name (a read-only info screen); "Mi perfil" lives in the avatar menu instead.
-- Branding: Odentia's own logo never appears anywhere in the Patient portal (mobile
-  header or desktop sidebar) — the clinic's own logo does instead (currently the
-  Clínica Sonrisa Perfecta mock asset), since the Patient is interacting with their
-  clinic, not the Odentia platform. Desktop `Mis citas` is also capped/centered
-  instead of stretching full width, for both the empty-scheduling and populated
-  states, without touching the already-approved mobile layout.
-- **Mis citas** (`/portal/citas`, the Patient's entry point) — a featured "Próxima
-  cita" card (assigned professional, appointment data, a compact appointment-history
-  timeline) plus:
-  - **Sin próxima cita**: instead of a dead-end empty state, goes straight into
-    booking one — the same odontólogo/week/day/slot picker Reprogramar uses (see
-    below), with new-appointment copy. Selecting a slot only highlights it (no
-    Reprogramar-style "nueva fecha y hora" recap); "Agendar cita" opens a "Confirma
-    tu cita" summary (odontólogo + foto, fecha, hora, duración) before actually
-    creating the appointment (status Pendiente) — nothing is booked until that's
-    confirmed.
-  - **Reprogramar**: a mock request flow, not an immediate edit. Week navigation +
-    horizontal day selector + availability-aware slot grid (mirrors Agenda's own
-    week-nav pattern), with an odontólogo dropdown to request a different
-    professional (always includes the current one, shows avatar/specialty/next
-    availability per option, re-searches availability on change). Submitting never
-    changes the real appointment — it records a pending request and shows a
-    confirmation message; the original appointment stays valid until the clinic
-    would approve it (approval itself isn't built — no backend yet). A second
-    request can't be started while one is pending.
-  - **Cancelar cita**: a confirmation modal requiring a motivo before cancelling.
-  - **Confirmar asistencia**: only offered once the clinic has already confirmed the
-    appointment (not while a request is still Pendiente) and only once it's
-    imminent — approximated in this mock as "the appointment is today," since there's
-    no real clock; attendance confirmation is tracked separately from the
-    appointment's own scheduling status (see CLAUDE.md's Appointment Lifecycle) so
-    the two can never get confused with each other again.
-  - "Historial de citas" (here and everywhere else it appears — the appointment
-    detail modal, the patient detail modal) shares one consistent background
-    treatment now, instead of some instances having a fill and others not.
-- **Mi salud dental**, **Mi Historia Clínica**, clinic info screen, and "Mi perfil" —
-  read-only mock views scoped to the logged-in patient only.
-- Not built: any clinic-side approval UI for a pending reschedule/new-appointment
-  request (the clinic just never sees "solicitudes" yet — see Agenda above).
+- Role-based navigation still branches on the bridged/mock role (see Autenticación
+  above for how a real role reaches it).
+- The DEV-only role switcher (`src/dev/`) still exists for fast manual testing of
+  every not-yet-converted screen.
 
-## Identity & Profile
+## Agenda (the Clinic Admin's operational home) — fully mock
 
-- Each role (Clinic Admin, Dentist, Assistant, Superadmin, Patient) has its own
-  distinct mock identity — never a shared/default one.
-- "Mi perfil" modals/screens per role: Dentist/Clinic-Admin-as-professional share one
-  modal, Assistant and Clinic Admin (pure administrator) each have their own simpler
-  one, and the Patient has its own read-only profile screen in the portal.
-- A Clinic Admin can optionally configure a "Perfil profesional" to also appear as a
-  practicing professional, without a second role.
+- Weekly appointment board, KPI cards, appointment creation/detail/cancel/"start
+  attention" flow, and the interactive clinical-encounter/odontogram screen — all
+  still 100% mock data. This is the largest remaining conversion; Historia Clínica's
+  Atenciones RPC and Odontograma table were deliberately built ready for it.
+- Marketplace card links out to the real external Marketplace app
+  (`https://odentia-marketplace.vercel.app`) — the card itself is still a mock
+  preview, but the link is real, per Marketplace Independence.
 
-## Not built yet
+## Admin (the Superadmin's platform-wide home) — fully mock
 
-Register, Forgot Password, Onboarding (Create Practice / Configure Schedule / Invite
-Assistant), Reports, Team, and Subscription/Settings are all still just nav-item
-placeholders or entirely absent — see MVP Scope below for what's still pending.
-Within what's already built, the clinic approving a pending reschedule/new-appointment
-request (Patient Portal), and Dentist/Assistant/Patient access plus
-add/edit flows for Odontograma/Atenciones/Documentos (Historia Clínica), are the
-known gaps — see those sections above.
+- `/admin` — platform KPIs, monthly activity, Marketplace overview, recent-clinics
+  list, attention list. Gated to Superadmin; Superadmin is locked out of
+  `/agenda`/`/pacientes` at the route level.
+
+## Configuración, Mi Suscripción, Reportes — fully mock
+
+- `/configuracion` (Clinic Admin: clinic-wide agenda defaults/notifications/regional
+  prefs; Dentist: personal ausencias + notification prefs only), `/suscripcion`
+  (Clinic Admin only, mock plan/billing), `/reportes` (Clinic Admin + Dentist, shared
+  screen, Dentist scoped to "own activity only") — all UI/UX only, mock data, no
+  backend yet.
+
+## Patient Portal — fully mock
+
+- `/portal/*` — Mis citas (book/reschedule-request/cancel/confirm-attendance),
+  Mi salud dental, Mi Historia Clínica, clinic info, Mi perfil — all still mock,
+  scoped to the logged-in mock Patient identity. Not yet started on the real-backend
+  roadmap.
+
+## Identity & Profile (mock parts)
+
+- Per-role mock profile modals/screens for Dentist/Assistant/Superadmin/Patient (the
+  Clinic Admin's own identity is now real — see Autenticación/Clínica above).
+
+## Public pages (real, but not backend-tied)
+
+- Landing page, `/planes` (commercial pricing sequence) — real, deployed static/
+  marketing pages; "real" here means finished content, not Supabase-backed (they
+  have no per-tenant data to begin with).
 
 ---
 
 # Development Rules (Current Phase)
 
-During this phase Claude MUST:
+Phase 2 backend work is now in scope and actively happening. For every conversion:
 
-- Use mock data only.
-- Simulate backend responses.
-- Simulate CRUD operations using local state.
-- Create realistic sample data.
-- Build complete user flows.
-- Focus on polish and UX.
+Claude MUST:
+
+- Convert one feature vertical at a time — never redesign, never batch multiple
+  unrelated verticals into one change.
+- Use real Supabase data or an honest empty state — never a mock as fallback, never
+  invented/hardcoded clinical or tenant data.
+- Derive `clinic_id`/role/permissions server-side from `resolveClinicContext()` —
+  never from the DEV role switcher, `RoleContext`, a URL, or a form field.
+- Write through a `SECURITY DEFINER` RPC for anything beyond a plain read, with
+  `clinic_id` and the acting user always resolved from `auth.uid()` server-side, and
+  ship the matching RLS policy + migration alongside the feature that needs it.
+- Audit GRANTs explicitly (`grant`/`revoke` in the migration) — never assume a
+  policy alone is enough; a missing GRANT is a common, silent failure mode here.
+- Keep every still-mock screen (Agenda above all) working completely unmodified
+  during its own pending conversion — never share a component between a converted
+  real consumer and a still-mock one; build a separate, distinctly-named component
+  instead.
+- Preserve the already-approved visual design exactly when converting a screen —
+  layout, hierarchy, components, spacing, labels, iconography, UX behavior. Replace
+  mock → real data only; never substitute an approved screen with a generic
+  placeholder.
+- Never touch the `demo` branch, and never remove mocks from it.
 
 Claude MUST NOT:
 
-- Implement Supabase.
-- Create database schemas.
-- Create migrations.
-- Implement real authentication (a mock/demo login backed by localStorage — see
-  Progress So Far — is in scope; verifying real credentials against a backend is not).
-- Implement APIs.
 - Integrate payment providers.
-- Build Marketplace APIs.
+- Build Marketplace APIs (Marketplace stays a fully decoupled, independent product —
+  see CLAUDE.md).
 - Implement background jobs.
 - Optimize performance prematurely.
+- Anticipate a future conversion's schema/UI before that vertical's own task starts.
 
 ---
 
 # MVP Scope
 
-The first prototype should include:
-
 ## Public
 
-- Landing Page
-- Login — delivered as a mock demo login (see Progress So Far); no real backend yet.
-- Register
-- Forgot Password
+- Landing Page — done.
+- Login — real (Supabase Auth).
+- Register — real (`/registro`, 3-step onboarding wizard).
+- Forgot Password — pending.
 
 ---
 
 ## Onboarding
 
-- Create Practice
-- Configure Schedule
-- Invite Assistant
+- Create Practice — done, real.
+- Configure Schedule — pending.
+- Invite Assistant — pending (the wizard's own "Rol" step covers the founding
+  admin's role only).
 
 ---
 
 ## Core
 
-- Dashboard — done (Agenda for clinic roles, `/admin` for Superadmin).
-- Schedule — appointment board/creation/detail/encounter done; standalone Calendar
-  view pending.
+- Dashboard — mock (Agenda for clinic roles, `/admin` for Superadmin); real-data
+  conversion pending.
+- Schedule — mock; pending.
 - Calendar — pending.
-- Patients — done (`/pacientes`: search/filters, list, detail modal).
-- Patient Details — done (part of the `/pacientes` detail modal).
-- Medical Records — first stage done (Clinic Admin's `/pacientes/[id]/historia-clinica`:
-  Resumen, Antecedentes, Odontograma, Atenciones, Documentos; Dentist-only editing
-  of Antecedentes, view-only for other roles). Dentist/Assistant/Patient access to
-  this screen, and add/edit flows for Odontograma/Atenciones/Documentos, still
+- Patients — real (`/pacientes`).
+- Patient Details — real (part of the `/pacientes` detail modal).
+- Medical Records — real, all five tabs (`/pacientes/[id]/historia-clinica`:
+  Resumen, Antecedentes, Odontograma, Atenciones, Documentos, PDF export). Patient
+  access to this screen, and Agenda-driven creation of a real Atención, still
   pending.
-- Reports — pending.
-- Team — pending.
-- Subscription — pending.
-- Settings — pending.
+- Reports — mock; pending.
+- Team — real display only (`/clinica`'s Equipo); invite/manage flows pending.
+- Subscription — mock; pending.
+- Settings — mock; pending.
 
 ---
 
 ## Patient Portal
 
-- Book Appointment — done (empty-state scheduling flow + "Confirma tu cita", see
-  Progress So Far); creates the appointment directly (no clinic-approval step, unlike
-  Reprogramar).
-- View Appointments — done (`/portal/citas`, "Mis citas").
-- Appointment Confirmation — done (Confirmar asistencia, gated to confirmed +
-  imminent appointments only, plus mock reschedule-request and cancel-with-motivo
-  flows — see Progress So Far).
+- Book Appointment — mock.
+- View Appointments — mock.
+- Appointment Confirmation — mock.
+
+(No Patient Portal conversion has started yet.)
 
 ---
 
@@ -295,19 +286,17 @@ The first prototype should include:
 
 Marketplace should only be represented as an integrated module.
 
-No real integration is required.
-
-Navigation and user experience should already exist.
+No real integration is required — the clinic-facing nav/card links to the real
+external Marketplace app, which is itself a fully independent product.
 
 ---
 
 # Marketplace Status
 
-Marketplace is NOT part of the current implementation.
-
-Only navigation placeholders should exist.
-
-Future integration will happen through APIs.
+Marketplace is NOT part of Odentia Core's own implementation. Clinic-facing links
+point to the real, independently-deployed Marketplace app
+(`https://odentia-marketplace.vercel.app`) — no shared database, no shared business
+logic, per Marketplace Independence in CLAUDE.md.
 
 ---
 
@@ -316,50 +305,49 @@ Future integration will happen through APIs.
 Priority order:
 
 1. Design System — done.
-2. Authentication Screens — mock login done (now 5 role profiles, incl. Patient);
-   Register/Forgot Password pending.
-3. Onboarding — pending.
-4. Dashboard — done (Agenda for clinic roles, `/admin` for Superadmin).
-5. Schedule — appointment board/creation/detail/encounter done; standalone Calendar view pending.
-6. Patients — done (`/pacientes`: search/filters, list, detail modal, "Acceso del
-   paciente" QR card).
-7. Patient Portal — done for viewing/requesting changes to appointments (including
-   booking a brand-new one) and read-only health/record/clinic info (`/portal/*`);
-   the clinic's approval side of a pending request is still pending.
-8. Medical Records — first stage done (`/pacientes/[id]/historia-clinica`, Clinic
-   Admin only, Dentist-only editing); Dentist/Assistant/Patient access and
-   Odontograma/Atenciones/Documentos add/edit flows still pending.
-9. Clínica — done (`/clinica`: general info + logo).
-10. Reports — pending.
-11. Team / Subscription / Settings — pending.
-12. Marketplace Entry Point — placeholder card exists; no real navigation yet.
+2. Authentication — done, real.
+3. Onboarding — done, real (Create Practice); Invite Assistant / Forgot Password
+   pending.
+4. Clínica — done, real (Información general, Sede, Logo, Equipo, Mi perfil
+   profesional); Consultorios still pending.
+5. Patients — done, real.
+6. Historia Clínica — done, real, all five tabs + PDF export; Patient access and
+   Agenda-driven Atenciones creation pending.
+7. Agenda — still mock; next major backend conversion.
+8. Patient Portal — still mock; conversion not started.
+9. Reports / Team (invite-and-manage) / Subscription / Settings — still mock;
+   pending.
+10. Marketplace Entry Point — real external link exists; card itself stays a
+    preview.
 
 ---
 
 # Success Criteria
 
-This phase will be considered complete when:
+## Phase 1 (met)
 
-- Every major screen exists.
-- Navigation is complete.
-- Mobile experience is polished.
-- Desktop experience is polished.
-- Mock data feels realistic.
-- The prototype is deployed on Vercel.
-- The prototype can be demonstrated to dentists without explanations.
+- Every major screen existed, navigation was complete, mobile/desktop experience was
+  polished, mock data felt realistic, the prototype was deployed and demonstrable.
+
+## Phase 2 (in progress)
+
+This phase will be considered complete when every feature vertical above runs on
+real, tenant-isolated Supabase data with an honest empty state everywhere real data
+doesn't exist yet — no mock data remaining outside the (deliberately preserved)
+`demo` branch.
 
 ---
 
 # Validation
 
-The prototype will be reviewed by:
+The Phase 1 prototype was reviewed by:
 
 - Project founders
 - LopaDent
 - Dentists
 - Dental assistants
 
-Feedback gathered during validation will determine backend priorities.
+Phase 2 conversions are being validated incrementally per vertical as they ship.
 
 ---
 
@@ -376,6 +364,8 @@ Already approved:
   - paid by the dentist
   - sponsored by LopaDent
 - Marketplace must remain fully decoupled from Core.
+- Backend conversion proceeds one vertical at a time, real data or honest empty
+  state — never a full-app rewrite, never a mock fallback.
 
 These decisions should be treated as fixed unless explicitly changed.
 
@@ -399,17 +389,14 @@ The following features are intentionally postponed:
 
 # Next Phase
 
-After UI validation:
+Backend integration (Supabase, real authentication, multi-tenant database, file
+storage) is already underway — see Phase 2 above. What's left, roughly in order:
 
-- Next.js production setup
-- Supabase
-- Authentication
-- Multi-tenant
-- Database
-- File Storage
-- Notifications
-
-No backend work should begin until the UI prototype has been validated.
+- Agenda's real-data conversion (the largest remaining piece; Historia Clínica's
+  Atenciones/Odontograma were built anticipating it).
+- Patient Portal's real-data conversion.
+- Reports / Team (invite-and-manage) / Subscription / Settings real-data conversion.
+- Notifications.
 
 ---
 
@@ -417,8 +404,11 @@ No backend work should begin until the UI prototype has been validated.
 
 When implementing any feature ask yourself:
 
-> Does this help validate the product with real users?
+> Does this help validate the product with real users, and does it use real data or
+> an honest empty state?
 
-If the answer is "no", postpone it.
+If the answer is "no" to either, postpone it or fix it before shipping.
 
-Always optimize for learning speed, not technical perfection.
+Always optimize for learning speed, not technical perfection. When converting a
+screen from mock to real, the approved Phase 1 design is the source of visual truth
+— match it, don't redesign it.
