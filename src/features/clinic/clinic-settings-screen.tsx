@@ -193,7 +193,7 @@ function InformacionGeneralSection({ clinic, location }: { clinic: ClinicDetail;
 
         <div className="lg:col-span-1">
           <p className="text-sm font-medium text-foreground">Logo de la clínica</p>
-          <p className="text-xs text-muted-foreground">Se muestra en Agenda, junto al nombre de tu clínica.</p>
+          <p className="text-xs text-muted-foreground">Se muestra al paciente en la Agenda, junto al nombre de tu clínica.</p>
 
           {/* Not a square avatar-style box — logos can be horizontal,
               square, or vertical, so object-contain (never object-cover)

@@ -1,0 +1,39 @@
+-- Odentia Core — base table privilege for patients RLS evaluation
+--
+-- Root cause of the real 42501 hit loading /pacientes (confirmed directly
+-- against the live project, not guessed):
+--
+--   BEGIN; SET LOCAL ROLE authenticated;
+--   SELECT id FROM public.patients LIMIT 1;
+--   → ERROR 42501: permission denied for table patient_user_links
+--
+-- public.patients has two permissive SELECT policies (Postgres evaluates
+-- and ORs every applicable one for a SELECT):
+--   - patients_select_member — using (is_clinic_member(clinic_id)), a
+--     SECURITY DEFINER function, so it never needed authenticated to hold
+--     any privilege on the tables it reads internally.
+--   - patients_select_own_via_link — using (exists (select 1 from
+--     patient_user_links l where l.patient_id = patients.id and
+--     l.profile_id = auth.uid())), a plain EXISTS subquery embedded
+--     directly in the policy, NOT security definer — this one runs with
+--     the caller's own privileges (see the foundation RLS migration).
+--
+-- patient_user_links has never been granted anything to authenticated
+-- (confirmed against every migration ever applied). Postgres has to be
+-- able to evaluate patients_select_own_via_link's subquery for the RLS
+-- check even when patients_select_member alone would already grant
+-- access — hitting a table with no base GRANT there throws a hard
+-- permission-denied that fails the whole statement, not just that one
+-- policy's contribution.
+--
+-- Only SELECT: patient_user_links has no INSERT/UPDATE/DELETE policy at
+-- all (a link is only ever created by a future token-consumption RPC —
+-- see the foundation RLS migration's own comment), so there is nothing
+-- for those privileges to authorize.
+--
+-- Does not widen access: the two existing SELECT policies already scope
+-- this table to the caller's own link (profile_id = auth.uid()) or clinic
+-- staff of that specific patient's own clinic
+-- (has_clinic_role(clinic_id_for_patient(patient_id), ...)) — this GRANT
+-- only lets those policies be reached at all.
+grant select on public.patient_user_links to authenticated;

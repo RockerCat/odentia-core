@@ -1,0 +1,28 @@
+-- Odentia Core — base table privileges for the real /pacientes screen
+--
+-- Same class of gap as every previous grant migration in this project
+-- (20260826153000, 20260827130000, 20260828100000): RLS policies on
+-- public.patients already exist and are already correctly scoped, but
+-- Postgres checks table-level GRANT before it ever evaluates a
+-- row-security policy — with no GRANT, a fully authenticated clinic
+-- member whose session satisfies every USING/WITH CHECK clause still gets
+-- a hard permission-denied (SQLSTATE 42501), before RLS is even in the
+-- picture. Audited against every migration ever applied: public.patients
+-- has never been granted anything at all, despite already having working
+-- RLS (patients_select_member, patients_insert_admin_or_assistant,
+-- patients_update_admin_or_assistant — see the foundation RLS migration).
+--
+--   - SELECT: any active clinic member can read (patients_select_member) —
+--     needed for the list and detail views.
+--   - INSERT: only clinic_admin/assistant (patients_insert_admin_or_assistant)
+--     — a dentist cannot create a patient record, matching the product
+--     rule already encoded in that policy.
+--   - UPDATE: same clinic_admin/assistant scoping
+--     (patients_update_admin_or_assistant) — needed for "Editar datos".
+--
+-- No DELETE: there is no DELETE policy on this table (the deliberate
+-- convention is active = false, never a real row delete — see the
+-- foundation schema migration's own comment), so granting it would be
+-- privilege with nothing to authorize it, and section 10 of this task's
+-- scope explicitly says not to grant beyond what's needed.
+grant select, insert, update on public.patients to authenticated;

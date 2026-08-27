@@ -1,28 +1,30 @@
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
-import { ClinicalRecordScreen } from "@/features/patients/clinical-record-screen";
-import { PATIENTS } from "@/features/patients/mock-data";
+import { fetchPatientById } from "@/features/patients/data";
+import { PatientPlaceholderScreen } from "@/features/patients/patient-placeholder-screen";
+import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
+import { createClient } from "@/lib/supabase/server";
 
 // Reached from "Ver historia clínica" in PatientDetailModal (see
-// patients-screen.tsx). Clinic Admin, Dentist and Assistant all reach this
-// same screen — see clinical-record-screen.tsx's own comment on how it
-// already branches what's editable (canEditAntecedentes, Dentist-only) per
-// role, so opening this gate to Assistant needed no other change: an
-// Assistant simply never satisfies that check, same as Clinic Admin today,
-// making every tab read-only for them automatically. Patient's own variant
-// still extends from here later the same way, not a new permissions system.
+// patients-screen.tsx). No clinical schema exists yet (no odontograma/
+// antecedentes/atenciones/documentos tables — see CLAUDE.md task scope:
+// "Pacientes base real" explicitly excludes Historia Clínica), so this
+// only does two real things: confirm the patient belongs to the
+// authenticated clinic (tenant isolation, not just RLS — see
+// fetchPatientById's own clinic_id check) and show an honest empty state
+// instead of the fully-mock clinical module that used to render here.
 export default async function PatientClinicalRecordPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const patient = PATIENTS.find((p) => p.id === id);
+  const supabase = await createClient();
+  const context = await resolveClinicContext(supabase);
+  if (context.status !== "ok") notFound();
+
+  const patient = await fetchPatientById(supabase, context.clinic.id, id);
   if (!patient) notFound();
 
   return (
-    <AppShell
-      activeNavLabel="Pacientes"
-      heading="Historia clínica"
-      allowedRoles={["clinic-admin", "dentist", "assistant"]}
-    >
-      <ClinicalRecordScreen patient={patient} />
+    <AppShell activeNavLabel="Pacientes" heading="Historia clínica" allowedRoles={["clinic-admin", "dentist", "assistant"]}>
+      <PatientPlaceholderScreen patient={patient} message="Aún no hay información clínica registrada." />
     </AppShell>
   );
 }

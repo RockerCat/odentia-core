@@ -2,65 +2,62 @@
 
 import { useState, type FormEvent } from "react";
 import { CloseIcon } from "@/components/shell/icons";
-import { FIELD_CLASS, simulateSave } from "@/features/dashboard/appointment-detail-modal";
-import type { Patient } from "./mock-data";
+import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { createPatient } from "./actions";
+import type { Patient } from "./data";
 
-function computeInitials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("");
-}
-
-// Short intake form on purpose — full clinical intake/odontogram is a later
-// module (see PROJECT_STATUS.md). Not wired to a real backend: creates a
-// local mock Patient the same way NewAppointmentModal simulates creating an
-// appointment.
+// Short intake form on purpose — full clinical intake/odontogram is a
+// later module (see PROJECT_STATUS.md). Real write via createPatient()
+// (public.patients, under patients_insert_admin_or_assistant RLS). Two
+// separate Nombres/Apellidos fields rather than one "Nombre completo" —
+// the real schema has first_name/last_name as separate required columns,
+// and guessing a split from free text would risk silently wrong data on
+// a real record (unlike the old local-only mock). No "Alergias" field —
+// patients has no column for it yet; collecting it here would just
+// silently drop what the user typed (see CLAUDE.md task scope: never
+// fake a capability that doesn't persist).
 export function NewPatientModal({
-  defaultDentistId,
+  clinicId,
   onClose,
   onCreate,
 }: {
-  // No profesional field in this short form — every new patient starts
-  // assigned to the clinic's first professional; reassigning is a normal
-  // "Editar datos" edit afterwards.
-  defaultDentistId: string;
+  clinicId: string;
   onClose: () => void;
   onCreate: (patient: Patient) => void;
 }) {
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [documentId, setDocumentId] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [allergies, setAllergies] = useState("");
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const canCreate = Boolean(name.trim() && documentId.trim() && phone.trim()) && !creating;
+  const canCreate = Boolean(firstName.trim() && lastName.trim() && documentId.trim() && phone.trim()) && !creating;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!canCreate) return;
     setCreating(true);
-    const age = birthDate ? Math.max(0, new Date().getFullYear() - new Date(birthDate).getFullYear()) : 0;
-    const created = await simulateSave<Patient>({
-      id: `new-${Date.now()}`,
-      name: name.trim(),
-      initials: computeInitials(name.trim()),
-      age,
-      phone: phone.trim(),
-      email: email.trim(),
+    setError(null);
+
+    const outcome = await createPatient({
+      clinicId,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
       documentId: documentId.trim(),
-      patientSinceLabel: "Ago 2026",
-      isNewThisMonth: true,
-      usualDentistId: defaultDentistId,
-      allergies: allergies.trim() || undefined,
-      status: "active",
+      phone: phone.trim(),
+      email: email.trim() || null,
+      birthDate: birthDate || null,
     });
-    onCreate(created);
+
     setCreating(false);
+    if (outcome.status === "error") {
+      setError(outcome.message);
+      return;
+    }
+    onCreate(outcome.patient);
     onClose();
   };
 
@@ -89,16 +86,28 @@ export function NewPatientModal({
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
           <div className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-label-foreground">Nombre completo</span>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className={FIELD_CLASS}
-                placeholder="Nombre y apellidos"
-                required
-              />
-            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-label-foreground">Nombres</span>
+                <input
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className={FIELD_CLASS}
+                  placeholder="Nombres"
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-label-foreground">Apellidos</span>
+                <input
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className={FIELD_CLASS}
+                  placeholder="Apellidos"
+                  required
+                />
+              </label>
+            </div>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-label-foreground">Documento</span>
               <input
@@ -140,16 +149,8 @@ export function NewPatientModal({
                 placeholder="correo@ejemplo.com"
               />
             </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-label-foreground">Alergias / alertas importantes</span>
-              <textarea
-                value={allergies}
-                onChange={(e) => setAllergies(e.target.value)}
-                className={`${FIELD_CLASS} resize-none`}
-                rows={2}
-                placeholder="Ej. Alergia a la penicilina"
-              />
-            </label>
+
+            {error && <p className="text-xs text-danger">{error}</p>}
           </div>
         </div>
 

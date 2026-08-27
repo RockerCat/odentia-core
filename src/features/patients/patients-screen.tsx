@@ -1,117 +1,75 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { ProfessionalSelect } from "@/components/professional-select";
-import { AlertTriangleIcon, CalendarIcon, PlusIcon, SearchIcon, UsersIcon } from "@/components/shell/icons";
+import { useState } from "react";
+import { PlusIcon, SearchIcon, UsersIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
-import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
-import { useEffectiveDentists } from "@/dev/use-effective-dentists"; // DEV TOOL — see src/dev/role.ts
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
-import { ADMIN_DENTIST_ID, DENTISTS, WEEK_APPOINTMENTS, WEEK_DAYS, type Appointment } from "@/features/dashboard/mock-data";
-import { NewAppointmentModal } from "@/features/dashboard/new-appointment-modal";
-import { getPatientVisitSummary, PATIENT_STATUS_LABELS, PATIENTS, type Patient, type PatientStatus } from "./mock-data";
+import type { Patient } from "./data";
 import { NewPatientModal } from "./new-patient-modal";
-import { PatientDetailModal } from "./patient-detail-modal";
+import { PatientRecordModal } from "./patient-record-modal";
 
-// "Administrador Odontólogo Único" (see role-context.tsx) drops the
-// "Profesional habitual" column entirely (see task scope) — every other
-// column gets a little more room instead of leaving a gap. Literal class
-// strings (not built at runtime) so Tailwind's static scanner picks up
-// every variant actually used.
-const PATIENT_HEADER_GRID_COLS = (soloDentistClinic: boolean) =>
-  soloDentistClinic
-    ? "grid-cols-[minmax(0,1.8fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1.2fr)]"
-    : "grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.1fr)]";
-const PATIENT_ROW_GRID_COLS = (soloDentistClinic: boolean) =>
-  soloDentistClinic
-    ? "sm:grid-cols-[minmax(0,1.8fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1.2fr)]"
-    : "sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.1fr)]";
+type PatientStatusFilter = "" | "active" | "inactive";
 
-export function PatientsScreen() {
-  const router = useRouter();
-  const { role, dentistId, soloDentistClinic } = useRole();
-  const { dentists: effectiveDentists } = useEffectiveDentists();
-  // Registering a new patient is an administrative intake action, not a
-  // clinical one. The list itself already shows every clinic patient
-  // regardless of role (patients belong to the Clinic, not a Dentist — see
-  // CLAUDE.md Domain Model) — this only gates the create action.
-  const canCreatePatient = role !== "dentist";
-  const [patients, setPatients] = useState<Patient[]>(PATIENTS);
-  const [appointments, setAppointments] = useState<Appointment[]>(WEEK_APPOINTMENTS);
+function fullName(patient: Patient): string {
+  return `${patient.firstName} ${patient.lastName}`.trim();
+}
 
+function initialsOf(patient: Patient): string {
+  return `${patient.firstName[0] ?? ""}${patient.lastName[0] ?? ""}`.toUpperCase() || "?";
+}
+
+function isNewThisMonth(patient: Patient): boolean {
+  const created = new Date(patient.createdAt);
+  const now = new Date();
+  return created.getUTCFullYear() === now.getUTCFullYear() && created.getUTCMonth() === now.getUTCMonth();
+}
+
+// Real /pacientes listing — clinicId/canCreatePatient come from the real
+// membership resolved server-side (see src/app/pacientes/page.tsx), never
+// from useRole()/RoleContext/the DEV role switcher (see CLAUDE.md task
+// scope, section 3/15). "Profesional habitual" and "última atención"/
+// "próxima cita" are gone entirely — patients belong to the Clinic, not a
+// Dentist (see CLAUDE.md Domain Model), and no appointments table exists
+// yet to back a visit history (see task scope, section 4: don't fabricate
+// what has no real column).
+export function PatientsScreen({
+  initialPatients,
+  clinicId,
+  canCreatePatient,
+}: {
+  initialPatients: Patient[];
+  clinicId: string | null;
+  canCreatePatient: boolean;
+}) {
+  const [patients, setPatients] = useState<Patient[]>(initialPatients);
   const [search, setSearch] = useState("");
-  // Odontólogo lands here with the Profesional filter defaulted to their
-  // own id (see task scope) — not an access restriction, just a starting
-  // point they're free to widen to "Todos los profesionales" or any other
-  // dentist. Clinic Admin keeps the existing "Todos" default.
-  const [professionalFilter, setProfessionalFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState<PatientStatus | "">("");
-  const [lastVisitFilter, setLastVisitFilter] = useState<"" | "recent" | "stale">("");
-
-  // Applied via effect, not a useState initializer: role/dentistId come
-  // from a localStorage-backed session (see role-context.tsx) that reads as
-  // the SSR default on a fresh/hard load before hydration corrects it one
-  // tick later — a useState initializer would miss that correction and
-  // permanently default to "Todos" for a Dentist landing here via a direct
-  // URL or refresh, not just an in-app nav click. The ref keeps this a
-  // one-time "on arrival" default rather than fighting a later manual pick.
-  const appliedDentistDefault = useRef(false);
-  useEffect(() => {
-    if (role === "dentist" && !appliedDentistDefault.current) {
-      appliedDentistDefault.current = true;
-      setProfessionalFilter(dentistId);
-    }
-  }, [role, dentistId]);
-
+  const [statusFilter, setStatusFilter] = useState<PatientStatusFilter>("");
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [showNewPatient, setShowNewPatient] = useState(false);
-  const [newAppointmentForName, setNewAppointmentForName] = useState<string | null>(null);
 
-  // KPIs follow the Profesional filter specifically (not search/estado/
-  // última atención — those stay list-only, unchanged) so that when it
-  // defaults to the logged-in Odontólogo, "Pacientes activos"/etc. read as
-  // their own numbers, not the whole clinic's — see task scope.
-  const professionalFilteredPatients = patients.filter(
-    (p) => !professionalFilter || p.usualDentistId === professionalFilter,
-  );
-  const activeCount = professionalFilteredPatients.filter((p) => p.status === "active").length;
-  const newThisMonthCount = professionalFilteredPatients.filter((p) => p.isNewThisMonth).length;
-  const upcomingCount = professionalFilteredPatients.filter(
-    (p) => getPatientVisitSummary(p, appointments, WEEK_DAYS).nextAppointment !== null,
-  ).length;
-  const staleCount = professionalFilteredPatients.filter((p) => p.noRecentVisit).length;
+  const activeCount = patients.filter((p) => p.active).length;
+  const newThisMonthCount = patients.filter(isNewThisMonth).length;
 
   const query = search.trim().toLowerCase();
   const filteredPatients = patients.filter((patient) => {
     const matchesSearch =
       !query ||
-      [patient.name, patient.phone, patient.documentId].some((value) => value.toLowerCase().includes(query));
-    const matchesProfessional = !professionalFilter || patient.usualDentistId === professionalFilter;
-    const matchesStatus = !statusFilter || patient.status === statusFilter;
-    const matchesLastVisit =
-      !lastVisitFilter || (lastVisitFilter === "stale" ? Boolean(patient.noRecentVisit) : !patient.noRecentVisit);
-    return matchesSearch && matchesProfessional && matchesStatus && matchesLastVisit;
+      [fullName(patient), patient.phone, patient.documentId].some((value) => (value ?? "").toLowerCase().includes(query));
+    const matchesStatus = !statusFilter || (statusFilter === "active" ? patient.active : !patient.active);
+    return matchesSearch && matchesStatus;
   });
 
   const selectedPatient = patients.find((p) => p.id === selectedPatientId) ?? null;
 
-  const handleEditSelectedPatient = (patch: Partial<Patient>) => {
-    setPatients((prev) => prev.map((p) => (p.id === selectedPatientId ? { ...p, ...patch } : p)));
-  };
-
-  const openNewAppointmentFor = (patientName: string) => {
-    setSelectedPatientId(null);
-    setNewAppointmentForName(patientName);
+  const handlePatientUpdated = (updated: Patient) => {
+    setPatients((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
   };
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:max-w-md">
         <KpiCard icon={UsersIcon} value={String(activeCount)} label="Pacientes activos" />
         <KpiCard icon={PlusIcon} value={String(newThisMonthCount)} label="Nuevos este mes" />
-        <KpiCard icon={CalendarIcon} value={String(upcomingCount)} label="Con cita próxima" />
-        <KpiCard icon={AlertTriangleIcon} value={String(staleCount)} label="Sin atención +6 meses" />
       </div>
 
       <div className="flex flex-col gap-3">
@@ -125,7 +83,7 @@ export function PatientsScreen() {
               className={`${FIELD_CLASS} pl-9`}
             />
           </div>
-          {canCreatePatient && (
+          {canCreatePatient && clinicId && (
             <button
               type="button"
               onClick={() => setShowNewPatient(true)}
@@ -137,152 +95,96 @@ export function PatientsScreen() {
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          {/* "Administrador Odontólogo Único" (see role-context.tsx): a
-              one-person clinic has nobody else to filter by (see task
-              scope). */}
-          {!soloDentistClinic && (
-            <div className="w-full sm:w-44">
-              <ProfessionalSelect
-                dentists={DENTISTS}
-                selectedId={professionalFilter}
-                onSelect={setProfessionalFilter}
-                includeAllOption
-                compactTrigger
-              />
-            </div>
-          )}
-          <div className="w-full sm:w-40">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as PatientStatus | "")}
-              className={FIELD_CLASS}
-            >
-              <option value="">Estado: todos</option>
-              {(Object.keys(PATIENT_STATUS_LABELS) as PatientStatus[]).map((status) => (
-                <option key={status} value={status}>
-                  {PATIENT_STATUS_LABELS[status]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="w-full sm:w-52">
-            <select
-              value={lastVisitFilter}
-              onChange={(e) => setLastVisitFilter(e.target.value as "" | "recent" | "stale")}
-              className={FIELD_CLASS}
-            >
-              <option value="">Última atención: todas</option>
-              <option value="recent">Con atención reciente</option>
-              <option value="stale">Sin atención +6 meses</option>
-            </select>
-          </div>
+        <div className="w-full sm:w-40">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as PatientStatusFilter)}
+            className={FIELD_CLASS}
+          >
+            <option value="">Estado: todos</option>
+            <option value="active">Activo</option>
+            <option value="inactive">Inactivo</option>
+          </select>
         </div>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-sm">
-        <div
-          className={`hidden gap-4 border-b border-border px-4 py-2.5 text-[11px] font-semibold tracking-wide text-label-foreground uppercase sm:grid ${PATIENT_HEADER_GRID_COLS(soloDentistClinic)}`}
-        >
+        <div className="hidden grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1fr)] gap-4 border-b border-border px-4 py-2.5 text-[11px] font-semibold tracking-wide text-label-foreground uppercase sm:grid">
           <span>Paciente</span>
           <span>Contacto</span>
-          {!soloDentistClinic && <span>Profesional habitual</span>}
-          <span>Última atención</span>
-          <span>Próxima cita</span>
+          <span>Estado</span>
         </div>
 
-        {filteredPatients.length === 0 ? (
+        {patients.length === 0 ? (
+          <div className="px-4 py-10 text-center">
+            <p className="text-sm font-medium text-foreground">Aún no hay pacientes registrados.</p>
+            {canCreatePatient && clinicId ? (
+              <button
+                type="button"
+                onClick={() => setShowNewPatient(true)}
+                className="mt-3 inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+              >
+                <PlusIcon className="size-4" />
+                Registrar paciente
+              </button>
+            ) : (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Tu rol no tiene permiso para registrar pacientes.
+              </p>
+            )}
+          </div>
+        ) : filteredPatients.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-muted-foreground">
             No hay pacientes que coincidan con los filtros actuales.
           </p>
         ) : (
           <ul className="divide-y divide-border">
-            {filteredPatients.map((patient) => {
-              const dentist = DENTISTS.find((d) => d.id === patient.usualDentistId);
-              const { lastVisitLabel, nextAppointment } = getPatientVisitSummary(patient, appointments, WEEK_DAYS);
-              const nextAppointmentDayLabel = nextAppointment
-                ? (WEEK_DAYS.find((d) => d.key === nextAppointment.day)?.label ?? nextAppointment.day)
-                : null;
-
-              return (
-                <li key={patient.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPatientId(patient.id)}
-                    className={`grid w-full grid-cols-1 gap-2 px-4 py-3 text-left transition-colors hover:bg-primary/[0.03] sm:items-center sm:gap-4 ${PATIENT_ROW_GRID_COLS(soloDentistClinic)}`}
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <UserAvatar name={patient.name} initials={patient.initials} sizeClassName="size-9" />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{patient.name}</p>
-                        <p className="truncate text-xs text-muted-foreground">{patient.documentId}</p>
-                      </div>
-                    </div>
+            {filteredPatients.map((patient) => (
+              <li key={patient.id}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPatientId(patient.id)}
+                  className="grid w-full grid-cols-1 gap-2 px-4 py-3 text-left transition-colors hover:bg-primary/[0.03] sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1fr)] sm:items-center sm:gap-4"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <UserAvatar name={fullName(patient)} initials={initialsOf(patient)} sizeClassName="size-9" />
                     <div className="min-w-0">
-                      <p className="truncate text-xs text-foreground/80 sm:text-sm">{patient.phone}</p>
-                      <p className="truncate text-[11px] text-muted-foreground">{patient.email || "Sin correo"}</p>
+                      <p className="truncate text-sm font-medium">{fullName(patient)}</p>
+                      <p className="truncate text-xs text-muted-foreground">{patient.documentId || "Sin documento"}</p>
                     </div>
-                    {!soloDentistClinic && (
-                      <p className="truncate text-xs text-foreground/80 sm:text-sm">{dentist?.name ?? "Sin asignar"}</p>
-                    )}
-                    <p className="truncate text-xs text-muted-foreground sm:text-sm">{lastVisitLabel}</p>
-                    {nextAppointment ? (
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-medium text-foreground sm:text-sm">
-                          {nextAppointmentDayLabel}, {nextAppointment.time}
-                        </p>
-                        {nextAppointment.type && (
-                          <p className="truncate text-[11px] text-muted-foreground">{nextAppointment.type}</p>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground sm:text-sm">Sin cita programada</p>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs text-foreground/80 sm:text-sm">{patient.phone || "Sin teléfono"}</p>
+                    <p className="truncate text-[11px] text-muted-foreground">{patient.email || "Sin correo"}</p>
+                  </div>
+                  <span
+                    className={`w-fit rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                      patient.active ? "border-primary/25 bg-primary/10 text-primary" : "border-danger/25 bg-danger/10 text-danger"
+                    }`}
+                  >
+                    {patient.active ? "Activo" : "Inactivo"}
+                  </span>
+                </button>
+              </li>
+            ))}
           </ul>
         )}
       </div>
 
       {selectedPatient && (
-        <PatientDetailModal
+        <PatientRecordModal
           patient={selectedPatient}
-          appointments={appointments}
-          dentists={effectiveDentists}
-          soloDentistClinic={soloDentistClinic}
-          weekDays={WEEK_DAYS}
+          canEditPatientData={canCreatePatient}
           onClose={() => setSelectedPatientId(null)}
-          onEdit={handleEditSelectedPatient}
-          onNewAppointment={() => openNewAppointmentFor(selectedPatient.name)}
-          onViewHistory={() => {
-            router.push(`/pacientes/${selectedPatient.id}/historia-clinica`);
-            setSelectedPatientId(null);
-          }}
+          onUpdated={handlePatientUpdated}
         />
       )}
 
-      {showNewPatient && (
+      {showNewPatient && clinicId && (
         <NewPatientModal
-          defaultDentistId={soloDentistClinic ? ADMIN_DENTIST_ID : DENTISTS[0].id}
+          clinicId={clinicId}
           onClose={() => setShowNewPatient(false)}
           onCreate={(created) => setPatients((prev) => [created, ...prev])}
-        />
-      )}
-
-      {newAppointmentForName !== null && (
-        <NewAppointmentModal
-          dentists={effectiveDentists}
-          weekDays={WEEK_DAYS}
-          existingAppointments={appointments}
-          prefill={{ patientName: newAppointmentForName }}
-          lockedDentist={soloDentistClinic ? effectiveDentists[0] : undefined}
-          onClose={() => setNewAppointmentForName(null)}
-          onCreate={(created) => {
-            setAppointments((prev) => [...prev, created]);
-            setNewAppointmentForName(null);
-          }}
         />
       )}
     </div>
@@ -294,7 +196,7 @@ function KpiCard({
   value,
   label,
 }: {
-  icon: typeof CalendarIcon;
+  icon: typeof UsersIcon;
   value: string;
   label: string;
 }) {
