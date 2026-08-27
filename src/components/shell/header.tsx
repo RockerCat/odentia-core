@@ -1,26 +1,27 @@
 "use client"; // needed for the user menu's open/close state below.
 
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { UserAvatar } from "@/components/user-avatar";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { AdminProfileModal } from "@/features/dashboard/admin-profile-modal";
 import { DentistProfileModal } from "@/features/dashboard/appointments-card";
 import { AssistantProfileModal } from "@/features/dashboard/assistant-profile-modal";
-import { useAuthenticatedIdentity } from "@/features/dashboard/use-authenticated-identity";
 import { CURRENT_USER } from "@/lib/current-user";
 import { BellIcon, ChevronDownIcon, LogOutIcon, SearchIcon, UserIcon } from "./icons";
+import { useShellIdentity } from "./use-shell-identity";
+import { useShellLogout } from "./use-shell-logout";
 
 // Desktop only — mobile uses MobileHeader + BottomTabBar instead.
 export function Header() {
-  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showAdminProfile, setShowAdminProfile] = useState(false);
   const [showAssistantProfile, setShowAssistantProfile] = useState(false);
-  // DEV TOOL — see src/dev/role.ts. useAuthenticatedIdentity() is the same
-  // "who's logged in" derivation the Agenda's greeting reads too; useRole()
-  // is only needed here for the setters the profile modals write back through.
+  // DEV TOOL — see src/dev/role.ts. useShellIdentity() overlays real
+  // profile/clinic data on the same mock derivation the Agenda's greeting
+  // reads (useAuthenticatedIdentity) — see use-shell-identity.ts. useRole()
+  // is only needed here for the setters the profile modals write back
+  // through.
   const {
     role,
     setSelfDentistOverride,
@@ -30,9 +31,9 @@ export function Header() {
     setAdminProfessionalProfile,
     assistantIdentityOverride,
     setAssistantIdentityOverride,
-    logout,
   } = useRole();
-  const identity = useAuthenticatedIdentity();
+  const identity = useShellIdentity();
+  const { signOut } = useShellLogout();
   const isDentistRole = role === "dentist";
   const isClinicAdmin = role === "clinic-admin";
   const isAssistant = role === "assistant";
@@ -132,8 +133,7 @@ export function Header() {
                   role="menuitem"
                   onClick={() => {
                     setMenuOpen(false);
-                    logout();
-                    router.push("/login");
+                    void signOut();
                   }}
                   className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-danger hover:bg-danger/5"
                 >

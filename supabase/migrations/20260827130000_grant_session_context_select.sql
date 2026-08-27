@@ -1,0 +1,27 @@
+-- Odentia Core — base table privileges for the real session/clinic context
+--
+-- Root cause of the first real /agenda load after login failing with
+-- SQLSTATE 42501 ("permission denied for table profiles"): same class of
+-- gap as 20260826153000_grant_onboarding_table_privileges.sql, which that
+-- migration's own comment already flagged as latent on every other
+-- foundation table — Postgres checks table-level GRANT before it ever
+-- evaluates a row-security policy, so a fully authenticated user whose
+-- session satisfies every USING clause still gets a hard permission-denied
+-- with no GRANT at all, before RLS is even in the picture.
+--
+-- resolveClinicContext() (see src/features/session/resolve-clinic-context.ts)
+-- is the first real authenticated client read of profiles and
+-- professional_profiles — this grants exactly what it needs and nothing
+-- more:
+--   - profiles: SELECT only. profiles_select_self_or_clinicmate (see the
+--     foundation RLS migration) already restricts rows to the caller's own
+--     profile or a clinicmate's — this GRANT only lets that policy be
+--     reached at all, it does not widen what it returns.
+--   - professional_profiles: SELECT only. professional_profiles_select_member_or_superadmin
+--     already restricts rows to the caller's own clinic.
+-- clinic_memberships and clinics already have SELECT from the onboarding
+-- privileges migration — not repeated here. No INSERT/UPDATE/DELETE
+-- granted on any of these four tables: resolveClinicContext() only ever
+-- reads.
+grant select on public.profiles to authenticated;
+grant select on public.professional_profiles to authenticated;

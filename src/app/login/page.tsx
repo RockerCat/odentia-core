@@ -4,37 +4,69 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Logo } from "@/components/shell/logo";
-import { UserAvatar } from "@/components/user-avatar";
-import { homeRouteForRole } from "@/dev/role"; // DEV TOOL — see src/dev/role.ts
-import { DEMO_USERS, type DemoUser } from "@/features/auth/demo-users";
-import { writeSession } from "@/features/auth/session";
+import { createClient } from "@/lib/supabase/client";
+import { bridgeClinicContextIntoMockSession } from "@/features/session/role-bridge";
+import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
+import { restrictedReasonFor } from "@/features/session/restricted-reason";
+import { signInWithPassword } from "@/features/session/sign-in";
 
-// Mock login for demoing Odentia in production without a real backend — see
-// src/features/auth/session.ts and src/dev/role-context.tsx for how the
-// selected role persists and drives the rest of the app.
+// Real Supabase Auth login (see src/features/session/sign-in.ts). Right
+// after signing in, resolves the user's clinic context (see
+// resolve-clinic-context.ts) both to route them correctly — /agenda, or
+// /registro if they never finished onboarding, or a safe restricted screen
+// for a suspended/inactive/multi-clinic account — and to bridge their real
+// membership role into the mock session the rest of the app still reads
+// (see role-bridge.ts) until every feature screen moves off mock data.
+// src/lib/supabase/proxy.ts also redirects away from here server-side if
+// there's already a valid real session.
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const selectDemoUser = (user: DemoUser) => {
-    setEmail(user.email);
-    setPassword(user.password);
-    setError(null);
-  };
-
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const match = DEMO_USERS.find(
-      (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password,
-    );
-    if (!match) {
-      setError("No reconocemos ese usuario. Usa uno de los accesos de demostración.");
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+
+    const outcome = await signInWithPassword(email, password);
+    if (outcome.status === "error") {
+      setSubmitting(false);
+      setError(outcome.message);
       return;
     }
-    writeSession({ role: match.role, soloDentistClinic: match.soloDentistClinic });
-    router.push(homeRouteForRole(match.role));
+
+    try {
+      const supabase = createClient();
+      const context = await resolveClinicContext(supabase);
+
+      if (context.status === "ok") {
+        bridgeClinicContextIntoMockSession(context);
+        router.push("/agenda");
+        return;
+      }
+      if (context.status === "no-membership") {
+        router.push("/registro");
+        return;
+      }
+      if (
+        context.status === "membership-inactive" ||
+        context.status === "clinic-suspended" ||
+        context.status === "multiple-memberships"
+      ) {
+        router.push(`/acceso-restringido?motivo=${restrictedReasonFor(context.status)}`);
+        return;
+      }
+
+      setSubmitting(false);
+      setError("No pudimos iniciar sesión. Intenta de nuevo en unos minutos.");
+    } catch {
+      setSubmitting(false);
+      setError("No pudimos iniciar sesión. Intenta de nuevo en unos minutos.");
+    }
   };
 
   return (
@@ -92,9 +124,10 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="mt-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+            disabled={submitting}
+            className="mt-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
           >
-            Iniciar sesión
+            {submitting ? "Iniciando sesión…" : "Iniciar sesión"}
           </button>
         </form>
 
@@ -104,40 +137,6 @@ export default function LoginPage() {
             Crear cuenta
           </Link>
         </p>
-
-        <div className="mt-8 border-t border-border/50 pt-4">
-          <p className="mb-2 text-center text-[10px] font-medium tracking-wide text-muted-foreground/70 uppercase">
-            Cuentas demo
-          </p>
-
-          <div className="flex flex-col gap-1">
-            {DEMO_USERS.map((user) => (
-              <button
-                key={user.email}
-                type="button"
-                onClick={() => selectDemoUser(user)}
-                className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/60 px-2.5 py-1.5 text-left opacity-70 transition-all hover:border-primary/30 hover:bg-primary/5 hover:opacity-100"
-              >
-                <UserAvatar
-                  name={user.name}
-                  initials={user.initials}
-                  avatar_url={user.avatar_url}
-                  sizeClassName="size-6"
-                  textClassName="text-[10px]"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-medium text-foreground">{user.name}</span>
-                  <span className="block truncate text-[11px] text-muted-foreground/70">
-                    {user.roleLabel} · {user.contextLabel}
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 text-center text-[10px] text-muted-foreground/60">
-            Selecciona un perfil para completar el formulario y luego pulsa &quot;Iniciar sesión&quot;.
-          </p>
-        </div>
       </div>
     </div>
   );

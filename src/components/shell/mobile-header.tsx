@@ -1,11 +1,10 @@
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { UserAvatar } from "@/components/user-avatar";
-import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
-import { useAuthenticatedIdentity } from "@/features/dashboard/use-authenticated-identity";
 import { firstName } from "@/lib/format";
 import { CreditCardIcon, LogOutIcon, SlidersIcon, UserIcon } from "./icons";
 import { Logo } from "./logo";
+import { useShellIdentity } from "./use-shell-identity";
+import { useShellLogout } from "./use-shell-logout";
 
 const USER_MENU_ITEMS = [
   { label: "Perfil", icon: UserIcon },
@@ -14,10 +13,9 @@ const USER_MENU_ITEMS = [
 ];
 
 export function MobileHeader() {
-  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  const { logout } = useRole();
-  const identity = useAuthenticatedIdentity();
+  const { signOut } = useShellLogout();
+  const identity = useShellIdentity();
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 h-[var(--mobile-header-h)] border-b border-border bg-surface pt-[env(safe-area-inset-top)] md:hidden">
@@ -72,8 +70,7 @@ export function MobileHeader() {
                   role="menuitem"
                   onClick={() => {
                     setMenuOpen(false);
-                    logout();
-                    router.push("/login");
+                    void signOut();
                   }}
                   className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-danger hover:bg-danger/5"
                 >

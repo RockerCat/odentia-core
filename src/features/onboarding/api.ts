@@ -78,17 +78,6 @@ export async function findActiveMembership(): Promise<{ found: boolean }> {
   return { found: data !== null };
 }
 
-// "Cerrar sesión" on the already-onboarded screen (see already-onboarded.tsx)
-// — closes the real Supabase Auth session so /registro can be re-tested
-// from scratch with another account. Deliberately separate from the mock
-// session in src/features/auth/ (see CLAUDE.md): this only ever touches
-// Supabase Auth, never session.ts.
-export async function signOutAccount(): Promise<{ status: "ok" } | { status: "error" }> {
-  const supabase = createClient();
-  const { error } = await supabase.auth.signOut();
-  return error ? { status: "error" } : { status: "ok" };
-}
-
 const nullIfEmpty = (value: string) => {
   const trimmed = value.trim();
   return trimmed === "" ? null : trimmed;

@@ -32,7 +32,8 @@ const getClientRole = (): Role => readSession()?.role ?? DEFAULT_ROLE;
 const getServerSolo = (): boolean => false;
 const getClientSolo = (): boolean => readSession()?.soloDentistClinic ?? false;
 
-// Shared label so role-switcher.tsx and demo-users.ts never drift apart.
+// Shared label so role-switcher.tsx and the "Administrador Odontólogo
+// Único" bridge (see src/features/session/role-bridge.ts) never drift apart.
 export const SOLO_DENTIST_SCENARIO_LABEL = "Administrador Odontólogo Único";
 
 // Auto-configured "Perfil profesional" for the solo-practitioner scenario —

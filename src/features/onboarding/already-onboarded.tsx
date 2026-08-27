@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Logo } from "@/components/shell/logo";
 import { CheckCircleIcon } from "@/components/shell/icons";
-import { signOutAccount } from "./api";
+import { signOutSupabase } from "@/features/session/sign-out";
 
 // Shown when an authenticated user with an active clinic_memberships row
 // lands on /registro — /registro must never let them accidentally create a
@@ -28,7 +28,7 @@ export function AlreadyOnboarded({ onSignedOut }: { onSignedOut: () => void }) {
     setSigningOut(true);
     setSignOutError(null);
 
-    const outcome = await signOutAccount();
+    const outcome = await signOutSupabase();
     if (outcome.status === "error") {
       setSigningOut(false);
       setSignOutError("No pudimos cerrar tu sesión. Intenta de nuevo.");
