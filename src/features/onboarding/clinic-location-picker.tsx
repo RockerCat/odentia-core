@@ -2,17 +2,21 @@
 
 import dynamic from "next/dynamic";
 import { useState } from "react";
+import { GeocodingError, locateOnMap } from "@/features/location/geocoding";
 import { INPUT_CLASS } from "./field-classes";
-import { GeocodingError, locateOnMap } from "./geocoding";
 import type { ClinicLocationData } from "./types";
 
 // Leaflet touches window/document at import time — must never be part of
 // the server-rendered bundle. Loaded client-side only, and only once
-// there's a pin to show (see below).
-const ClinicLocationMap = dynamic(() => import("./clinic-location-map").then((mod) => mod.ClinicLocationMap), {
-  ssr: false,
-  loading: () => <div className="mt-2.5 h-40 w-full animate-pulse rounded-md bg-foreground/5 sm:h-48" />,
-});
+// there's a pin to show (see below). Shared with /clinica's own sede
+// principal editor — see src/features/location/clinic-location-map.tsx.
+const ClinicLocationMap = dynamic(
+  () => import("@/features/location/clinic-location-map").then((mod) => mod.ClinicLocationMap),
+  {
+    ssr: false,
+    loading: () => <div className="mt-2.5 h-40 w-full animate-pulse rounded-md bg-foreground/5 sm:h-48" />,
+  },
+);
 
 const NOT_FOUND_MESSAGE =
   "No encontramos esta dirección. Puedes ajustar los datos e intentarlo de nuevo o continuar sin ubicarla en el mapa.";

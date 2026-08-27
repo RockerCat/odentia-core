@@ -1,9 +1,9 @@
 import { createClient } from "@/lib/supabase/client";
+import { uploadClinicLogo as uploadClinicLogoFile } from "@/features/clinic/logo";
 import { slugCandidate, slugifyClinicName } from "./slug";
 import type { AccountFormData, ClinicFormData, ClinicLocationData, ClinicLogo, RoleFormData } from "./types";
 
 const MAX_SLUG_ATTEMPTS = 5;
-const LOGO_BUCKET = "clinic-logos";
 
 export type SignUpOutcome =
   | { status: "signed-in" }
@@ -168,25 +168,10 @@ export type LogoUploadOutcome = { logoUrl: string } | { failed: true };
 // storage path is <clinic_id>/logo.<ext> (see the clinic-logos Storage
 // migration), which can't exist before the clinic does. A failure here is
 // deliberately non-fatal to the caller (see onboarding-wizard.tsx): the
-// clinic itself is already created successfully by this point.
+// clinic itself is already created successfully by this point. Thin
+// wrapper: the actual upload/logo_url update is shared with /clinica's own
+// "cambiar logo" (see src/features/clinic/logo.ts) — never duplicated.
 export async function uploadClinicLogo(clinicId: string, logo: ClinicLogo): Promise<LogoUploadOutcome> {
   if (!logo.file) return { failed: true };
-  const supabase = createClient();
-  const extension = logo.file.name.split(".").pop()?.toLowerCase() || "png";
-  const path = `${clinicId}/logo.${extension}`;
-
-  const { error: uploadError } = await supabase.storage.from(LOGO_BUCKET).upload(path, logo.file, {
-    upsert: true,
-    contentType: logo.file.type,
-  });
-  if (uploadError) return { failed: true };
-
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from(LOGO_BUCKET).getPublicUrl(path);
-
-  const { error: updateError } = await supabase.from("clinics").update({ logo_url: publicUrl }).eq("id", clinicId);
-  if (updateError) return { failed: true };
-
-  return { logoUrl: publicUrl };
+  return uploadClinicLogoFile(clinicId, logo.file);
 }

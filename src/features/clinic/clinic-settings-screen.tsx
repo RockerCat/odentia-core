@@ -1,48 +1,41 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import { BuildingIcon, PencilIcon, PlusIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
-import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
-import { AdminProfileModal } from "@/features/dashboard/admin-profile-modal";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
-import { DentistProfileModal, formatScheduleLabel } from "@/features/dashboard/appointments-card";
-import { WEEK_APPOINTMENTS } from "@/features/dashboard/mock-data";
-import { useAuthenticatedIdentity } from "@/features/dashboard/use-authenticated-identity";
-import { CURRENT_USER } from "@/lib/current-user";
-import {
-  CLINIC_INFO_MOCK,
-  CLINIC_ROOMS_MOCK,
-  TEAM_ASSISTANTS,
-  TEAM_DENTISTS,
-  type ClinicInfo,
-  type ClinicRoom,
-  type TeamAssistant,
-  type TeamDentist,
-  type TeamStatus,
-} from "./mock-data";
-import { MemberStatusModal } from "./member-status-modal";
-import { RoomModal } from "./room-modal";
-import { TeamMemberModal } from "./team-member-modal";
+import { updateClinicInfo } from "@/features/clinic/actions";
+import type { ClinicDetail, PrimaryLocation, TeamMember } from "@/features/clinic/data";
+import { CLINIC_LOGO_ACCEPTED_TYPES, CLINIC_LOGO_MAX_BYTES, removeClinicLogo, uploadClinicLogo } from "@/features/clinic/logo";
+import { PrimaryLocationSection } from "@/features/clinic/primary-location-section";
 
-// Clínica: identity, team, and rooms for the clinic — UI/UX only, all mock
-// state local to this screen, nothing persisted (see task scope). Four
-// section cards in one vertical page, each independently self-contained.
-export function ClinicSettingsScreen() {
+// Clínica — 100% real data or an honest empty state, no mock fallback
+// anywhere in this tree (see CLAUDE.md task scope: "cero fallbacks mock").
+// Does not import useRole()/session.ts/mock-data.ts/CURRENT_USER — the DEV
+// · Cambiar rol switcher (src/dev/role-switcher.tsx) can keep existing
+// globally for other screens' previews, but changing it must never affect
+// what this screen shows (see task scope, section 15). Four section cards
+// in one vertical page, each independently self-contained, visually
+// unchanged from the approved design — a card showing less because a
+// backend piece (invitations, membership status RPC, professional_profiles
+// RPC, rooms) doesn't exist yet is the correct, honest state, not a bug
+// (see task scope, section 13).
+export function ClinicSettingsScreen({
+  clinic,
+  location,
+  members,
+  selfMember,
+}: {
+  clinic: ClinicDetail;
+  location: PrimaryLocation | null;
+  members: TeamMember[];
+  selfMember: TeamMember | null;
+}) {
   return (
     <div className="flex flex-col gap-6">
-      <InformacionGeneralSection />
-      {/* "Administrador Odontólogo Único" (see role-context.tsx) means the
-          clinic CURRENTLY has a single professional, not that it's
-          permanently capped at one — Equipo (with "+ Agregar miembro")
-          stays visible so the clinic can grow into the normal
-          multi-professional experience; it just starts empty (see
-          EquipoSection's own soloDentistClinic handling below). Her own
-          professional info shows separately via MiPerfilProfesionalSection,
-          reframed as "Mi información profesional" in that scenario — never
-          duplicated as a row in Equipo. */}
-      <EquipoSection />
-      <MiPerfilProfesionalSection />
+      <InformacionGeneralSection clinic={clinic} location={location} />
+      <EquipoSection members={members} />
+      <MiPerfilProfesionalSection selfMember={selfMember} />
       <ConsultoriosSection />
     </div>
   );
@@ -51,47 +44,103 @@ export function ClinicSettingsScreen() {
 // Same border-primary/10 (Activo) vs border-danger/10 (Inactivo) pill
 // already used for Dentist/Patient status elsewhere in the app (see
 // DentistProfileModal, patient-detail-modal.tsx) — reused here for both
-// Equipo and Consultorios rows instead of inventing a second status style.
-function StatusBadge({ status }: { status: TeamStatus }) {
+// Equipo's membership.status and Mi perfil profesional's
+// professional_profile.active (two distinct real booleans/enums, both
+// collapsed to this same two-state visual — it never had a third state).
+function StatusBadge({ active }: { active: boolean }) {
   return (
     <span
       className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-        status === "active" ? "border-primary/25 bg-primary/10 text-primary" : "border-danger/25 bg-danger/10 text-danger"
+        active ? "border-primary/25 bg-primary/10 text-primary" : "border-danger/25 bg-danger/10 text-danger"
       }`}
     >
-      {status === "active" ? "Activo" : "Inactivo"}
+      {active ? "Activo" : "Inactivo"}
     </span>
   );
 }
 
 // 1. Información general — a 3-column grid on desktop: cols 1-2 hold the
-// clinic's data fields (each individually inline-editable, see InfoField),
-// col 3 holds the logo, integrated in the same card/row rather than a
-// separate section below (see task scope). Collapses to one column on
-// tablet/mobile, data first then logo, purely from DOM order + grid-cols-1.
-function InformacionGeneralSection() {
-  const [logoUrl, setLogoUrl] = useState<string | null>(CURRENT_USER.clinicLogoUrl ?? null);
+// clinic's editable fields (each individually inline-editable, see
+// InfoField), col 3 holds the logo, integrated in the same card/row rather
+// than a separate section below (see task scope). Below that grid, a
+// dedicated "Ubicación de la sede principal" sub-section (see
+// PrimaryLocationSection) bundles address/city/state with the map — a
+// logically separate "sede" entity in the real schema
+// (clinic_locations, under clinic_locations_update_admin RLS), and address/
+// city/state/lat/lng need to change together (editing the text invalidates
+// the pin — see that component), which doesn't fit InfoField's one-field-
+// at-a-time model. Collapses to one column on tablet/mobile, data first
+// then logo, purely from DOM order + grid-cols-1. WhatsApp has no column
+// anywhere in the schema — kept as local-only state, never persisted (see
+// task scope, section 1). legal_name/tax_id/status are real clinics
+// columns with no editor in this approved screen — not wired here; see the
+// task report.
+function InformacionGeneralSection({ clinic, location }: { clinic: ClinicDetail; location: PrimaryLocation | null }) {
+  const [logoUrl, setLogoUrl] = useState<string | null>(clinic.logoUrl);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [clinicName, setClinicName] = useState(CURRENT_USER.clinicName);
-  const [info, setInfo] = useState<ClinicInfo>(CLINIC_INFO_MOCK);
+  const [clinicName, setClinicName] = useState(clinic.name);
+  const [phone, setPhone] = useState(clinic.phone ?? "");
+  const [email, setEmail] = useState(clinic.email ?? "");
+
   // Only one field editable at a time (see task scope) — a single key here,
   // rather than each InfoField owning its own "isEditing" state.
   const [editingField, setEditingField] = useState<string | null>(null);
+  const [savingField, setSavingField] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+
+  const saveClinicField = async (key: "name" | "phone" | "email", next: string, apply: () => void) => {
+    setSavingField(key);
+    setFieldError(null);
+    const outcome = await updateClinicInfo(clinic.id, { [key]: next });
+    setSavingField(null);
+    if (outcome.status === "error") {
+      setFieldError("No pudimos guardar el cambio. Intenta de nuevo.");
+      return;
+    }
+    apply();
+    setEditingField(null);
+  };
 
   const handleChangeClick = () => fileInputRef.current?.click();
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) setLogoUrl(URL.createObjectURL(file));
     e.target.value = "";
+    if (!file) return;
+
+    if (!CLINIC_LOGO_ACCEPTED_TYPES.includes(file.type)) {
+      setLogoError("El archivo debe ser PNG, JPG o SVG.");
+      return;
+    }
+    if (file.size > CLINIC_LOGO_MAX_BYTES) {
+      setLogoError("El logo no puede superar los 2 MB.");
+      return;
+    }
+
+    setLogoBusy(true);
+    setLogoError(null);
+    const outcome = await uploadClinicLogo(clinic.id, file);
+    setLogoBusy(false);
+    if ("failed" in outcome) {
+      setLogoError("No pudimos subir el logo. Intenta de nuevo.");
+      return;
+    }
+    setLogoUrl(outcome.logoUrl);
   };
 
-  const handleRemoveLogo = () => setLogoUrl(null);
-
-  const updateInfo = (key: keyof ClinicInfo) => (next: string) => {
-    setInfo((prev) => ({ ...prev, [key]: next }));
-    setEditingField(null);
+  const handleRemoveLogo = async () => {
+    setLogoBusy(true);
+    setLogoError(null);
+    const outcome = await removeClinicLogo(clinic.id);
+    setLogoBusy(false);
+    if (outcome.status === "error") {
+      setLogoError("No pudimos quitar el logo. Intenta de nuevo.");
+      return;
+    }
+    setLogoUrl(null);
   };
 
   return (
@@ -104,55 +153,41 @@ function InformacionGeneralSection() {
             label="Nombre de la clínica"
             value={clinicName}
             isEditing={editingField === "name"}
+            saving={savingField === "name"}
+            error={editingField === "name" ? fieldError : null}
             onStartEdit={() => setEditingField("name")}
-            onSave={(next) => {
-              setClinicName(next);
-              setEditingField(null);
-            }}
+            onSave={(next) => saveClinicField("name", next, () => setClinicName(next))}
             onCancel={() => setEditingField(null)}
             className="sm:col-span-2"
           />
           <InfoField
             label="Teléfono"
-            value={info.phone}
+            value={phone}
             isEditing={editingField === "phone"}
+            saving={savingField === "phone"}
+            error={editingField === "phone" ? fieldError : null}
             onStartEdit={() => setEditingField("phone")}
-            onSave={updateInfo("phone")}
+            onSave={(next) => saveClinicField("phone", next, () => setPhone(next))}
             onCancel={() => setEditingField(null)}
           />
-          <InfoField
-            label="WhatsApp"
-            value={info.whatsapp}
-            isEditing={editingField === "whatsapp"}
-            onStartEdit={() => setEditingField("whatsapp")}
-            onSave={updateInfo("whatsapp")}
-            onCancel={() => setEditingField(null)}
-          />
+          {/* No columna real para WhatsApp en el schema (clinics solo tiene
+              phone) y no existe una decisión real de reusar el teléfono
+              como WhatsApp — mostrar "No configurado" en vez de un campo
+              editable que nunca se guardaría (ver task scope, sección 9). */}
+          <div>
+            <dt className="text-xs text-label-foreground">WhatsApp</dt>
+            <dd className="mt-0.5 truncate font-medium text-muted-foreground">No configurado</dd>
+          </div>
           <InfoField
             label="Correo"
-            value={info.email}
+            value={email}
             type="email"
             isEditing={editingField === "email"}
+            saving={savingField === "email"}
+            error={editingField === "email" ? fieldError : null}
             onStartEdit={() => setEditingField("email")}
-            onSave={updateInfo("email")}
+            onSave={(next) => saveClinicField("email", next, () => setEmail(next))}
             onCancel={() => setEditingField(null)}
-          />
-          <InfoField
-            label="Ciudad"
-            value={info.city}
-            isEditing={editingField === "city"}
-            onStartEdit={() => setEditingField("city")}
-            onSave={updateInfo("city")}
-            onCancel={() => setEditingField(null)}
-          />
-          <InfoField
-            label="Dirección"
-            value={info.address}
-            isEditing={editingField === "address"}
-            onStartEdit={() => setEditingField("address")}
-            onSave={updateInfo("address")}
-            onCancel={() => setEditingField(null)}
-            className="sm:col-span-2"
           />
         </div>
 
@@ -163,10 +198,15 @@ function InformacionGeneralSection() {
           {/* Not a square avatar-style box — logos can be horizontal,
               square, or vertical, so object-contain (never object-cover)
               always shows the full image, uncropped and undistorted, at
-              whatever size fits within these bounds. */}
-          <div className="mt-3 flex h-24 w-full items-center justify-center rounded-lg border border-border bg-surface p-3">
+              whatever size fits within these bounds. Height is the box's
+              only real constraint (width already fills the column) — a
+              taller ceiling here is what lets a square/vertical logo
+              render meaningfully bigger; a horizontal logo, already
+              width-bound well under the old 96px height, looks basically
+              the same as before. */}
+          <div className="mt-3 flex h-48 w-full items-center justify-center rounded-lg border border-border bg-surface p-3">
             {logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- local mock preview (object URL / static asset), not worth Next/Image's optimization pipeline
+              // eslint-disable-next-line @next/next/no-img-element -- Storage public URL, not worth Next/Image's optimization pipeline
               <img src={logoUrl} alt="Logo de la clínica" className="max-h-full max-w-full object-contain" />
             ) : (
               <BuildingIcon className="size-6 text-muted-foreground" />
@@ -177,21 +217,33 @@ function InformacionGeneralSection() {
             <button
               type="button"
               onClick={handleChangeClick}
-              className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80 hover:bg-foreground/5"
+              disabled={logoBusy}
+              className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80 hover:bg-foreground/5 disabled:opacity-50"
             >
-              Cambiar logo
+              {logoBusy ? "Guardando…" : "Cambiar logo"}
             </button>
             <button
               type="button"
               onClick={handleRemoveLogo}
-              disabled={!logoUrl}
+              disabled={!logoUrl || logoBusy}
               className="text-xs font-medium text-danger/80 hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
             >
               Eliminar logo
             </button>
-            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={CLINIC_LOGO_ACCEPTED_TYPES.join(",")}
+              onChange={handleFileChange}
+              className="hidden"
+            />
           </div>
+          {logoError && <p className="mt-1.5 text-xs text-danger">{logoError}</p>}
         </div>
+      </div>
+
+      <div className="mt-6 border-t border-border pt-5">
+        <PrimaryLocationSection location={location} />
       </div>
     </div>
   );
@@ -203,10 +255,17 @@ function InformacionGeneralSection() {
 // Cancelar/Guardar actions. Mirrors the pencil-triggered inline-edit
 // language already established in appointments-card.tsx's
 // EditableProfileRow, extended with Enter/Escape (see task scope).
+// `saving`/`error` reflect a real async save (see InformacionGeneralSection
+// above) — Guardar disables and shows "Guardando…" mid-request, and a
+// failure keeps the field open with a friendly message instead of silently
+// reverting (see task scope, section 4: no double-submit, no raw errors).
 function InfoField({
   label,
   value,
   isEditing,
+  saving = false,
+  error = null,
+  disabled = false,
   onStartEdit,
   onSave,
   onCancel,
@@ -216,6 +275,9 @@ function InfoField({
   label: string;
   value: string;
   isEditing: boolean;
+  saving?: boolean;
+  error?: string | null;
+  disabled?: boolean;
   onStartEdit: () => void;
   onSave: (next: string) => void;
   onCancel: () => void;
@@ -225,10 +287,14 @@ function InfoField({
   const [draft, setDraft] = useState(value);
 
   const startEdit = () => {
+    if (disabled) return;
     setDraft(value);
     onStartEdit();
   };
-  const confirm = () => onSave(draft.trim() || value);
+  const confirm = () => {
+    if (saving) return;
+    onSave(draft.trim() || value);
+  };
 
   if (isEditing) {
     return (
@@ -238,6 +304,7 @@ function InfoField({
           autoFocus
           type={type}
           value={draft}
+          disabled={saving}
           onChange={(e) => setDraft(e.target.value)}
           onFocus={(e) => e.target.select()}
           onKeyDown={(e) => {
@@ -251,20 +318,23 @@ function InfoField({
           }}
           className={`${FIELD_CLASS} mt-0.5`}
         />
+        {error && <p className="mt-1 text-xs text-danger">{error}</p>}
         <div className="mt-1.5 flex justify-end gap-1.5">
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-md px-2 py-1 text-xs font-medium text-foreground/70 hover:bg-foreground/5"
+            disabled={saving}
+            className="rounded-md px-2 py-1 text-xs font-medium text-foreground/70 hover:bg-foreground/5 disabled:opacity-50"
           >
             Cancelar
           </button>
           <button
             type="button"
             onClick={confirm}
-            className="rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
+            disabled={saving}
+            className="rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
           >
-            Guardar
+            {saving ? "Guardando…" : "Guardar"}
           </button>
         </div>
       </div>
@@ -275,17 +345,22 @@ function InfoField({
     <div className={className}>
       <dt className="text-xs text-label-foreground">{label}</dt>
       <div className="mt-0.5 flex items-center gap-1.5">
-        <dd onClick={startEdit} className="min-w-0 flex-1 cursor-pointer truncate font-medium hover:text-primary">
-          {value}
-        </dd>
-        <button
-          type="button"
+        <dd
           onClick={startEdit}
-          aria-label={`Editar ${label}`}
-          className="shrink-0 text-muted-foreground/50 hover:text-primary"
+          className={`min-w-0 flex-1 truncate font-medium ${value ? "" : "text-muted-foreground"} ${disabled ? "" : "cursor-pointer hover:text-primary"}`}
         >
-          <PencilIcon className="size-3" />
-        </button>
+          {value || "No configurado"}
+        </dd>
+        {!disabled && (
+          <button
+            type="button"
+            onClick={startEdit}
+            aria-label={`Editar ${label}`}
+            className="shrink-0 text-muted-foreground/50 hover:text-primary"
+          >
+            <PencilIcon className="size-3" />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -294,60 +369,29 @@ function InfoField({
 // 2. Equipo — a single compact list (odontólogos + asistentes together, not
 // two separate cards) so the section stays easy to scan; no per-member
 // cards (see task scope: "evitar cards gigantes para cada miembro").
-type TeamRow = { kind: "dentist"; member: TeamDentist } | { kind: "assistant"; member: TeamAssistant };
-
-function EquipoSection() {
-  const { soloDentistClinic } = useRole();
-  // "Administrador Odontólogo Único" starts with no other team members —
-  // the seeded roster (other dentists + asistentes) belongs to the normal
-  // multi-professional demo, not this one. Adding someone here (via
-  // "+ Agregar miembro" below) only updates this local mock list — see
-  // task scope: no automatic role/scenario change yet.
-  const [dentists, setDentists] = useState<TeamDentist[]>(soloDentistClinic ? [] : TEAM_DENTISTS);
-  const [assistants, setAssistants] = useState<TeamAssistant[]>(soloDentistClinic ? [] : TEAM_ASSISTANTS);
-  // Same "on arrival" correction as patients-screen.tsx's own
-  // appliedDentistDefault: soloDentistClinic hydrates one tick after the
-  // server-safe first paint (see role-context.tsx), and the lazy
-  // initializers above only run once — so if they fired during that
-  // transient false flash, this corrects the seed a single time once the
-  // real value lands, without fighting a later manual "+ Agregar miembro".
-  const appliedSoloDefault = useRef(false);
-  useEffect(() => {
-    if (soloDentistClinic && !appliedSoloDefault.current) {
-      appliedSoloDefault.current = true;
-      setDentists([]);
-      setAssistants([]);
+//
+// Real data: one row per clinic_membership (see
+// src/features/clinic/data.ts's fetchTeamMembers) — a Clinic Admin who
+// also has a professional_profile is naturally a single row with both
+// role and specialty, never a separate "dentist" entry (see task scope,
+// section 7 — no dedup logic needed, the real data model already
+// guarantees this). "Agregar miembro"/"Editar"/"Activar"/"Desactivar" are
+// visible but disabled: none of them are safely wireable yet — real
+// invitations don't exist (clinic_invitations' accept flow is a future
+// task, see section 9), and clinic_memberships/professional_profiles both
+// have no UPDATE policy at all today, deliberately reserved for a future
+// RPC (see task scope, sections 8/10) — never opened via a broad policy or
+// a direct client UPDATE for convenience.
+function EquipoSection({ members }: { members: TeamMember[] }) {
+  const roleLabel = (member: TeamMember): string => {
+    const specialty = member.professionalProfile?.specialtyName;
+    if (member.role === "clinic_admin") {
+      if (!member.professionalProfile) return "Administrador";
+      return specialty ? `Administrador · Odontólogo · ${specialty}` : "Administrador · Odontólogo";
     }
-  }, [soloDentistClinic]);
-  // "+ Agregar miembro" (either kind) and editing an existing Asistente
-  // still go through the simple TeamMemberModal — this task's scope is
-  // only Equipo > Editar for odontólogos (see editingDentist below), which
-  // reuses Perfil del profesional instead.
-  const [modal, setModal] = useState<"closed" | "create" | { kind: "assistant"; member: TeamAssistant }>("closed");
-  // Editar on a dentist row opens the exact same "Perfil del profesional"
-  // modal used elsewhere (Agenda board, shell Header) straight into its
-  // edit chrome, instead of the old standalone "Editar miembro" modal —
-  // see DentistProfileModal's initialEditMode/initialStatus. Estado itself
-  // is no longer editable there at all (see task scope) — Activar/
-  // Desactivar is this section's own dedicated action below.
-  const [editingDentist, setEditingDentist] = useState<TeamDentist | null>(null);
-  // Desactivar/Reactivar always goes through a confirmation modal now —
-  // never an immediate toggle (see task scope). Carries the full row
-  // (not separately-destructured kind/member) so TS keeps the
-  // dentist/assistant correlation intact.
-  const [statusModal, setStatusModal] = useState<(TeamRow & { action: "deactivate" | "reactivate" }) | null>(null);
-
-  const toggleDentistStatus = (id: string, next: TeamStatus) => {
-    setDentists((prev) => prev.map((d) => (d.id === id ? { ...d, status: next } : d)));
+    if (member.role === "dentist") return specialty ? `Odontólogo · ${specialty}` : "Odontólogo";
+    return "Asistente";
   };
-  const toggleAssistantStatus = (id: string, next: TeamStatus) => {
-    setAssistants((prev) => prev.map((a) => (a.id === id ? { ...a, status: next } : a)));
-  };
-
-  const rows: TeamRow[] = [
-    ...dentists.map((member): TeamRow => ({ kind: "dentist", member })),
-    ...assistants.map((member): TeamRow => ({ kind: "assistant", member })),
-  ];
 
   return (
     <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
@@ -355,164 +399,84 @@ function EquipoSection() {
         <h2 className="text-base font-semibold">Equipo</h2>
         <button
           type="button"
-          onClick={() => setModal("create")}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80 hover:bg-foreground/5"
+          disabled
+          title="El flujo de invitaciones todavía no está disponible."
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80 opacity-50 disabled:cursor-not-allowed"
         >
           <PlusIcon className="size-3.5" />
           Agregar miembro
         </button>
       </div>
 
-      {rows.length === 0 ? (
+      {members.length === 0 ? (
         <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
           Todavía no tienes otros miembros en tu equipo.
         </p>
       ) : (
         <ul className="mt-4 divide-y divide-border overflow-hidden rounded-xl border border-border">
-          {rows.map((row) => (
-            <li key={`${row.kind}-${row.member.id}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <UserAvatar name={row.member.name} initials={row.member.initials} avatar_url={row.member.avatar_url} sizeClassName="size-9" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{row.member.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {row.kind === "dentist" ? `Odontólogo · ${row.member.specialty}` : "Asistente"}
-                  </p>
+          {members.map((member) => {
+            const name = `${member.firstName} ${member.lastName}`.trim() || member.email;
+            const initials =
+              `${member.firstName[0] ?? ""}${member.lastName[0] ?? ""}`.toUpperCase() || member.email[0]?.toUpperCase() || "?";
+            const isActive = member.status === "active";
+            return (
+              <li key={member.membershipId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <UserAvatar name={name} initials={initials} avatar_url={member.avatarUrl ?? undefined} sizeClassName="size-9" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{name}</p>
+                    <p className="truncate text-xs text-muted-foreground">{roleLabel(member)}</p>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <StatusBadge status={row.member.status} />
-                <button
-                  type="button"
-                  onClick={() => (row.kind === "dentist" ? setEditingDentist(row.member) : setModal(row))}
-                  className="text-xs font-medium text-primary hover:text-primary/80"
-                >
-                  Editar
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setStatusModal({ ...row, action: row.member.status === "active" ? "deactivate" : "reactivate" })
-                  }
-                  className={`text-xs font-medium ${
-                    row.member.status === "active" ? "text-danger/80 hover:text-danger" : "text-primary hover:text-primary/80"
-                  }`}
-                >
-                  {row.member.status === "active" ? "Desactivar" : "Reactivar"}
-                </button>
-              </div>
-            </li>
-          ))}
+                <div className="flex items-center gap-3">
+                  <StatusBadge active={isActive} />
+                  <button
+                    type="button"
+                    disabled
+                    title="La edición de miembros del equipo todavía no está disponible."
+                    className="text-xs font-medium text-primary opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    disabled
+                    title="Cambiar el estado de un miembro requiere una función segura que todavía no existe."
+                    className={`text-xs font-medium opacity-50 disabled:cursor-not-allowed ${isActive ? "text-danger/80" : "text-primary"}`}
+                  >
+                    {isActive ? "Desactivar" : "Reactivar"}
+                  </button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
-      )}
-
-      {modal !== "closed" && (
-        <TeamMemberModal
-          editing={modal === "create" ? null : modal}
-          onClose={() => setModal("closed")}
-          onCreateDentist={(d) => setDentists((prev) => [...prev, d])}
-          onCreateAssistant={(a) => setAssistants((prev) => [...prev, a])}
-          onUpdateDentist={(d) => setDentists((prev) => prev.map((x) => (x.id === d.id ? d : x)))}
-          onUpdateAssistant={(a) => setAssistants((prev) => prev.map((x) => (x.id === a.id ? a : x)))}
-        />
-      )}
-
-      {editingDentist && (
-        <DentistProfileModal
-          dentist={editingDentist}
-          initialEditMode
-          initialStatus={editingDentist.status}
-          onClose={() => setEditingDentist(null)}
-          // No "self" identity to sync here — this is always an admin
-          // editing someone else's record from Equipo.
-          onSelfProfileChange={() => {}}
-        />
-      )}
-
-      {statusModal && (
-        <MemberStatusModal
-          action={statusModal.action}
-          kind={statusModal.kind}
-          memberId={statusModal.member.id}
-          memberName={statusModal.member.name}
-          appointments={statusModal.kind === "dentist" ? WEEK_APPOINTMENTS : undefined}
-          activeDentists={
-            statusModal.kind === "dentist"
-              ? dentists.filter((d) => d.status === "active" && d.id !== statusModal.member.id)
-              : undefined
-          }
-          onClose={() => setStatusModal(null)}
-          onConfirm={() => {
-            const next: TeamStatus = statusModal.action === "deactivate" ? "inactive" : "active";
-            if (statusModal.kind === "dentist") toggleDentistStatus(statusModal.member.id, next);
-            else toggleAssistantStatus(statusModal.member.id, next);
-            setStatusModal(null);
-          }}
-        />
       )}
     </div>
   );
 }
 
 // 3. Mi perfil profesional — Administrador + Odontólogo, never a role swap
-// (see task scope). No inline form of its own anymore: this is now just a
-// toggle + a read-only summary, and every actual edit (first-time setup or
-// later changes) happens through the exact same "Mi perfil" modal(s) the
-// shell Header already opens from the avatar menu — AdminProfileModal for
-// the "not configured yet" case, DentistProfileModal (self-view) once it
-// is. Both read/write RoleContext's `adminProfessionalProfile` directly,
-// so this section, the Header, and the Agenda's dentist columns are all
-// looking at the exact same single source of truth — nothing here is a
-// second copy of that state or of the form that edits it.
-function MiPerfilProfesionalSection() {
-  const {
-    adminProfessionalProfile,
-    setAdminProfessionalProfile,
-    adminIdentityOverride,
-    setAdminIdentityOverride,
-    soloDentistClinic,
-  } = useRole();
-  const { professionalRecord } = useAuthenticatedIdentity();
-  const isActive = adminProfessionalProfile !== null;
-
-  const [modal, setModal] = useState<"closed" | "configure" | "edit">("closed");
-
-  // Mirrors header.tsx's own handleAdminDentistProfileChange exactly (kept
-  // local rather than imported — it's a few lines of RoleContext wiring,
-  // not a form/component, so duplicating it here is simpler and safer than
-  // reaching into the Header for it): DentistProfileModal's generic name/
-  // specialty/avatar edits need routing to the right place — name/avatar
-  // are "Mi perfil" identity fields, specialty lives on the professional
-  // profile itself.
-  const handleAdminDentistProfileChange = (patch: { name?: string; specialty?: string; avatar_url?: string }) => {
-    if (patch.name !== undefined || patch.avatar_url !== undefined) {
-      setAdminIdentityOverride({
-        ...(patch.name !== undefined ? { name: patch.name } : {}),
-        ...(patch.avatar_url !== undefined ? { avatar_url: patch.avatar_url } : {}),
-      });
-    }
-    if (patch.specialty !== undefined && adminProfessionalProfile) {
-      setAdminProfessionalProfile({ ...adminProfessionalProfile, specialty: patch.specialty });
-    }
-  };
-
-  const handleToggle = () => {
-    if (isActive) {
-      setAdminProfessionalProfile(null);
-      return;
-    }
-    // Not configured yet — open "Mi perfil" straight away (see task scope).
-    setModal("configure");
-  };
+// (see task scope). Real display only: selfMember comes from the real
+// team list, matched server-side by the authenticated profile.id (see
+// src/app/clinica/page.tsx) — never RoleContext/useRole() (see task
+// scope, sections 5/15). Editing stays disabled: professional_profiles
+// has no INSERT/UPDATE RLS policy at all yet (deliberately reserved for a
+// future RPC with a column whitelist — see the foundation RLS migration),
+// so this never opens a mutation, real or mock.
+function MiPerfilProfesionalSection({ selfMember }: { selfMember: TeamMember | null }) {
+  const professionalProfile = selfMember?.professionalProfile ?? null;
+  // Real equivalent of the old mock "Administrador Odontólogo Único"
+  // framing — she's always the practicing dentist here by definition, so
+  // the "también atiendo pacientes" checkbox copy doesn't apply.
+  const isAdminWithProfile = selfMember?.role === "clinic_admin" && professionalProfile !== null;
+  const selfName = selfMember ? `${selfMember.firstName} ${selfMember.lastName}`.trim() || selfMember.email : "";
+  const selfInitials =
+    selfMember && (`${selfMember.firstName[0] ?? ""}${selfMember.lastName[0] ?? ""}`.toUpperCase() || selfMember.email[0]?.toUpperCase() || "?");
 
   return (
     <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
-      {/* "Administrador Odontólogo Único" (see role-context.tsx): she's
-          always the practicing dentist by definition — a "también atiendo
-          pacientes" opt-in checkbox doesn't apply here, so this reframes as
-          a straightforward "Mi información profesional" instead (see task
-          scope), reusing the same details block/edit flow below. */}
-      {soloDentistClinic ? (
+      {isAdminWithProfile ? (
         <>
           <h2 className="text-base font-semibold">Mi información profesional</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -523,153 +487,106 @@ function MiPerfilProfesionalSection() {
         <>
           <h2 className="text-base font-semibold">Mi perfil profesional</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Sigues siendo Administrador — esto solo agrega que también atiendes pacientes en tu clínica.
+            Tu especialidad y registro como profesional, si atiendes pacientes en esta clínica.
           </p>
-
-          <label className="mt-4 flex items-center gap-2.5 text-sm">
-            <input
-              type="checkbox"
-              checked={isActive}
-              onChange={handleToggle}
-              className="size-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
-            />
-            <span className="font-medium">También atiendo pacientes en esta clínica</span>
-          </label>
         </>
       )}
 
-      {isActive && adminProfessionalProfile && (
+      {selfMember && (
+        <div className="mt-4 flex items-center gap-3">
+          <UserAvatar name={selfName} initials={selfInitials || "?"} avatar_url={selfMember.avatarUrl ?? undefined} sizeClassName="size-10" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{selfName}</p>
+            <p className="truncate text-xs text-muted-foreground">{selfMember.email}</p>
+          </div>
+        </div>
+      )}
+
+      {professionalProfile ? (
         <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
           <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-xs text-label-foreground">Especialidad</dt>
-              <dd className="mt-0.5 font-medium">{adminProfessionalProfile.specialty}</dd>
+              <dd className="mt-0.5 font-medium">{professionalProfile.specialtyName ?? "Sin especialidad configurada"}</dd>
             </div>
             <div>
               <dt className="text-xs text-label-foreground">Registro profesional</dt>
-              <dd className="mt-0.5 font-medium">{adminProfessionalProfile.registrationNumber || "Sin registrar"}</dd>
+              <dd className="mt-0.5 font-medium">{professionalProfile.licenseNumber || "No configurado"}</dd>
             </div>
             <div>
-              <dt className="text-xs text-label-foreground">Consultorio principal</dt>
-              <dd className="mt-0.5 font-medium">{adminProfessionalProfile.mainRoom}</dd>
+              <dt className="text-xs text-label-foreground">Duración de cita</dt>
+              <dd className="mt-0.5 font-medium">
+                {professionalProfile.defaultAppointmentDurationMinutes
+                  ? `${professionalProfile.defaultAppointmentDurationMinutes} min`
+                  : "No configurado"}
+              </dd>
             </div>
+            {/* No hay modelo real de horarios todavía (ver task scope,
+                sección 7) — honesto en vez de inventar un horario. */}
             <div>
               <dt className="text-xs text-label-foreground">Horario</dt>
-              <dd className="mt-0.5 font-medium">
-                {formatScheduleLabel(
-                  adminProfessionalProfile.scheduleDays,
-                  adminProfessionalProfile.scheduleStart,
-                  adminProfessionalProfile.scheduleEnd,
-                )}
+              <dd className="mt-0.5 font-medium text-muted-foreground">Horario aún no configurado</dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-xs text-label-foreground">Biografía</dt>
+              <dd className="mt-0.5 font-medium">{professionalProfile.bio || "No configurado"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-label-foreground">Estado</dt>
+              <dd className="mt-1">
+                <StatusBadge active={professionalProfile.active} />
               </dd>
             </div>
           </dl>
           <button
             type="button"
-            onClick={() => setModal("edit")}
-            className="mt-3 text-xs font-medium text-primary hover:text-primary/80"
+            disabled
+            title="La edición de tu perfil profesional todavía no está disponible."
+            className="mt-3 text-xs font-medium text-primary opacity-50 disabled:cursor-not-allowed"
           >
             Editar perfil profesional
           </button>
         </div>
-      )}
-
-      {isActive && !soloDentistClinic && (
-        <p className="mt-3 text-xs text-muted-foreground">Aparecerás como profesional en la Agenda de tu clínica.</p>
-      )}
-
-      {modal === "configure" && (
-        <AdminProfileModal
-          onClose={() => setModal("closed")}
-          onProfessionalProfileConfigured={() => setModal("closed")}
-          adminIdentityOverride={adminIdentityOverride}
-          setAdminIdentityOverride={setAdminIdentityOverride}
-          setAdminProfessionalProfile={setAdminProfessionalProfile}
-          // Skip the "¿También atiendes pacientes...?" empty state — the
-          // checkbox above is itself that same intent already confirmed
-          // (see task scope), so land straight in the Perfil profesional
-          // form instead of asking again.
-          autoConfigureProfessional
-        />
-      )}
-
-      {modal === "edit" && professionalRecord && adminProfessionalProfile && (
-        <DentistProfileModal
-          dentist={professionalRecord}
-          initialEditMode
-          initialProfile={{
-            registrationNumber: adminProfessionalProfile.registrationNumber,
-            mainRoom: adminProfessionalProfile.mainRoom,
-            scheduleDays: adminProfessionalProfile.scheduleDays,
-            scheduleStart: adminProfessionalProfile.scheduleStart,
-            scheduleEnd: adminProfessionalProfile.scheduleEnd,
-            // Reuse the real "Mi perfil" identity — never re-collected
-            // here (see task scope).
-            email: adminIdentityOverride.email ?? CURRENT_USER.email,
-            phone: adminIdentityOverride.phone ?? CURRENT_USER.phone,
-          }}
-          onClose={() => setModal("closed")}
-          onSelfProfileChange={handleAdminDentistProfileChange}
-        />
+      ) : (
+        <div className="mt-4 rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+          <p>Todavía no tienes un perfil profesional configurado en esta clínica.</p>
+          <button
+            type="button"
+            disabled
+            title="Configurar tu perfil profesional todavía no está disponible."
+            className="mt-3 text-xs font-medium text-primary opacity-50 disabled:cursor-not-allowed"
+          >
+            Configurar perfil profesional
+          </button>
+        </div>
       )}
     </div>
   );
 }
 
-// 4. Consultorios — same compact-list shape as Equipo, one field per room.
+// 4. Consultorios — no tabla real todavía (ver task scope, sección 8):
+// estado vacío honesto, nunca consultorios inventados. "+ Agregar
+// consultorio" se mantiene visible por paridad de diseño, pero
+// deshabilitado — no hay nada real que crear todavía.
 function ConsultoriosSection() {
-  const [rooms, setRooms] = useState<ClinicRoom[]>(CLINIC_ROOMS_MOCK);
-  const [modal, setModal] = useState<"closed" | "create" | ClinicRoom>("closed");
-
-  const toggleStatus = (id: string) => {
-    setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, status: r.status === "active" ? "inactive" : "active" } : r)));
-  };
-
   return (
     <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold">Consultorios</h2>
         <button
           type="button"
-          onClick={() => setModal("create")}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80 hover:bg-foreground/5"
+          disabled
+          title="La gestión de consultorios todavía no está disponible."
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80 opacity-50 disabled:cursor-not-allowed"
         >
           <PlusIcon className="size-3.5" />
           Agregar consultorio
         </button>
       </div>
 
-      <ul className="mt-4 divide-y divide-border overflow-hidden rounded-xl border border-border">
-        {rooms.map((room) => (
-          <li key={room.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-            <p className="text-sm font-medium">{room.name}</p>
-            <div className="flex items-center gap-3">
-              <StatusBadge status={room.status} />
-              <button type="button" onClick={() => setModal(room)} className="text-xs font-medium text-primary hover:text-primary/80">
-                Editar
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleStatus(room.id)}
-                className={`text-xs font-medium ${
-                  room.status === "active" ? "text-danger/80 hover:text-danger" : "text-primary hover:text-primary/80"
-                }`}
-              >
-                {room.status === "active" ? "Desactivar" : "Reactivar"}
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-
-      {modal !== "closed" && (
-        <RoomModal
-          editing={modal === "create" ? null : modal}
-          onClose={() => setModal("closed")}
-          onCreate={(room) => setRooms((prev) => [...prev, room])}
-          onUpdate={(room) => setRooms((prev) => prev.map((r) => (r.id === room.id ? room : r)))}
-        />
-      )}
+      <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+        Aún no hay consultorios configurados.
+      </p>
     </div>
   );
 }

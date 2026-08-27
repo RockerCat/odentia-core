@@ -5,6 +5,13 @@ import "leaflet/dist/leaflet.css";
 import { useEffect } from "react";
 import { MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
 
+// Shared compact, draggable confirmation map — used by both the real
+// onboarding (see onboarding/clinic-location-picker.tsx) and /clinica's
+// own sede principal editor (see clinic/primary-location-section.tsx).
+// Moved here from src/features/onboarding/ once a second real consumer
+// existed (see geocoding.ts's own header for why — one shared
+// implementation, never copy-pasted).
+//
 // Leaflet's default marker icon resolves its image URLs (marker-icon.png
 // etc.) relative to the page — a well-known problem under any bundler,
 // Next.js included: the icon silently fails to load instead of throwing,
@@ -40,10 +47,9 @@ function RecenterOnChange({ center }: { center: [number, number] }) {
   return null;
 }
 
-// Compact, draggable confirmation map for Paso 2's location sub-section —
-// see clinic-location-picker.tsx. Renders only once coordinates exist
-// (from a successful geocode or a prior session); moving the marker only
-// ever reports new coordinates upward, never touches address/city/state.
+// Renders only once coordinates exist (from a successful geocode, a
+// dragged marker, or a prior saved value); moving the marker only ever
+// reports new coordinates upward, never touches address/city/state.
 export function ClinicLocationMap({
   latitude,
   longitude,

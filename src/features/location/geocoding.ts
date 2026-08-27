@@ -1,10 +1,17 @@
-// Client-side wrapper for the onboarding's "Ubicar en el mapa" step (see
-// clinic-location-picker.tsx). Talks only to our own Route Handler
-// (src/app/api/geocoding/search/route.ts) — Nominatim (OpenStreetMap) is
-// only ever called server-side, from that route, never directly from the
-// browser. See that route for why (Nominatim's usage policy requires an
-// identifying User-Agent and discourages/forbids exactly the kind of
-// client-scattered calls a browser-side integration would produce).
+// Shared client-side wrapper for the "Ubicar en el mapa" action — used by
+// both the real onboarding (see onboarding/clinic-location-picker.tsx) and
+// /clinica's own sede principal editor (see
+// clinic/primary-location-section.tsx). Moved here from
+// src/features/onboarding/ once a second real consumer existed, so both
+// share this exact implementation instead of a copy-pasted second one (see
+// CLAUDE.md task scope: "evitar copiar y pegar una segunda implementación").
+//
+// Talks only to our own Route Handler (src/app/api/geocoding/search/route.ts)
+// — Nominatim (OpenStreetMap) is only ever called server-side, from that
+// route, never directly from the browser. See that route for why
+// (Nominatim's usage policy requires an identifying User-Agent and
+// discourages/forbids exactly the kind of client-scattered calls a
+// browser-side integration would produce).
 
 export class GeocodingError extends Error {}
 

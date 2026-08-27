@@ -1,0 +1,32 @@
+-- Odentia Core — base table privileges for the real /clinica screen
+--
+-- Same class of gap as the two previous grant migrations
+-- (20260826153000, 20260827130000): RLS policies already exist and are
+-- already correctly scoped, but Postgres checks table-level GRANT before
+-- it ever evaluates a row-security policy — with no GRANT, a fully
+-- authenticated clinic_admin whose session satisfies every USING/WITH
+-- CHECK clause still gets a hard permission-denied (SQLSTATE 42501),
+-- before RLS is even in the picture.
+--
+-- Audited against every migration ever applied (see the two migrations
+-- above): clinic_locations and specialties have never been granted
+-- anything at all, despite both already having working RLS policies
+-- (clinic_locations_select_member_or_superadmin/_update_admin,
+-- specialties_select_authenticated). /clinica's real "Información
+-- general"/"Sede principal" (src/features/clinic/data.ts,
+-- src/features/clinic/actions.ts) is the first real authenticated client
+-- read/write of clinic_locations, and the first real read of specialties
+-- (via professional_profiles.primary_specialty_id, for Equipo's
+-- specialty display).
+--
+--   - clinic_locations: SELECT (read the primary location) + UPDATE
+--     (edit address/city). clinic_locations_update_admin already scopes
+--     UPDATE to the clinic's own clinic_admin — this GRANT does not widen
+--     that, it only lets the policy be reached at all. No INSERT/DELETE:
+--     /clinica edits the existing primary location, it doesn't create a
+--     second one (see task scope, section 5).
+--   - specialties: SELECT only. specialties_select_authenticated is
+--     already `using (true)` (a global catalog, not tenant data) — this
+--     GRANT is what lets that read-only policy be reached.
+grant select, update on public.clinic_locations to authenticated;
+grant select on public.specialties to authenticated;

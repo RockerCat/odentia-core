@@ -21,7 +21,11 @@ export function useShellIdentity(): AuthenticatedIdentity {
   const name = `${real.profile.firstName} ${real.profile.lastName}`.trim() || mock.name;
   const initials =
     `${real.profile.firstName[0] ?? ""}${real.profile.lastName[0] ?? ""}`.toUpperCase() || mock.initials;
-  const avatar_url = real.profile.avatarUrl ?? mock.avatar_url;
+  // Never mock.avatar_url as a fallback here — UserAvatar already renders
+  // a neutral initials circle when avatar_url is undefined (see
+  // components/user-avatar.tsx), which is the correct empty state for a
+  // real profile with no avatar_url, not María Gómez's mock photo.
+  const avatar_url = real.profile.avatarUrl ?? undefined;
 
   return {
     name,
