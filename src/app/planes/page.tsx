@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import Link from "next/link";
 import {
   ArrowRightIcon,
   BarChartIcon,
@@ -20,9 +21,9 @@ import { formatCOP, LOPADENT_BENEFIT_MOCK, SUBSCRIPTION_MOCK } from "@/features/
 // (src/app/page.tsx). Reuses the subscription feature's mock price/goal
 // (src/features/subscription/mock-data.ts) so the numbers shown here never
 // drift from what a logged-in Clinic Admin sees in Mi Suscripción.
-// "Comenzar mes gratis" is intentionally not wired to a real flow yet (see
-// PROJECT_STATUS.md: no real registration this phase), same as "Registra tu
-// clínica" on the home page.
+// "Probar Odentia gratis" and "Comenzar mes gratis" both open the real
+// onboarding wizard at /registro, same as "Registra tu clínica" on the home
+// page (see src/features/onboarding).
 
 export const metadata: Metadata = {
   title: "Planes | Odentia",
@@ -91,12 +92,12 @@ export default function PlanesPage() {
 
                 <p className="mt-4 flex-1 text-sm text-muted-foreground">Prueba Odentia sin costo.</p>
 
-                <button
-                  type="button"
-                  className="mt-5 w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium whitespace-nowrap text-primary-foreground hover:opacity-90"
+                <Link
+                  href="/registro"
+                  className="mt-5 block w-full rounded-lg bg-primary px-4 py-2.5 text-center text-sm font-medium whitespace-nowrap text-primary-foreground hover:opacity-90"
                 >
                   Probar Odentia gratis
-                </button>
+                </Link>
               </div>
 
               <ArrowRightIcon className="mx-auto size-5 shrink-0 rotate-90 text-primary/40 lg:my-auto lg:rotate-0" />
@@ -212,12 +213,12 @@ export default function PlanesPage() {
                 Un mes gratis, sin complicaciones, y la posibilidad de que tu suscripción salga gratis
                 cada mes.
               </p>
-              <button
-                type="button"
-                className="mt-6 rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90"
+              <Link
+                href="/registro"
+                className="mt-6 inline-block rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90"
               >
                 Comenzar mes gratis
-              </button>
+              </Link>
             </div>
           </div>
         </section>

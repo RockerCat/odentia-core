@@ -1,0 +1,37 @@
+-- Odentia Core — base table privileges for the real onboarding reentry check
+--
+-- Root cause of the first real end-to-end onboarding test failing at the
+-- reentry check ("No pudimos cargar tu registro"): none of the foundation
+-- migrations ever issued a base `GRANT ... TO authenticated` on any
+-- table. RLS policies alone are not sufficient — Postgres checks
+-- table-level privilege BEFORE it ever evaluates a row-security policy, so
+-- with no GRANT, even a fully authenticated user with a session that
+-- satisfies every USING/WITH CHECK clause still gets a hard
+-- `permission denied` (SQLSTATE 42501), before RLS is even in the
+-- picture. Confirmed empirically against this project: querying
+-- clinic_memberships as `anon` returns exactly this error, and nothing in
+-- the schema/RLS/bootstrap migrations ever grants `authenticated` either.
+--
+-- `bootstrap_clinic()` itself never hit this because it's SECURITY
+-- DEFINER, running with the function owner's privileges — this only ever
+-- surfaces on a *direct* table read/write from the client, which the
+-- onboarding reentry check (clinic_memberships SELECT) and logo save
+-- (clinics UPDATE) are the first real ones in this codebase.
+--
+-- This does not loosen authorization: RLS policies remain the actual
+-- row-level gate (a GRANT with no matching policy still returns zero
+-- rows/denies the write). It only grants what Postgres requires as a
+-- prerequisite for RLS to be evaluated at all, scoped to exactly the two
+-- operations the real onboarding flow performs directly from the client
+-- (see src/features/onboarding/api.ts: findActiveMembership,
+-- uploadClinicLogo). Every other foundation table has this same latent
+-- gap — it just hasn't been exercised by a real authenticated client
+-- query yet (everything else is still mock) — worth a follow-up pass once
+-- another feature moves off mock data.
+grant select on public.clinic_memberships to authenticated;
+
+-- select: required for the UPDATE ... WHERE id = $1 predicate itself, not
+-- just for a RETURNING representation (Postgres requires SELECT on any
+-- column referenced in an UPDATE's WHERE clause). update: the actual
+-- logo_url write after a successful Storage upload.
+grant select, update on public.clinics to authenticated;

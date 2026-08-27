@@ -98,6 +98,13 @@ export default function LoginPage() {
           </button>
         </form>
 
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          ¿Aún no tienes una clínica?{" "}
+          <Link href="/registro" className="font-medium text-primary hover:underline">
+            Crear cuenta
+          </Link>
+        </p>
+
         <div className="mt-8 border-t border-border/50 pt-4">
           <p className="mb-2 text-center text-[10px] font-medium tracking-wide text-muted-foreground/70 uppercase">
             Cuentas demo
