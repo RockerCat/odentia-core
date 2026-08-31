@@ -2,6 +2,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { fetchClinicDetail, fetchPrimaryLocation, fetchTeamMembers, type ClinicDetail, type PrimaryLocation, type TeamMember } from "@/features/clinic/data";
 import { ClinicSettingsScreen } from "@/features/clinic/clinic-settings-screen";
 import { logStepFailed } from "@/features/clinic/debug";
+import { fetchRooms, type Room } from "@/features/rooms/data";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
 import { createClient } from "@/lib/supabase/server";
 
@@ -49,6 +50,7 @@ export default async function ClinicaPage() {
   let clinic: ClinicDetail | null = null;
   let location: PrimaryLocation | null = null;
   let members: TeamMember[] = [];
+  let rooms: Room[] = [];
   let clinicFailed = false;
 
   if (clinicId) {
@@ -77,6 +79,15 @@ export default async function ClinicaPage() {
       // optional for the page as a whole — members stays [], which the
       // screen already renders as its empty state.
     }
+
+    try {
+      rooms = await fetchRooms(supabase, clinicId);
+    } catch (error) {
+      // Consultorios is optional for the page as a whole, same as Equipo/
+      // Sede principal above — rooms stays [], which ConsultoriosSection
+      // already renders as its own honest empty state.
+      logStepFailed("fetchRooms", error);
+    }
   }
 
   // "Mi perfil profesional" is always about the authenticated user's own
@@ -94,7 +105,7 @@ export default async function ClinicaPage() {
           No pudimos cargar la información de tu clínica. Intenta de nuevo en unos minutos.
         </p>
       ) : (
-        <ClinicSettingsScreen clinic={clinic} location={location} members={members} selfMember={selfMember} />
+        <ClinicSettingsScreen clinic={clinic} location={location} members={members} selfMember={selfMember} rooms={rooms} />
       )}
     </AppShell>
   );

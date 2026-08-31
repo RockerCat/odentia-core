@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { BuildingIcon, PencilIcon, PlusIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
@@ -8,6 +8,8 @@ import { updateClinicInfo } from "@/features/clinic/actions";
 import type { ClinicDetail, PrimaryLocation, TeamMember } from "@/features/clinic/data";
 import { CLINIC_LOGO_ACCEPTED_TYPES, CLINIC_LOGO_MAX_BYTES, removeClinicLogo, uploadClinicLogo } from "@/features/clinic/logo";
 import { PrimaryLocationSection } from "@/features/clinic/primary-location-section";
+import { createRoom, renameRoom, setRoomActive } from "@/features/rooms/actions";
+import type { Room } from "@/features/rooms/data";
 
 // Clínica — 100% real data or an honest empty state, no mock fallback
 // anywhere in this tree (see CLAUDE.md task scope: "cero fallbacks mock").
@@ -18,25 +20,33 @@ import { PrimaryLocationSection } from "@/features/clinic/primary-location-secti
 // in one vertical page, each independently self-contained, visually
 // unchanged from the approved design — a card showing less because a
 // backend piece (invitations, membership status RPC, professional_profiles
-// RPC, rooms) doesn't exist yet is the correct, honest state, not a bug
-// (see task scope, section 13).
+// RPC) doesn't exist yet is the correct, honest state, not a bug (see task
+// scope, section 13). Consultorios (below) is the one section with real
+// INSERT/UPDATE wired from day one — see the rooms migration and
+// ConsultoriosSection's own comment; no extra client-side role gate here
+// beyond the rest of this file's own convention (this whole route is
+// already Clinic Admin only, see src/app/clinica/page.tsx's
+// allowedRoles={["clinic-admin"]}) — rooms_insert_admin/rooms_update_admin
+// RLS is the real enforcement either way.
 export function ClinicSettingsScreen({
   clinic,
   location,
   members,
   selfMember,
+  rooms,
 }: {
   clinic: ClinicDetail;
   location: PrimaryLocation | null;
   members: TeamMember[];
   selfMember: TeamMember | null;
+  rooms: Room[];
 }) {
   return (
     <div className="flex flex-col gap-6">
       <InformacionGeneralSection clinic={clinic} location={location} />
       <EquipoSection members={members} />
       <MiPerfilProfesionalSection selfMember={selfMember} />
-      <ConsultoriosSection />
+      <ConsultoriosSection clinicId={clinic.id} initialRooms={rooms} />
     </div>
   );
 }
@@ -564,29 +574,208 @@ function MiPerfilProfesionalSection({ selfMember }: { selfMember: TeamMember | n
   );
 }
 
-// 4. Consultorios — no tabla real todavía (ver task scope, sección 8):
-// estado vacío honesto, nunca consultorios inventados. "+ Agregar
-// consultorio" se mantiene visible por paridad de diseño, pero
-// deshabilitado — no hay nada real que crear todavía.
-function ConsultoriosSection() {
+// 4. Consultorios — real, tenant-scoped catalog (public.rooms, see the
+// rooms migration) backing "Nueva cita"'s Consultorio picker (see
+// real-new-appointment-modal.tsx/real-appointment-detail-modal.tsx, which
+// read the active names from this same table instead of
+// dashboard/mock-data.ts's old ROOMS). Same list/actions pattern already
+// used for Configuración's own Tratamientos section
+// (src/features/treatments/treatments-section.tsx) — reused here, not
+// duplicated into a second copy under /configuracion (see this task's own
+// scope): same card/divide-y-list/StatusBadge visual language as Equipo
+// above, same inline add/rename forms, same active=false lifecycle (no
+// physical delete — a room that already backs an appointment's `room`
+// snapshot must stay findable).
+function ConsultoriosSection({ clinicId, initialRooms }: { clinicId: string; initialRooms: Room[] }) {
+  const [rooms, setRooms] = useState(initialRooms);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const startAdd = () => {
+    setError(null);
+    setNewName("");
+    setAdding(true);
+  };
+
+  const cancelAdd = () => {
+    setAdding(false);
+    setNewName("");
+  };
+
+  const handleCreate = async (e: FormEvent) => {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name || creating) return;
+    setCreating(true);
+    setError(null);
+    const outcome = await createRoom(clinicId, name);
+    setCreating(false);
+    if (outcome.status === "error") {
+      setError(outcome.message);
+      return;
+    }
+    setRooms((prev) => [...prev, outcome.room].sort((a, b) => a.name.localeCompare(b.name)));
+    setAdding(false);
+    setNewName("");
+  };
+
+  const startEdit = (room: Room) => {
+    setError(null);
+    setEditingId(room.id);
+    setEditingName(room.name);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditingName("");
+  };
+
+  const handleRename = async (e: FormEvent, room: Room) => {
+    e.preventDefault();
+    const name = editingName.trim();
+    if (!name || savingId) return;
+    if (name === room.name) {
+      cancelEdit();
+      return;
+    }
+    setSavingId(room.id);
+    setError(null);
+    const outcome = await renameRoom(room.id, name);
+    setSavingId(null);
+    if (outcome.status === "error") {
+      setError(outcome.message);
+      return;
+    }
+    setRooms((prev) => prev.map((r) => (r.id === room.id ? { ...r, name } : r)).sort((a, b) => a.name.localeCompare(b.name)));
+    cancelEdit();
+  };
+
+  const handleToggleActive = async (room: Room) => {
+    setSavingId(room.id);
+    setError(null);
+    const outcome = await setRoomActive(room.id, !room.active);
+    setSavingId(null);
+    if (outcome.status === "error") {
+      setError(outcome.message);
+      return;
+    }
+    setRooms((prev) => prev.map((r) => (r.id === room.id ? { ...r, active: !r.active } : r)));
+  };
+
   return (
     <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold">Consultorios</h2>
-        <button
-          type="button"
-          disabled
-          title="La gestión de consultorios todavía no está disponible."
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80 opacity-50 disabled:cursor-not-allowed"
-        >
-          <PlusIcon className="size-3.5" />
-          Agregar consultorio
-        </button>
+        {!adding && (
+          <button
+            type="button"
+            onClick={startAdd}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80 hover:bg-foreground/5"
+          >
+            <PlusIcon className="size-3.5" />
+            Agregar consultorio
+          </button>
+        )}
       </div>
 
-      <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-        Aún no hay consultorios configurados.
-      </p>
+      {adding && (
+        <form onSubmit={handleCreate} className="mt-4 flex items-center gap-2">
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Nombre del consultorio"
+            autoFocus
+            className={FIELD_CLASS}
+          />
+          <button
+            type="submit"
+            disabled={!newName.trim() || creating}
+            className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {creating ? "Guardando…" : "Guardar"}
+          </button>
+          <button
+            type="button"
+            onClick={cancelAdd}
+            disabled={creating}
+            className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium text-foreground/70 hover:bg-foreground/5 disabled:opacity-40"
+          >
+            Cancelar
+          </button>
+        </form>
+      )}
+
+      {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+
+      {rooms.length === 0 ? (
+        <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+          Aún no hay consultorios configurados.
+        </p>
+      ) : (
+        <ul className="mt-4 divide-y divide-border overflow-hidden rounded-xl border border-border">
+          {rooms.map((room) => (
+            <li key={room.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              {editingId === room.id ? (
+                <form onSubmit={(e) => handleRename(e, room)} className="flex flex-1 items-center gap-2">
+                  <input
+                    type="text"
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    autoFocus
+                    className={FIELD_CLASS}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!editingName.trim() || savingId === room.id}
+                    className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {savingId === room.id ? "Guardando…" : "Guardar"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelEdit}
+                    disabled={savingId === room.id}
+                    className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium text-foreground/70 hover:bg-foreground/5 disabled:opacity-40"
+                  >
+                    Cancelar
+                  </button>
+                </form>
+              ) : (
+                <>
+                  <p className="min-w-0 truncate text-sm font-medium">{room.name}</p>
+                  <div className="flex items-center gap-3">
+                    <StatusBadge active={room.active} />
+                    <button
+                      type="button"
+                      onClick={() => startEdit(room)}
+                      disabled={savingId === room.id}
+                      className="text-xs font-medium text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleActive(room)}
+                      disabled={savingId === room.id}
+                      className={`text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+                        room.active ? "text-danger/80" : "text-primary"
+                      }`}
+                    >
+                      {savingId === room.id ? "Guardando…" : room.active ? "Desactivar" : "Reactivar"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

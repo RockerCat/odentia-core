@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { BellIcon, CalendarIcon, MapPinIcon } from "@/components/shell/icons";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import type { Treatment } from "@/features/treatments/data";
+import { TratamientosSection } from "@/features/treatments/treatments-section";
 import { AusenciasAdminSection } from "./ausencias-admin-section";
 import {
   AGENDA_INTERVAL_OPTIONS,
@@ -21,7 +23,20 @@ import {
 // UI/UX only, local mock state, nothing persisted, no backend (see task
 // scope). Does not duplicate clinic identity/team/subscription/billing,
 // which already live in their own screens (Clínica, Mi Suscripción).
-export function SettingsScreen() {
+//
+// Tratamientos (below, full width) is the one REAL section on this
+// otherwise-mock screen — see TratamientosSection's own comment for why
+// clinicId/canManageTreatments come from src/app/configuracion/page.tsx's
+// real resolveClinicContext() rather than this screen's own useRole().
+export function SettingsScreen({
+  clinicId = null,
+  initialTreatments = [],
+  canManageTreatments = false,
+}: {
+  clinicId?: string | null;
+  initialTreatments?: Treatment[];
+  canManageTreatments?: boolean;
+}) {
   const [appointmentDuration, setAppointmentDuration] = useState<AppointmentDurationMinutes>(
     SETTINGS_DEFAULTS.appointmentDuration,
   );
@@ -61,6 +76,10 @@ export function SettingsScreen() {
           clinic, not just one of the three settings above, so it doesn't
           share the 3-column row (see task scope). */}
       <AusenciasAdminSection />
+
+      {/* Third row, full width — same reasoning as Ausencias: a variable-
+          length treatment list doesn't fit the fixed 3-column row above. */}
+      <TratamientosSection clinicId={clinicId} initialTreatments={initialTreatments} canManage={canManageTreatments} />
     </div>
   );
 }

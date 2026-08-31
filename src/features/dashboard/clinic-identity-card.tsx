@@ -9,12 +9,16 @@ import { CURRENT_USER } from "@/lib/current-user";
 // SaaS for Clinics): a card above the KPI grid identifying which clinic
 // this is, same bordered-card language as the rest of Agenda's right
 // column. Vertical composition on purpose — the logo reads as the clinic's
-// own identity, not a small inline thumbnail — with object-contain (never
-// object-cover) so horizontal, square, or vertical logos alike show in
-// full, uncropped. Capped well under 100% of its box (~62%, after a first
-// pass at ~82%) so it stays clearly secondary to Odentia's own sidebar
-// logo — Odentia is the platform brand, this is just the current clinic's
-// context.
+// own identity, not a small inline thumbnail.
+//
+// The logo box is a fixed square (not a wide/short rectangle) with the img
+// sized to h-full w-full object-contain, so object-contain does real work:
+// a horizontal logo is bound by the box's width (full width, auto height);
+// a square or vertical logo is bound by its height (full height, auto
+// width) and reads noticeably larger than a horizontal one would in the
+// same box — without ever cropping or stretching either shape. Sized well
+// under Odentia's own sidebar logo so it stays clearly secondary — Odentia
+// is the platform brand, this is just the current clinic's context.
 //
 // This is identity/branding chrome, not Agenda feature content (unlike
 // AppointmentsCard/SummaryCards, which stay on mock data) — see
@@ -28,7 +32,7 @@ export function ClinicIdentityCard() {
 
   return (
     <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-background px-5 py-5">
-      <div className="flex h-16 w-full items-center justify-center sm:h-20">
+      <div className="flex h-20 w-20 items-center justify-center sm:h-24 sm:w-24">
         <ClinicLogo clinicName={clinicName} clinicLogoUrl={clinicLogoUrl} />
       </div>
       <p className="max-w-full truncate text-center text-sm font-medium text-foreground">{clinicName}</p>
@@ -56,7 +60,7 @@ function ClinicLogo({ clinicName, clinicLogoUrl }: { clinicName: string; clinicL
     <img
       src={clinicLogoUrl}
       alt={`Logo de ${clinicName}`}
-      className="max-h-[62%] max-w-[62%] object-contain"
+      className="h-full w-full object-contain"
       onError={() => setFailed(true)}
     />
   );
