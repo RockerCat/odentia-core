@@ -5,6 +5,7 @@ import { Combobox } from "@/components/combobox";
 import { UserAvatar } from "@/components/user-avatar";
 import { CalendarIcon, ClockIcon, CloseIcon, FlagIcon, MapPinIcon, NoteIcon } from "@/components/shell/icons";
 import { FIELD_CLASS, PopoverFieldRow, TimePopoverContent } from "./appointment-detail-modal";
+import { isPastSlot } from "./real-format";
 import { DEFAULT_APPOINTMENT_DURATION, TIME_SLOTS } from "./schedule-config";
 import { WeekDayPickerContent } from "./real-week-day-picker";
 import type { WeekDay } from "./real-week";
@@ -302,6 +303,7 @@ export function RealNewAppointmentModal({
                 <TimePopoverContent
                   time={time || TIME_SLOTS[0]}
                   durationMinutes={durationMinutes}
+                  isSlotDisabled={dayKey ? (slot) => isPastSlot(dayKey, slot) : undefined}
                   onSave={async (patch) => {
                     setTime(patch.time);
                     setDurationMinutes(patch.durationMinutes);

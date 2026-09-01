@@ -115,6 +115,27 @@ export async function fetchAppointmentsForRange(
   return mapRows(supabase, data ?? []);
 }
 
+// Single appointment by id, scoped to clinic_id — used by the real
+// "Iniciar/Continuar atención" route (see
+// src/app/agenda/atencion/[appointmentId]/page.tsx) to reload the exact
+// same Cita on a refresh, never trusting a client-supplied clinic match.
+export async function fetchAppointmentById(
+  supabase: SupabaseClient,
+  clinicId: string,
+  appointmentId: string,
+): Promise<Appointment | null> {
+  const { data, error } = await supabase
+    .from("appointments")
+    .select(APPOINTMENT_COLUMNS)
+    .eq("clinic_id", clinicId)
+    .eq("id", appointmentId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const [appointment] = await mapRows(supabase, [data]);
+  return appointment;
+}
+
 export async function fetchAppointmentsForPatient(
   supabase: SupabaseClient,
   clinicId: string,

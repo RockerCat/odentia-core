@@ -2,6 +2,19 @@
 // the mock's Appointment carried pre-formatted `day`/`time` strings
 // (mock-data.ts's WEEK_APPOINTMENTS); the real Appointment only carries a
 // single ISO `startsAt` timestamptz, so these replace that formatting.
+//
+// Deliberately no "use client" here: toBoardProfessional is a plain data
+// mapper (no hooks/DOM), and it's called from a Server Component
+// (/agenda/atencion/[appointmentId]/page.tsx) as well as client ones —
+// it used to live in real-appointments-board.tsx, which IS "use client",
+// and Next.js's RSC boundary treats every export of a "use client" module
+// as a client reference, not just its components — calling a plain
+// function from that module server-side throws "Attempted to call X()
+// from the server but X is on the client", regardless of the function's
+// own body having no client-only dependency. Moved here instead of
+// duplicated inline.
+
+import type { ClinicalProfessional } from "./appointments-data";
 
 const TIME_FORMATTER = new Intl.DateTimeFormat("es-CO", { hour: "numeric", minute: "2-digit", hour12: true });
 const DATE_FORMATTER = new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "short" });
@@ -46,9 +59,46 @@ export function isPastSlot(dayKey: string, slot: string): boolean {
   return slotDateTime(dayKey, slot).getTime() < Date.now();
 }
 
+// Calendar-day-only check for date pickers (WeekDayPickerContent), which
+// select a day with no time attached yet — today itself is never past here
+// even seconds before midnight; individual slots within today are what
+// isPastSlot above disables. The single real "no past appointments" rule
+// this codebase enforces (see appointments-actions.ts's own isPastInstant,
+// the actual source of truth checked again on every create/reschedule) is
+// deliberately mirrored here at the UI layer so invalid choices are
+// unselectable rather than merely rejected after the fact.
+export function isPastDayKey(dayKey: string): boolean {
+  const [year, month, date] = dayKey.split("-").map(Number);
+  const startOfDay = new Date(year, month - 1, date);
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  return startOfDay.getTime() < startOfToday.getTime();
+}
+
 export function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/);
   const first = parts[0]?.[0] ?? "";
   const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "";
   return (first + last).toUpperCase() || "?";
+}
+
+export type BoardProfessional = {
+  professionalProfileId: string;
+  name: string;
+  initials: string;
+  specialty: string;
+  avatarUrl: string | null;
+  defaultAppointmentDurationMinutes: number | null;
+};
+
+export function toBoardProfessional(p: ClinicalProfessional): BoardProfessional {
+  const name = `${p.firstName} ${p.lastName}`.trim();
+  return {
+    professionalProfileId: p.professionalProfileId,
+    name,
+    initials: initialsOf(name),
+    specialty: p.specialtyName ?? "Sin especialidad",
+    avatarUrl: p.avatarUrl,
+    defaultAppointmentDurationMinutes: p.defaultAppointmentDurationMinutes,
+  };
 }

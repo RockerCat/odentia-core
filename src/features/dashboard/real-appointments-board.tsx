@@ -11,7 +11,7 @@ import { PatientRecordModal } from "@/features/patients/patient-record-modal";
 import { AnchoredPopover } from "./appointment-detail-modal";
 import type { Appointment, AppointmentStatus, ClinicalProfessional } from "./appointments-data";
 import { REAL_STATUS_LABELS, REAL_STATUS_STYLES } from "./real-status";
-import { dateKeyOf, initialsOf, isPastSlot } from "./real-format";
+import { dateKeyOf, isPastSlot, toBoardProfessional, type BoardProfessional } from "./real-format";
 import type { WeekDay } from "./real-week";
 import { TIME_SLOTS } from "./schedule-config";
 import { RealAppointmentDetailModal } from "./real-appointment-detail-modal";
@@ -31,26 +31,13 @@ import { RealNewAppointmentModal } from "./real-new-appointment-modal";
 // had to worry about — see appointments-card.tsx/summary-cards.tsx's own
 // separate `allAppointments` state).
 
-export type BoardProfessional = {
-  professionalProfileId: string;
-  name: string;
-  initials: string;
-  specialty: string;
-  avatarUrl: string | null;
-  defaultAppointmentDurationMinutes: number | null;
-};
-
-export function toBoardProfessional(p: ClinicalProfessional): BoardProfessional {
-  const name = `${p.firstName} ${p.lastName}`.trim();
-  return {
-    professionalProfileId: p.professionalProfileId,
-    name,
-    initials: initialsOf(name),
-    specialty: p.specialtyName ?? "Sin especialidad",
-    avatarUrl: p.avatarUrl,
-    defaultAppointmentDurationMinutes: p.defaultAppointmentDurationMinutes,
-  };
-}
+// BoardProfessional/toBoardProfessional now live in real-format.ts (a
+// plain module, no "use client") so a Server Component can call the
+// mapper directly — see that file's own comment. Re-exported here so this
+// board's existing client-side importers (real-summary-cards.tsx,
+// real-clinical-encounter-screen.tsx) don't need to change where they
+// import from.
+export { toBoardProfessional, type BoardProfessional };
 
 const LEGEND = [
   { label: "Libre", className: "border border-dashed border-border" },

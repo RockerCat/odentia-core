@@ -29,7 +29,7 @@ import {
   type AppointmentPatch,
 } from "./appointments-actions";
 import { fetchAppointmentsForPatient, type Appointment, type AppointmentStatus } from "./appointments-data";
-import { dateKeyOf, endTimeIso, formatDateLabel, formatTimeLabel } from "./real-format";
+import { dateKeyOf, endTimeIso, formatDateLabel, formatTimeLabel, isPastSlot } from "./real-format";
 import { CHANGEABLE_STATUSES, REAL_HISTORY_STATUS_BADGE_CLASS, REAL_STATUS_LABELS, REAL_STATUS_STYLES } from "./real-status";
 import { getWeekDaysContaining } from "./real-week";
 import { WeekDayPickerContent } from "./real-week-day-picker";
@@ -44,9 +44,21 @@ import { WeekDayPickerContent } from "./real-week-day-picker";
 // a fresh, real-data implementation, but the JSX/classNames/labels below
 // are a deliberate 1:1 port of the approved demo's own layout — no redesign.
 //
-// Deliberately NOT ported: "Iniciar atención" (the real clinical-encounter/
-// Atención integration is explicitly the next iteration — ClinicalEncounterScreen
-// only understands the old mock Appointment shape and isn't touched here).
+// "Iniciar atención" (ported from the demo's PlayCircleIcon/bg-primary CTA,
+// same slot/classes) sets the appointment `in_progress` (real backend, via
+// updateAppointment) and navigates to /agenda/atencion/[appointmentId] —
+// the real, routed port of the demo's ClinicalEncounterScreen (see
+// real-clinical-encounter-screen.tsx and that route's page.tsx). Earlier
+// this pushed straight to /pacientes/[id]/historia-clinica instead (there
+// was no real attention screen yet) — that read as a silent redirect away
+// from "Iniciar atención" instead of an actual attention screen, since
+// Historia Clínica ignored the appointmentId and always opened on its own
+// "Resumen" tab. appointmentId is now the route param itself (not a query
+// string the destination has to remember to read), so a refresh
+// reconstructs the same Cita/Odontograma from Postgres, and reopening an
+// `in_progress` Cita's detail and clicking again ("Continuar atención")
+// lands on that exact same URL — never a second attention or a duplicate
+// public.patient_clinical_encounters row.
 
 type FieldKey = "date" | "time" | "status" | "room" | "reason" | "phone" | "notes";
 
@@ -94,6 +106,7 @@ export function RealAppointmentDetailModal({
   const [actionError, setActionError] = useState<string | null>(null);
   const [reactivating, setReactivating] = useState(false);
   const [markingArrived, setMarkingArrived] = useState(false);
+  const [startingEncounter, setStartingEncounter] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const leftColumnRef = useRef<HTMLDivElement>(null);
   const isAssistant = role === "assistant";
@@ -165,10 +178,21 @@ export function RealAppointmentDetailModal({
   const professionalName = professional?.name ?? "Sin asignar";
 
   const isCancelled = appointment.status === "cancelled";
+  const isTerminal = isCancelled || appointment.status === "completed" || appointment.status === "no_show";
+  // A past appointment that never started and was never resolved either
+  // (the "Sin cerrar" anomaly — see CLAUDE.md's Appointment Lifecycle) is
+  // not a valid target to "start": once it's actually in_progress, its
+  // original start time having passed no longer matters (continuing an
+  // attention that's already running is always allowed).
+  const isPastUnresolved = !isInProgress && !isTerminal && new Date(appointment.startsAt).getTime() < now.getTime();
   const canMarkArrived = appointment.status === "confirmed" && !appointment.patientArrivedAt;
   const showReactivate = isCancelled;
   const showMarkArrived = !isCancelled && isAssistant && canMarkArrived;
-  const showPrimaryCta = showReactivate || showMarkArrived;
+  // Starting/continuing a clinical encounter is a clinical action — never
+  // for Assistant (see CLAUDE.md's Roles: Assistant supports operations,
+  // it doesn't attend patients).
+  const showStartEncounter = !isAssistant && !isTerminal && !isPastUnresolved;
+  const showPrimaryCta = showReactivate || showMarkArrived || showStartEncounter;
   const showCancelCta = !(isAssistant && isInProgress);
   const footerButtonCount = (showCancelCta ? 1 : 0) + 1 + (showPrimaryCta ? 1 : 0);
   const footerGridClass =
@@ -178,9 +202,15 @@ export function RealAppointmentDetailModal({
     ? reactivating
       ? "Reactivando…"
       : "Reactivar cita"
-    : markingArrived
-      ? "Registrando…"
-      : "Paciente llegó";
+    : showMarkArrived
+      ? markingArrived
+        ? "Registrando…"
+        : "Paciente llegó"
+      : startingEncounter
+        ? "Iniciando…"
+        : isInProgress
+          ? "Continuar atención"
+          : "Iniciar atención";
 
   const handlePrimaryCta = async () => {
     setActionError(null);
@@ -209,6 +239,26 @@ export function RealAppointmentDetailModal({
       } finally {
         setMarkingArrived(false);
       }
+      return;
+    }
+    // showStartEncounter: move the Cita to `in_progress` (never
+    // `completed` — that only happens when the clinical encounter itself
+    // finishes, see CLAUDE.md) and hand off to the real attention screen
+    // (/agenda/atencion/[id]). Already-in-progress appointments skip the
+    // write and just continue there.
+    setStartingEncounter(true);
+    try {
+      if (!isInProgress) {
+        const result = await updateAppointment(appointment.id, { status: "in_progress" });
+        if (result.status === "error") {
+          setActionError(result.message);
+          return;
+        }
+        onUpdated({ ...appointment, status: "in_progress" });
+      }
+      router.push(`/agenda/atencion/${appointment.id}`);
+    } finally {
+      setStartingEncounter(false);
     }
   };
 
@@ -378,7 +428,7 @@ export function RealAppointmentDetailModal({
               <button
                 type="button"
                 onClick={handlePrimaryCta}
-                disabled={reactivating || markingArrived}
+                disabled={reactivating || markingArrived || startingEncounter}
                 className="flex flex-col items-center gap-1 rounded-lg bg-primary px-2 py-2.5 text-center text-[11px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
               >
                 <PlayCircleIcon className="size-[18px]" />
@@ -475,6 +525,7 @@ function ViewDetails({
         <TimePopoverContent
           time={formatTimeLabel(appointment.startsAt)}
           durationMinutes={duration}
+          isSlotDisabled={(slot) => isPastSlot(currentDayKey, slot)}
           onSave={async (patch) => {
             const [, hourStr, minuteStr, period] = /^(\d{1,2}):(\d{2}) (AM|PM)$/.exec(patch.time) ?? [];
             let hour = Number(hourStr ?? 0) % 12;

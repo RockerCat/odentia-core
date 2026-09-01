@@ -125,6 +125,19 @@ see Roles below). Both share one role-gating hook,
 `src/components/shell/use-route-guard.ts`; add new gated routes through it
 rather than duplicating auth-redirect logic per shell.
 
+The real Agenda lives under `src/features/dashboard/real-*`
+(`RealAgendaScreen`/`RealAppointmentsBoard`/`RealAppointmentDetailModal`/
+`RealNewAppointmentModal`/`RealSummaryCards`) — separate, distinctly-named
+components from the still-mock ones they were ported from; never share one
+between a converted real consumer and a still-mock one. "Iniciar/Continuar
+atención" moves a Cita to `in_progress` and opens
+`/agenda/atencion/[appointmentId]` (`RealClinicalEncounterScreen`), a real
+routed port of the approved clinical-encounter design, keyed by the
+appointment id so a refresh reconstructs it from Postgres rather than
+client state. "Finalizar atención" always persists the encounter
+(`public.patient_clinical_encounters`, linked 1:1 to its Cita via a unique
+`appointment_id`) before marking the Cita `completed`, never the reverse.
+
 ---
 
 # Multi-Tenant
@@ -302,14 +315,21 @@ Rules:
   - `Cancelada` always happens before the encounter takes place.
   - `No asistió` means the Patient genuinely did not show up.
 
-**Current implementation note:** `AppointmentStatus`
-(`confirmed | pending | in-progress | completed | cancelled | no-show`) is a
-simplified stand-in for this model — depending on context, `pending`/
-`confirmed` today overload meanings from both lifecycles above. Don't deepen
-that conflation in new work; prefer an additive field scoped to where it's
-actually needed (e.g. the Patient portal's own `attendanceConfirmed`,
-separate from `status`) over further overloading `status`, until this can
-be modeled properly.
+**Current implementation note:** the real Agenda's `AppointmentStatus`
+(`src/features/dashboard/appointments-data.ts`: `scheduled | confirmed |
+patient_arrived | waiting_room | in_progress | completed | no_show |
+cancelled`) already matches this lifecycle — use it, and
+`patient_clinical_encounters.appointment_id`, for any new real
+appointment/encounter work. `patient_arrived`/`waiting_room`/`no_show` are
+declared but have no dedicated UI action yet. The still-mock screens (the
+Patient Portal above all) keep their own separate, flattened 6-value
+`AppointmentStatus` (`confirmed | pending | in-progress | completed |
+cancelled | no-show`, hyphenated) — depending on context, `pending`/
+`confirmed` overload meanings from both lifecycles above there. Don't deepen
+that conflation in new mock-side work; prefer an additive field scoped to
+where it's actually needed (e.g. the Patient portal's own
+`attendanceConfirmed`, separate from `status`) until that screen's own real
+conversion lands.
 
 ---
 

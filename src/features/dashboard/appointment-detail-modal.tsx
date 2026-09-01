@@ -930,11 +930,20 @@ export function CalendarPopoverContent({
 export function TimePopoverContent({
   time,
   durationMinutes,
+  isSlotDisabled,
   onSave,
   onCancel,
 }: {
   time: string;
   durationMinutes: number;
+  // Optional, additive — omitted by every mock/demo consumer of this file,
+  // so their rendered options are byte-for-byte unchanged. Only the real
+  // Agenda screens (real-new-appointment-modal.tsx,
+  // real-appointment-detail-modal.tsx) pass it, to gray out/disable past
+  // time slots per the single real "no past appointments" rule (see
+  // real-format.ts's isPastSlot/isPastDayKey) without a second copy of
+  // this picker's markup.
+  isSlotDisabled?: (slot: string) => boolean;
   onSave: (patch: { time: string; durationMinutes: number }) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -967,7 +976,7 @@ export function TimePopoverContent({
           className={`${FIELD_CLASS} mt-1`}
         >
           {TIME_SLOTS.map((slot) => (
-            <option key={slot} value={slot}>
+            <option key={slot} value={slot} disabled={isSlotDisabled?.(slot)}>
               {slot}
             </option>
           ))}

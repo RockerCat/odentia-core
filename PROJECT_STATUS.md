@@ -2,7 +2,7 @@
 
 # Odentia Core
 
-**Last Updated:** 2026-08-27
+**Last Updated:** 2026-09-01
 
 ---
 
@@ -25,11 +25,16 @@ every conversion is:
 > **REAL DATA OR HONEST EMPTY STATE — never use a mock as fallback.**
 
 Converted so far (real Supabase Auth + Postgres + Storage, real RLS, tenant-isolated):
-real authentication, real clinic onboarding, `/clinica`, `/pacientes`, and
-`/pacientes/[id]/historia-clinica` (all five tabs, plus a real PDF export). Everything
-else (Agenda, `/admin`, Configuración, Mi Suscripción, Reportes, the Patient Portal)
-is still exactly the Phase 1 mock prototype, deliberately untouched — see each
-section below.
+real authentication, real clinic onboarding, `/clinica` (including its Consultorios
+catalog), `/pacientes`, `/pacientes/[id]/historia-clinica` (all five tabs, plus a real
+PDF export), and — as of this update — **Agenda**: the weekly board, KPI cards, cita
+CRUD (create/reschedule/cancel/reactivate/"Paciente llegó"), and the real
+"Iniciar/Continuar atención" → "Finalizar atención" flow, which is what now actually
+creates real Atención rows for Historia Clínica. Configuración's own Tratamientos
+section is real too (the catalog Agenda's "Tratamiento" picker reads). Everything else
+(`/admin`, the rest of Configuración, Mi Suscripción, Reportes, the Patient Portal) is
+still exactly the Phase 1 mock prototype, deliberately untouched — see each section
+below.
 
 ---
 
@@ -38,7 +43,8 @@ section below.
 Keep converting Odentia Core from the validated mock prototype to a real,
 multi-tenant Supabase backend — one feature vertical at a time, always real data or
 an honest empty state, never a redesign of the already-approved UI, and never
-breaking a still-mock screen (Agenda above all) while its own conversion is pending.
+breaking a still-mock screen (the Patient Portal above all — now the largest
+remaining surface) while its own conversion is pending.
 
 ---
 
@@ -53,9 +59,9 @@ breaking a still-mock screen (Agenda above all) while its own conversion is pend
   (`src/lib/supabase/proxy.ts`), the login flow, and the shell's own identity display.
 - **Compatibility bridge**: the real resolved role is written into the legacy mock
   `src/features/auth/session.ts` / `RoleContext` store
-  (`src/features/session/role-bridge.ts`) so every still-mock screen (Agenda above
-  all) keeps working completely unmodified while its own real-data conversion is
-  still pending. New real features must read `resolveClinicContext()` directly and
+  (`src/features/session/role-bridge.ts`) so every still-mock screen (the Patient
+  Portal above all) keeps working completely unmodified while its own real-data
+  conversion is still pending. New real features must read `resolveClinicContext()` directly and
   never derive permissions from `RoleContext`/`useRole()`/the DEV role switcher.
 - `src/dev/` (role switcher, effective-dentists mock resolver) is still present —
   still used by every not-yet-converted mock screen — and remains a disposable,
@@ -82,7 +88,11 @@ breaking a still-mock screen (Agenda above all) while its own conversion is pend
   specialty). **Mi perfil profesional** (real display of the caller's own
   professional profile; editing intentionally disabled — `professional_profiles` has
   no INSERT/UPDATE RLS policy yet, reserved for a future column-whitelisted RPC).
-  **Consultorios** — still a placeholder; no real table exists for it yet.
+  **Consultorios** — real, tenant-scoped catalog (`public.rooms`): add/rename, no
+  physical delete (`active = false` instead, since a past appointment's `room` is a
+  snapshot that must stay findable). Backs Agenda's own "Consultorio" picker (see
+  Agenda below) — same list/actions pattern as Configuración's Tratamientos section,
+  reused rather than duplicated.
 
 ## Pacientes (real, Clinic Admin/Dentist/Assistant)
 
@@ -115,10 +125,11 @@ breaking a still-mock screen (Agenda above all) while its own conversion is pend
   {profesional}" from the most recently updated finding.
 - **Atenciones** — real, `patient_clinical_encounters` (motivo, diagnóstico,
   tratamiento, notas, profesional, fecha/hora). Read-only in this screen by design:
-  the approved UI has no "register" action here — encounters are meant to be created
-  by completing a real appointment in Agenda, which is still fully mock, so no second
-  creation flow was invented. The write RPC exists and is permission-gated, ready for
-  that future Agenda integration.
+  the approved UI has no "register" action here — rows are created by "Finalizar
+  atención" in Agenda's real Atención flow (see Agenda below), never a second
+  creation flow. Each row is now linked to its originating Cita via a nullable,
+  unique `appointment_id` (historical/manual encounters keep it null) — at most one
+  encounter per Cita, enforced by a partial unique index, not just app logic.
 - **Documentos** — real, `patient_clinical_documents` + a private `clinical-documents`
   Storage bucket (20MB limit; JPG/PNG/WEBP/PDF/DOC/DOCX). Two-column layout (list +
   preview: images `object-contain`, PDFs embedded, DOC/DOCX as a file-info card).
@@ -134,7 +145,62 @@ breaking a still-mock screen (Agenda above all) while its own conversion is pend
   table INSERT/UPDATE/DELETE — `clinic_id` and the acting professional are always
   resolved server-side from `auth.uid()`, never client-supplied.
 - Gated to Clinic Admin/Dentist/Assistant roles today; not yet built: Patient access
-  to this screen, and any Agenda-driven creation of a real Atención.
+  to this screen.
+
+---
+
+## Agenda (real, Clinic Admin/Dentist/Assistant)
+
+- `/agenda` — real, tenant-scoped weekly appointment board
+  (`RealAppointmentsBoard`/`RealAgendaScreen`) + KPI cards (`RealSummaryCards`: Citas
+  hoy / Confirmadas / Pendientes de confirmar are real counts scoped to the caller —
+  a Dentist sees only their own; "Alertas" is an honest `0`/"Sin alertas aún", no
+  backing table yet). Same approved visual design as the Phase 1 demo — separate,
+  distinctly-named `Real*` components from the still-mock `appointments-card.tsx`/
+  `summary-cards.tsx` they were ported from, never shared.
+- **Cita CRUD** — create (`RealNewAppointmentModal`, Paciente/Profesional/Consultorio/
+  Tratamiento all real catalogs), reschedule/cancel/reactivate/change status/
+  "Paciente llegó" (`RealAppointmentDetailModal`). Real 8-value status vocabulary
+  (`scheduled | confirmed | patient_arrived | waiting_room | in_progress | completed
+  | no_show | cancelled`, see `appointments-data.ts`) — closer to CLAUDE.md's actual
+  Cita lifecycle than the mock's own flattened 6-value stand-in;
+  `patient_arrived`/`waiting_room`/`no_show` are declared but have no dedicated UI
+  action yet (same gap the schema already flagged).
+- **No past appointments, one rule, everywhere**: `appointments-actions.ts`'s
+  `isPastInstant` is the single backend source of truth (rejects any past `starts_at`
+  on create or reschedule); `real-format.ts`'s `isPastSlot`/`isPastDayKey` mirror it
+  at the UI layer (past days/times are disabled, not just rejected after submit) for
+  every real date/time picker — Agenda's "Nueva cita", the reschedule editor, and
+  Atención's own "Agendar próxima cita" all resolve to the same `RealNewAppointmentModal`,
+  so there is exactly one implementation, not one per screen.
+- **Iniciar/Continuar atención → Finalizar atención (real)**: the detail modal's
+  primary CTA moves the Cita to `in_progress` and opens
+  `/agenda/atencion/[appointmentId]` — a real, routed, full-screen port of the
+  approved clinical-encounter design (`RealClinicalEncounterScreen`), keyed by the
+  appointment id itself (not client state), so a refresh mid-attention reconstructs
+  the exact same Cita/Odontograma from Postgres. Reopening an already-`in_progress`
+  Cita offers "Continuar atención" onto that same URL — never a duplicate.
+  - **Odontograma** inside the attention screen is the SAME real editor Historia
+    Clínica uses (`EditOdontogramaModal`/`public.patient_tooth_findings`) — not a
+    second implementation. It shows the patient's whole cumulative odontogram
+    (there's no per-visit odontogram concept), so a finding from an earlier visit is
+    expected to already show up on a brand-new atención.
+  - **Notas de atención / Procedimientos / Indicaciones / next-appointment answers**
+    stay session-only (no schema field, no acceptance criterion needed one) — same
+    fidelity the approved demo's own "Guardar borrador" already had.
+  - **"Finalizar atención"** persists ONE real `patient_clinical_encounters` row
+    (via `insert_patient_clinical_encounter`, now idempotent by `appointment_id` —
+    a retry or two concurrent tabs can never create a second row) and only THEN
+    marks the Cita `completed` — never the other way around, so a failed write
+    leaves the Cita safely `in_progress` and retryable. Redirects back to `/agenda`
+    afterward, never to Historia Clínica automatically (Historia Clínica just picks
+    the new Atención up next time it's opened, like any other real write).
+- Marketplace card still links out to the real external Marketplace app
+  (`https://odentia-marketplace.vercel.app`) — the card itself stays a mock preview,
+  per Marketplace Independence.
+- Not yet real: `Solicitud de Cita` (Patient-initiated request lifecycle — Patient
+  Portal is still fully mock), a front-desk flow for `patient_arrived`/`waiting_room`,
+  and a "Marcar no asistió" action.
 
 ---
 
@@ -151,29 +217,21 @@ comes.
 - The DEV-only role switcher (`src/dev/`) still exists for fast manual testing of
   every not-yet-converted screen.
 
-## Agenda (the Clinic Admin's operational home) — fully mock
-
-- Weekly appointment board, KPI cards, appointment creation/detail/cancel/"start
-  attention" flow, and the interactive clinical-encounter/odontogram screen — all
-  still 100% mock data. This is the largest remaining conversion; Historia Clínica's
-  Atenciones RPC and Odontograma table were deliberately built ready for it.
-- Marketplace card links out to the real external Marketplace app
-  (`https://odentia-marketplace.vercel.app`) — the card itself is still a mock
-  preview, but the link is real, per Marketplace Independence.
-
 ## Admin (the Superadmin's platform-wide home) — fully mock
 
 - `/admin` — platform KPIs, monthly activity, Marketplace overview, recent-clinics
   list, attention list. Gated to Superadmin; Superadmin is locked out of
   `/agenda`/`/pacientes` at the route level.
 
-## Configuración, Mi Suscripción, Reportes — fully mock
+## Configuración, Mi Suscripción, Reportes — mostly mock
 
 - `/configuracion` (Clinic Admin: clinic-wide agenda defaults/notifications/regional
   prefs; Dentist: personal ausencias + notification prefs only), `/suscripcion`
   (Clinic Admin only, mock plan/billing), `/reportes` (Clinic Admin + Dentist, shared
   screen, Dentist scoped to "own activity only") — all UI/UX only, mock data, no
-  backend yet.
+  backend yet. Exception: Configuración's own **Tratamientos** section is real
+  (`public.treatments`, same list/actions pattern as Clínica's Consultorios) — it
+  backs Agenda's "Tratamiento" picker.
 
 ## Patient Portal — fully mock
 
@@ -212,10 +270,10 @@ Claude MUST:
   ship the matching RLS policy + migration alongside the feature that needs it.
 - Audit GRANTs explicitly (`grant`/`revoke` in the migration) — never assume a
   policy alone is enough; a missing GRANT is a common, silent failure mode here.
-- Keep every still-mock screen (Agenda above all) working completely unmodified
-  during its own pending conversion — never share a component between a converted
-  real consumer and a still-mock one; build a separate, distinctly-named component
-  instead.
+- Keep every still-mock screen (the Patient Portal above all) working completely
+  unmodified during its own pending conversion — never share a component between a
+  converted real consumer and a still-mock one; build a separate, distinctly-named
+  component instead.
 - Preserve the already-approved visual design exactly when converting a screen —
   layout, hierarchy, components, spacing, labels, iconography, UX behavior. Replace
   mock → real data only; never substitute an approved screen with a generic
@@ -255,16 +313,16 @@ Claude MUST NOT:
 
 ## Core
 
-- Dashboard — mock (Agenda for clinic roles, `/admin` for Superadmin); real-data
-  conversion pending.
+- Dashboard — Agenda (clinic roles) is real, see "Agenda (real...)" above;
+  `/admin` (Superadmin) is still mock.
 - Schedule — mock; pending.
 - Calendar — pending.
 - Patients — real (`/pacientes`).
 - Patient Details — real (part of the `/pacientes` detail modal).
 - Medical Records — real, all five tabs (`/pacientes/[id]/historia-clinica`:
-  Resumen, Antecedentes, Odontograma, Atenciones, Documentos, PDF export). Patient
-  access to this screen, and Agenda-driven creation of a real Atención, still
-  pending.
+  Resumen, Antecedentes, Odontograma, Atenciones — now populated by Agenda's real
+  "Finalizar atención" — Documentos, PDF export). Patient access to this screen
+  still pending.
 - Reports — mock; pending.
 - Team — real display only (`/clinica`'s Equipo); invite/manage flows pending.
 - Subscription — mock; pending.
@@ -309,14 +367,17 @@ Priority order:
 3. Onboarding — done, real (Create Practice); Invite Assistant / Forgot Password
    pending.
 4. Clínica — done, real (Información general, Sede, Logo, Equipo, Mi perfil
-   profesional); Consultorios still pending.
+   profesional, Consultorios).
 5. Patients — done, real.
-6. Historia Clínica — done, real, all five tabs + PDF export; Patient access and
-   Agenda-driven Atenciones creation pending.
-7. Agenda — still mock; next major backend conversion.
-8. Patient Portal — still mock; conversion not started.
-9. Reports / Team (invite-and-manage) / Subscription / Settings — still mock;
-   pending.
+6. Historia Clínica — done, real, all five tabs + PDF export, Atenciones now
+   Agenda-driven; Patient access still pending.
+7. Agenda — done, real (board, KPIs, cita CRUD, Iniciar/Continuar/Finalizar
+   atención); front-desk `patient_arrived`/`waiting_room`/no-show actions and
+   Solicitud de Cita still pending.
+8. Patient Portal — still mock; conversion not started; now the largest remaining
+   mock surface.
+9. Reports / Team (invite-and-manage) / Subscription / rest of Settings — still
+   mock; pending.
 10. Marketplace Entry Point — real external link exists; card itself stays a
     preview.
 
@@ -392,10 +453,12 @@ The following features are intentionally postponed:
 Backend integration (Supabase, real authentication, multi-tenant database, file
 storage) is already underway — see Phase 2 above. What's left, roughly in order:
 
-- Agenda's real-data conversion (the largest remaining piece; Historia Clínica's
-  Atenciones/Odontograma were built anticipating it).
-- Patient Portal's real-data conversion.
-- Reports / Team (invite-and-manage) / Subscription / Settings real-data conversion.
+- Patient Portal's real-data conversion (now the largest remaining piece).
+- Reports / Team (invite-and-manage) / Subscription / rest of Settings real-data
+  conversion.
+- Agenda's own remaining gaps: front-desk `patient_arrived`/`waiting_room` flow,
+  "Marcar no asistió", and the real Solicitud de Cita lifecycle (depends on the
+  Patient Portal conversion above).
 - Notifications.
 
 ---

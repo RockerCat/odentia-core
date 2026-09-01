@@ -1,3 +1,4 @@
+import { isPastDayKey } from "./real-format";
 import type { WeekDay } from "./real-week";
 
 // Shared by both real Agenda modals (real-new-appointment-modal.tsx,
@@ -26,13 +27,22 @@ export function WeekDayPickerContent({
     <div className="grid grid-cols-4 gap-1.5">
       {weekDays.map((day) => {
         const active = day.key === currentDayKey;
+        // Same disabled-state classes as the board's own past-slot cells
+        // (real-appointments-board.tsx) — not a new visual treatment.
+        const past = isPastDayKey(day.key);
         return (
           <button
             key={day.key}
             type="button"
+            disabled={past}
+            aria-disabled={past}
             onClick={() => onSelect(day.key)}
             className={`flex flex-col items-center gap-0.5 rounded-lg border px-2 py-1.5 text-xs transition-colors ${
-              active ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border hover:bg-foreground/5"
+              past
+                ? "cursor-not-allowed border-border/60 text-muted-foreground/30"
+                : active
+                  ? "border-primary bg-primary/10 font-semibold text-primary"
+                  : "border-border hover:bg-foreground/5"
             }`}
           >
             <span className="text-[10px] uppercase">{day.shortLabel}</span>
