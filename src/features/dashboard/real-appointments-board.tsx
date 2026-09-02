@@ -10,7 +10,7 @@ import type { Patient } from "@/features/patients/data";
 import { PatientRecordModal } from "@/features/patients/patient-record-modal";
 import { AnchoredPopover } from "./appointment-detail-modal";
 import type { Appointment, AppointmentStatus, ClinicalProfessional } from "./appointments-data";
-import { REAL_STATUS_LABELS, REAL_STATUS_STYLES } from "./real-status";
+import { getDisplayStatus, getStatusStyle, REAL_STATUS_LABELS } from "./real-status";
 import { dateKeyOf, isPastSlot, toBoardProfessional, type BoardProfessional } from "./real-format";
 import type { WeekDay } from "./real-week";
 import { TIME_SLOTS } from "./schedule-config";
@@ -44,6 +44,7 @@ const LEGEND = [
   { label: "Confirmada", className: "bg-primary" },
   { label: "Pendiente", className: "bg-warning" },
   { label: "En curso", className: "bg-info" },
+  { label: "Sin cerrar", className: "bg-noshow" },
   { label: "Cancelada", className: "bg-danger/60" },
 ];
 
@@ -497,7 +498,7 @@ export function RealAppointmentsBoard({
                         <button
                           type="button"
                           onClick={() => setSelectedAppointmentId(appointment.id)}
-                          className={`relative flex h-12 flex-col items-center justify-center rounded-md border px-1 text-center transition-opacity ${REAL_STATUS_STYLES[appointment.status]} ${
+                          className={`relative flex h-12 flex-col items-center justify-center rounded-md border px-1 text-center transition-opacity ${getStatusStyle(getDisplayStatus(appointment))} ${
                             appointment.status === "cancelled" ? "opacity-70" : ""
                           }`}
                         >

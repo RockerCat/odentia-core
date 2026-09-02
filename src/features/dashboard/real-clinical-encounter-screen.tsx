@@ -33,7 +33,7 @@ import { fetchAppointmentsForPatient, type Appointment } from "./appointments-da
 import { OdontogramPreview } from "./odontogram-teeth";
 import type { BoardProfessional } from "./real-appointments-board";
 import { endTimeIso, formatDateLabel, formatTimeLabel, initialsOf } from "./real-format";
-import { REAL_HISTORY_STATUS_BADGE_CLASS, REAL_STATUS_LABELS } from "./real-status";
+import { getDisplayStatus, getHistoryStatusBadgeClass, getStatusLabel } from "./real-status";
 import { RealNewAppointmentModal } from "./real-new-appointment-modal";
 import type { WeekDay } from "./real-week";
 
@@ -564,9 +564,9 @@ export function RealClinicalEncounterScreen({
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xs font-medium">{formatDateLabel(item.startsAt)}</span>
                           <span
-                            className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${REAL_HISTORY_STATUS_BADGE_CLASS[item.status]}`}
+                            className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${getHistoryStatusBadgeClass(getDisplayStatus(item))}`}
                           >
-                            {REAL_STATUS_LABELS[item.status]}
+                            {getStatusLabel(getDisplayStatus(item))}
                           </span>
                         </div>
                         <p className="mt-0.5 truncate text-xs text-muted-foreground">{item.reason ?? "Sin definir"}</p>

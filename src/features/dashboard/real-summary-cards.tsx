@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { BellIcon, CalendarIcon, CheckCircleIcon, ClockIcon, CloseIcon } from "@/components/shell/icons";
 import type { MembershipRole } from "@/features/session/types";
 import type { Appointment, ClinicalProfessional } from "./appointments-data";
-import { REAL_STATUS_LABELS, REAL_STATUS_STYLES } from "./real-status";
+import { getDisplayStatus, getStatusLabel, getStatusStyle } from "./real-status";
 import { formatDateLabel, formatTimeLabel } from "./real-format";
 import { RealAppointmentDetailModal } from "./real-appointment-detail-modal";
 import { toBoardProfessional, type BoardProfessional } from "./real-appointments-board";
@@ -197,8 +197,8 @@ function KpiDetailModal({
                         {appointment.room ? ` · ${appointment.room}` : ""}
                       </p>
                     </div>
-                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${REAL_STATUS_STYLES[appointment.status]}`}>
-                      {REAL_STATUS_LABELS[appointment.status]}
+                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${getStatusStyle(getDisplayStatus(appointment))}`}>
+                      {getStatusLabel(getDisplayStatus(appointment))}
                     </span>
                   </button>
                 </li>

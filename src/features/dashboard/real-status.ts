@@ -1,4 +1,5 @@
-import type { AppointmentStatus } from "./appointments-data";
+import type { Appointment, AppointmentStatus } from "./appointments-data";
+import { endTimeIso } from "./real-format";
 
 // Real 8-value status vocabulary (see CLAUDE.md's Appointment Lifecycle and
 // the appointments migration) — NOT mock-data.ts's flattened 6-value
@@ -59,3 +60,53 @@ export const REAL_HISTORY_STATUS_BADGE_CLASS: Record<AppointmentStatus, string> 
 // dropdown); `patient_arrived`/`waiting_room`/`no_show` have no UI action
 // in this iteration — see the migration's comment.
 export const CHANGEABLE_STATUSES: AppointmentStatus[] = ["confirmed", "scheduled", "in_progress", "completed"];
+
+// CLAUDE.md's Appointment Lifecycle: an in_progress Cita is never
+// auto-completed just because time passed, but one still in_progress more
+// than this long after its scheduled end is an operational anomaly —
+// "Sin cerrar" — not a real DB status, only a derived display value.
+// Centralized here (the single place the real 8-value status vocabulary is
+// already keyed) so Agenda, the appointment detail modal, and every
+// history list read the same grace period and render the same label.
+export const UNRESOLVED_IN_PROGRESS_GRACE_MINUTES = 120;
+
+export type DisplayStatus = AppointmentStatus | "unresolved";
+
+export function isUnresolvedInProgress(
+  appointment: Pick<Appointment, "status" | "startsAt" | "durationMinutes">,
+  now: Date = new Date(),
+): boolean {
+  if (appointment.status !== "in_progress") return false;
+  const graceDeadline =
+    new Date(endTimeIso(appointment.startsAt, appointment.durationMinutes)).getTime() +
+    UNRESOLVED_IN_PROGRESS_GRACE_MINUTES * 60_000;
+  return now.getTime() > graceDeadline;
+}
+
+// Wraps the real `status` with the derived "unresolved" value — the only
+// status this codebase should ever branch display on. The DB status stays
+// "in_progress"; nothing here writes to it.
+export function getDisplayStatus(
+  appointment: Pick<Appointment, "status" | "startsAt" | "durationMinutes">,
+  now: Date = new Date(),
+): DisplayStatus {
+  return isUnresolvedInProgress(appointment, now) ? "unresolved" : appointment.status;
+}
+
+const UNRESOLVED_LABEL = "Sin cerrar";
+// Reuses the existing no_show color token — an operational anomaly, not the
+// live "En curso"/info reading — rather than introduce a new design token.
+const UNRESOLVED_STYLE = "border-noshow/25 bg-noshow/10 text-noshow";
+const UNRESOLVED_HISTORY_BADGE_CLASS = "border-noshow/25 bg-noshow/10 text-noshow";
+
+export function getStatusLabel(status: DisplayStatus): string {
+  return status === "unresolved" ? UNRESOLVED_LABEL : REAL_STATUS_LABELS[status];
+}
+
+export function getStatusStyle(status: DisplayStatus): string {
+  return status === "unresolved" ? UNRESOLVED_STYLE : REAL_STATUS_STYLES[status];
+}
+
+export function getHistoryStatusBadgeClass(status: DisplayStatus): string {
+  return status === "unresolved" ? UNRESOLVED_HISTORY_BADGE_CLASS : REAL_HISTORY_STATUS_BADGE_CLASS[status];
+}

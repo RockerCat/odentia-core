@@ -30,7 +30,15 @@ import {
 } from "./appointments-actions";
 import { fetchAppointmentsForPatient, type Appointment, type AppointmentStatus } from "./appointments-data";
 import { dateKeyOf, endTimeIso, formatDateLabel, formatTimeLabel, isPastSlot } from "./real-format";
-import { CHANGEABLE_STATUSES, REAL_HISTORY_STATUS_BADGE_CLASS, REAL_STATUS_LABELS, REAL_STATUS_STYLES } from "./real-status";
+import {
+  CHANGEABLE_STATUSES,
+  getDisplayStatus,
+  getHistoryStatusBadgeClass,
+  getStatusLabel,
+  getStatusStyle,
+  REAL_STATUS_LABELS,
+  REAL_STATUS_STYLES,
+} from "./real-status";
 import { getWeekDaysContaining } from "./real-week";
 import { WeekDayPickerContent } from "./real-week-day-picker";
 
@@ -122,6 +130,11 @@ export function RealAppointmentDetailModal({
   const [attentionStartedAt] = useState(() => new Date());
   const [now, setNow] = useState(() => new Date());
   const isInProgress = appointment.status === "in_progress";
+  // Derived display status (see real-status.ts) — never the real DB value:
+  // an in_progress Cita left running past its grace period reads as "Sin
+  // cerrar" everywhere it's shown, but stays in_progress in Postgres and
+  // still lets "Continuar atención" through below.
+  const displayStatus = getDisplayStatus(appointment, now);
   const showAttentionTimer = isAssistant && isInProgress;
   const elapsedSeconds = Math.max(0, Math.floor((now.getTime() - attentionStartedAt.getTime()) / 1000));
 
@@ -299,9 +312,9 @@ export function RealAppointmentDetailModal({
                 ) : (
                   <div className="flex items-center gap-1.5">
                     <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${REAL_STATUS_STYLES[appointment.status]}`}
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${getStatusStyle(displayStatus)}`}
                     >
-                      {REAL_STATUS_LABELS[appointment.status]}
+                      {getStatusLabel(displayStatus)}
                     </span>
                     <button
                       type="button"
@@ -394,6 +407,7 @@ export function RealAppointmentDetailModal({
             <div className="border-t border-border bg-surface px-5 py-4 sm:border-t-0 sm:border-l">
               <PatientHistoryPanel
                 history={history}
+                now={now}
                 matchHeightRef={leftColumnRef}
                 modalRef={panelRef}
                 onItemClick={() => setInfoMessage("El detalle de esta atención estará disponible próximamente.")}
@@ -896,12 +910,14 @@ function CancelConfirmOverlay({ onCancel, onConfirm }: { onCancel: () => void; o
 
 function PatientHistoryPanel({
   history,
+  now,
   matchHeightRef,
   modalRef,
   onItemClick,
   onViewFullHistory,
 }: {
   history: Appointment[] | null;
+  now: Date;
   matchHeightRef: RefObject<HTMLDivElement | null>;
   modalRef: RefObject<HTMLDivElement | null>;
   onItemClick: () => void;
@@ -964,7 +980,7 @@ function PatientHistoryPanel({
         ) : (
           <ol className="flex flex-col gap-2 border-l border-border/70 pl-4">
             {visible.map((item) => (
-              <RealHistoryEntry key={item.id} item={item} modalRef={modalRef} onClick={onItemClick} />
+              <RealHistoryEntry key={item.id} item={item} now={now} modalRef={modalRef} onClick={onItemClick} />
             ))}
           </ol>
         )}
@@ -972,7 +988,7 @@ function PatientHistoryPanel({
         <div aria-hidden="true" className="invisible absolute inset-x-0 top-0 -z-10">
           <ol ref={measureListRef} className="flex flex-col gap-2 border-l border-border/70 pl-4">
             {candidates.map((item) => (
-              <RealHistoryEntry key={item.id} item={item} modalRef={modalRef} onClick={() => {}} />
+              <RealHistoryEntry key={item.id} item={item} now={now} modalRef={modalRef} onClick={() => {}} />
             ))}
           </ol>
         </div>
@@ -996,7 +1012,18 @@ function PatientHistoryPanel({
 // this row (unlike the mock) since fetchAppointmentsForPatient doesn't join
 // professional info and this modal only carries the CURRENT appointment's
 // professional — a minor, deliberate trim, not a redesign of the row itself.
-function RealHistoryEntry({ item, modalRef, onClick }: { item: Appointment; modalRef: RefObject<HTMLDivElement | null>; onClick: () => void }) {
+function RealHistoryEntry({
+  item,
+  now,
+  modalRef,
+  onClick,
+}: {
+  item: Appointment;
+  now: Date;
+  modalRef: RefObject<HTMLDivElement | null>;
+  onClick: () => void;
+}) {
+  const displayStatus = getDisplayStatus(item, now);
   const treatmentLabel = item.status === "completed" ? "Tratamiento realizado" : "Tratamiento planeado";
   const dayLabel = formatDateLabel(item.startsAt);
   const timeLabel = formatTimeLabel(item.startsAt);
@@ -1013,7 +1040,7 @@ function RealHistoryEntry({ item, modalRef, onClick }: { item: Appointment; moda
             <p className="font-semibold">
               {dayLabel} · {timeLabel}
             </p>
-            <p className="mt-0.5">{REAL_STATUS_LABELS[item.status]}</p>
+            <p className="mt-0.5">{getStatusLabel(displayStatus)}</p>
             <p className="mt-1">
               {treatmentLabel}: {item.reason ?? "Sin definir"}
             </p>
@@ -1026,8 +1053,8 @@ function RealHistoryEntry({ item, modalRef, onClick }: { item: Appointment; moda
             <span className="text-[11px] font-medium text-label-foreground">
               {dayLabel} · {timeLabel}
             </span>
-            <span className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${REAL_HISTORY_STATUS_BADGE_CLASS[item.status]}`}>
-              {REAL_STATUS_LABELS[item.status]}
+            <span className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${getHistoryStatusBadgeClass(displayStatus)}`}>
+              {getStatusLabel(displayStatus)}
             </span>
           </div>
         </button>

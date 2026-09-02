@@ -310,7 +310,19 @@ Rules:
 - `Completada` only happens when the clinical encounter actually finished —
   never inferred from the appointment's date/time having passed.
 - A past `Cita` left unresolved is an anomaly (`Sin cerrar`), not an
-  automatic `Completada`.
+  automatic `Completada`. This covers two distinct real-status situations,
+  both purely derived/display-only — the DB `status` never changes because
+  of it, and neither case ever auto-completes or auto-cancels:
+  - An `in_progress` `Cita` still running more than a 2-hour grace period
+    past its `startsAt + durationMinutes` (its `endsAt`) — see
+    `UNRESOLVED_IN_PROGRESS_GRACE_MINUTES`/`getDisplayStatus` in
+    `src/features/dashboard/real-status.ts`, the single place this grace
+    period and the derivation live. "Continuar atención" stays available
+    from this state exactly as from `En curso`.
+  - A `scheduled`/`confirmed` `Cita` whose `startsAt` has passed without
+    ever becoming `in_progress` — see `isPastUnresolved` in
+    `real-appointment-detail-modal.tsx` (gates "Iniciar atención" only,
+    does not currently render a `Sin cerrar` badge).
 - Final states: `Completada`, `No asistió`, `Cancelada`.
   - `Cancelada` always happens before the encounter takes place.
   - `No asistió` means the Patient genuinely did not show up.
