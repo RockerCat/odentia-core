@@ -310,19 +310,23 @@ Rules:
 - `Completada` only happens when the clinical encounter actually finished —
   never inferred from the appointment's date/time having passed.
 - A past `Cita` left unresolved is an anomaly (`Sin cerrar`), not an
-  automatic `Completada`. This covers two distinct real-status situations,
-  both purely derived/display-only — the DB `status` never changes because
-  of it, and neither case ever auto-completes or auto-cancels:
-  - An `in_progress` `Cita` still running more than a 2-hour grace period
-    past its `startsAt + durationMinutes` (its `endsAt`) — see
-    `UNRESOLVED_IN_PROGRESS_GRACE_MINUTES`/`getDisplayStatus` in
-    `src/features/dashboard/real-status.ts`, the single place this grace
-    period and the derivation live. "Continuar atención" stays available
-    from this state exactly as from `En curso`.
-  - A `scheduled`/`confirmed` `Cita` whose `startsAt` has passed without
-    ever becoming `in_progress` — see `isPastUnresolved` in
-    `real-appointment-detail-modal.tsx` (gates "Iniciar atención" only,
-    does not currently render a `Sin cerrar` badge).
+  automatic `Completada`/`No asistió`/`Cancelada`. One derivation covers
+  both ways a non-terminal `Cita` can end up here — `isUnresolved`/
+  `getDisplayStatus` in `src/features/dashboard/real-status.ts`, the single
+  place the 2-hour grace period (`UNRESOLVED_GRACE_MINUTES`) and this
+  derivation live: any `Cita` whose `status` isn't already `Completada`/
+  `No asistió`/`Cancelada`, still open more than the grace period past its
+  `startsAt + durationMinutes` (its `endsAt`), reads as `Sin cerrar` —
+  purely display-only, the DB `status` never changes because of it.
+  - `in_progress` past its grace period: still running, never auto-closed.
+    "Continuar atención" stays available exactly as from `En curso`.
+  - `scheduled`/`confirmed` (or `patient_arrived`/`waiting_room`) past its
+    grace period: attention never started at all. From here the clinic
+    must explicitly resolve what happened — either start/log the
+    encounter now ("Iniciar atención", same action as always) or confirm
+    the Patient genuinely never came ("Marcar No asistió", see
+    `markNoShow` in `appointments-actions.ts`) — never inferred
+    automatically.
 - Final states: `Completada`, `No asistió`, `Cancelada`.
   - `Cancelada` always happens before the encounter takes place.
   - `No asistió` means the Patient genuinely did not show up.

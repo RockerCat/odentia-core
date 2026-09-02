@@ -23,6 +23,7 @@ import { createClient } from "@/lib/supabase/client";
 import { FIELD_CLASS, PopoverFieldRow, TimePopoverContent } from "./appointment-detail-modal";
 import {
   cancelAppointment,
+  markNoShow,
   markPatientArrived,
   reactivateAppointment,
   updateAppointment,
@@ -110,6 +111,7 @@ export function RealAppointmentDetailModal({
   const router = useRouter();
   const [editingField, setEditingField] = useState<FieldKey | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showNoShowConfirm, setShowNoShowConfirm] = useState(false);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [reactivating, setReactivating] = useState(false);
@@ -192,24 +194,34 @@ export function RealAppointmentDetailModal({
 
   const isCancelled = appointment.status === "cancelled";
   const isTerminal = isCancelled || appointment.status === "completed" || appointment.status === "no_show";
-  // A past appointment that never started and was never resolved either
-  // (the "Sin cerrar" anomaly — see CLAUDE.md's Appointment Lifecycle) is
-  // not a valid target to "start": once it's actually in_progress, its
-  // original start time having passed no longer matters (continuing an
-  // attention that's already running is always allowed).
-  const isPastUnresolved = !isInProgress && !isTerminal && new Date(appointment.startsAt).getTime() < now.getTime();
+  const isUnresolved = displayStatus === "unresolved";
   const canMarkArrived = appointment.status === "confirmed" && !appointment.patientArrivedAt;
   const showReactivate = isCancelled;
   const showMarkArrived = !isCancelled && isAssistant && canMarkArrived;
   // Starting/continuing a clinical encounter is a clinical action — never
   // for Assistant (see CLAUDE.md's Roles: Assistant supports operations,
-  // it doesn't attend patients).
-  const showStartEncounter = !isAssistant && !isTerminal && !isPastUnresolved;
+  // it doesn't attend patients). Always offered for any non-terminal Cita,
+  // "Sin cerrar" included — a late start (attention did happen, just never
+  // got logged) is one of the two valid ways to resolve it, see CLAUDE.md's
+  // Appointment Lifecycle.
+  const showStartEncounter = !isAssistant && !isTerminal;
+  // The other valid resolution for a "Sin cerrar" Cita that never started
+  // attention at all: the Patient genuinely never showed. Never offered for
+  // one already in_progress (see real-status.ts's isUnresolved — that's the
+  // OTHER "Sin cerrar" case, resolved by "Continuar atención"/"Finalizar
+  // atención" instead, never "No asistió").
+  const showMarkNoShow = !isAssistant && !isTerminal && !isInProgress && isUnresolved;
   const showPrimaryCta = showReactivate || showMarkArrived || showStartEncounter;
   const showCancelCta = !(isAssistant && isInProgress);
-  const footerButtonCount = (showCancelCta ? 1 : 0) + 1 + (showPrimaryCta ? 1 : 0);
+  const footerButtonCount = (showCancelCta ? 1 : 0) + (showMarkNoShow ? 1 : 0) + 1 + (showPrimaryCta ? 1 : 0);
   const footerGridClass =
-    footerButtonCount === 3 ? "grid-cols-3" : footerButtonCount === 2 ? "grid-cols-2" : "grid-cols-1";
+    footerButtonCount === 4
+      ? "grid-cols-4"
+      : footerButtonCount === 3
+        ? "grid-cols-3"
+        : footerButtonCount === 2
+          ? "grid-cols-2"
+          : "grid-cols-1";
 
   const primaryCtaLabel = showReactivate
     ? reactivating
@@ -430,6 +442,16 @@ export function RealAppointmentDetailModal({
                 Cancelar cita
               </button>
             )}
+            {showMarkNoShow && (
+              <button
+                type="button"
+                onClick={() => setShowNoShowConfirm(true)}
+                className="flex flex-col items-center gap-1 rounded-lg border border-noshow/25 px-2 py-2.5 text-center text-[11px] font-medium text-noshow transition-colors hover:bg-noshow/5"
+              >
+                <AlertTriangleIcon className="size-[18px]" />
+                Marcar No asistió
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onViewPatient(appointment.patientId)}
@@ -453,13 +475,33 @@ export function RealAppointmentDetailModal({
         </div>
 
         {showCancelConfirm && (
-          <CancelConfirmOverlay
+          <ConfirmActionOverlay
+            title="¿Cancelar esta cita?"
+            message="Se marcará como cancelada. Esta acción se puede revertir luego desde el badge de estado."
+            confirmLabel="Sí, cancelar cita"
+            confirmingLabel="Cancelando…"
             onCancel={() => setShowCancelConfirm(false)}
             onConfirm={async () => {
               const result = await cancelAppointment(appointment.id);
               if (result.status === "error") throw new Error(result.message);
               onUpdated({ ...appointment, status: "cancelled" });
               setShowCancelConfirm(false);
+            }}
+          />
+        )}
+
+        {showNoShowConfirm && (
+          <ConfirmActionOverlay
+            title="¿Marcar esta cita como No asistió?"
+            message="Confirma que el paciente nunca llegó a esta cita. Esta acción se puede corregir luego desde el badge de estado."
+            confirmLabel="Sí, marcar No asistió"
+            confirmingLabel="Guardando…"
+            onCancel={() => setShowNoShowConfirm(false)}
+            onConfirm={async () => {
+              const result = await markNoShow(appointment.id);
+              if (result.status === "error") throw new Error(result.message);
+              onUpdated({ ...appointment, status: "no_show" });
+              setShowNoShowConfirm(false);
             }}
           />
         )}
@@ -863,7 +905,25 @@ function InlineStatusEditor({
   );
 }
 
-function CancelConfirmOverlay({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => Promise<void> }) {
+// Shared confirm-overlay shell for any destructive/final appointment
+// action (Cancelar cita, Marcar No asistió) — same visual treatment for
+// both, only the copy and the write differ, so the modal never grows a
+// second copy of this overlay.
+function ConfirmActionOverlay({
+  title,
+  message,
+  confirmLabel,
+  confirmingLabel,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmingLabel: string;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
 
@@ -881,10 +941,8 @@ function CancelConfirmOverlay({ onCancel, onConfirm }: { onCancel: () => void; o
   return (
     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-background/97 p-6 text-center">
       <AlertTriangleIcon className="size-8 text-danger" />
-      <p className="text-sm font-medium">¿Cancelar esta cita?</p>
-      <p className="text-xs text-muted-foreground">
-        Se marcará como cancelada. Esta acción se puede revertir luego desde el badge de estado.
-      </p>
+      <p className="text-sm font-medium">{title}</p>
+      <p className="text-xs text-muted-foreground">{message}</p>
       {error && <p className="text-xs text-danger">No se pudo guardar. Inténtalo de nuevo.</p>}
       <div className="mt-2 flex gap-2">
         <button
@@ -901,7 +959,7 @@ function CancelConfirmOverlay({ onCancel, onConfirm }: { onCancel: () => void; o
           disabled={saving}
           className="rounded-lg bg-danger px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {saving ? "Cancelando…" : "Sí, cancelar cita"}
+          {saving ? confirmingLabel : confirmLabel}
         </button>
       </div>
     </div>

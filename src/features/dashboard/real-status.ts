@@ -61,36 +61,41 @@ export const REAL_HISTORY_STATUS_BADGE_CLASS: Record<AppointmentStatus, string> 
 // in this iteration — see the migration's comment.
 export const CHANGEABLE_STATUSES: AppointmentStatus[] = ["confirmed", "scheduled", "in_progress", "completed"];
 
-// CLAUDE.md's Appointment Lifecycle: an in_progress Cita is never
-// auto-completed just because time passed, but one still in_progress more
-// than this long after its scheduled end is an operational anomaly —
-// "Sin cerrar" — not a real DB status, only a derived display value.
-// Centralized here (the single place the real 8-value status vocabulary is
-// already keyed) so Agenda, the appointment detail modal, and every
-// history list read the same grace period and render the same label.
-export const UNRESOLVED_IN_PROGRESS_GRACE_MINUTES = 120;
+// CLAUDE.md's Appointment Lifecycle: a non-terminal Cita is never
+// auto-completed, auto-cancelled, or auto-marked "No asistió" just because
+// time passed — but one still open more than this long after its scheduled
+// end (startsAt + durationMinutes) is an operational anomaly: "Sin cerrar".
+// This covers BOTH cases the lifecycle doc describes: an in_progress Cita
+// still running past its grace period, and a scheduled/confirmed (or
+// patient_arrived/waiting_room) Cita that never started attention at all.
+// Neither is a real DB status — only a derived display value, and neither
+// ever writes to `status` on its own. Centralized here (the single place
+// the real 8-value status vocabulary is already keyed) so Agenda, the
+// appointment detail modal, and every history list read the same grace
+// period and render the same label for whichever case applies.
+export const UNRESOLVED_GRACE_MINUTES = 120;
 
 export type DisplayStatus = AppointmentStatus | "unresolved";
 
-export function isUnresolvedInProgress(
+export function isUnresolved(
   appointment: Pick<Appointment, "status" | "startsAt" | "durationMinutes">,
   now: Date = new Date(),
 ): boolean {
-  if (appointment.status !== "in_progress") return false;
+  const isTerminal = appointment.status === "completed" || appointment.status === "no_show" || appointment.status === "cancelled";
+  if (isTerminal) return false;
   const graceDeadline =
-    new Date(endTimeIso(appointment.startsAt, appointment.durationMinutes)).getTime() +
-    UNRESOLVED_IN_PROGRESS_GRACE_MINUTES * 60_000;
+    new Date(endTimeIso(appointment.startsAt, appointment.durationMinutes)).getTime() + UNRESOLVED_GRACE_MINUTES * 60_000;
   return now.getTime() > graceDeadline;
 }
 
 // Wraps the real `status` with the derived "unresolved" value — the only
-// status this codebase should ever branch display on. The DB status stays
-// "in_progress"; nothing here writes to it.
+// status this codebase should ever branch display on. The DB status is
+// untouched either way.
 export function getDisplayStatus(
   appointment: Pick<Appointment, "status" | "startsAt" | "durationMinutes">,
   now: Date = new Date(),
 ): DisplayStatus {
-  return isUnresolvedInProgress(appointment, now) ? "unresolved" : appointment.status;
+  return isUnresolved(appointment, now) ? "unresolved" : appointment.status;
 }
 
 const UNRESOLVED_LABEL = "Sin cerrar";

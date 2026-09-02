@@ -154,6 +154,15 @@ export async function reactivateAppointment(appointmentId: string): Promise<Acti
   return updateAppointment(appointmentId, { status: "confirmed" });
 }
 
+// "Marcar No asistió" — explicit resolution for a Cita that never started
+// attention and is past its grace period (see real-status.ts's
+// isUnresolved/"Sin cerrar"), confirming the Patient genuinely never showed
+// (CLAUDE.md's Appointment Lifecycle). A final state, same convention as
+// cancelAppointment/reactivateAppointment above — never set automatically.
+export async function markNoShow(appointmentId: string): Promise<ActionOutcome> {
+  return updateAppointment(appointmentId, { status: "no_show" });
+}
+
 // "Paciente llegó" — additive flag, independent of `status` (see the
 // appointments migration's comment on patient_arrived_at).
 export async function markPatientArrived(appointmentId: string): Promise<ActionOutcome> {
