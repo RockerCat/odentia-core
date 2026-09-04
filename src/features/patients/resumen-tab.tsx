@@ -13,11 +13,16 @@ import {
 } from "@/components/shell/icons";
 import type { Appointment } from "@/features/dashboard/appointments-data";
 import { isTerminalStatus } from "@/features/dashboard/real-status";
+import type { Treatment } from "@/features/treatments/data";
 import { createClient } from "@/lib/supabase/client";
 import { ClinicalInfoCard } from "./clinical-info-card";
 import type { ClinicalEncounterRecord } from "./clinical-encounters-data";
+import type { ClinicalNoteRecord } from "./clinical-notes-data";
+import { ClinicalNotesModal } from "./clinical-notes-modal";
 import type { PatientMedicalHistory } from "./medical-history-data";
 import { resolveUpdatedByProfessional } from "./resolve-updated-by";
+import { ACTIVE_TREATMENT_STATUSES, type TreatmentPlanItem } from "./treatment-plan-data";
+import { TreatmentPlanModal } from "./treatment-plan-modal";
 import type { ToothFindingRecord } from "./tooth-findings-data";
 
 // Restores the approved demo's Resumen grid (clinical-record-screen.tsx's
@@ -36,14 +41,14 @@ import type { ToothFindingRecord } from "./tooth-findings-data";
 //   3. Condiciones médicas   → REAL, patient_medical_histories.medical_conditions
 //   4. Última atención       → REAL/DERIVADO, patient_clinical_encounters
 //      (finalized_at IS NOT NULL, occurred_at desc) — [0] via lastVisitLabelFrom
-//   5. Tratamientos activos  → NO EXISTE fuente real. public.treatments is a
-//      clinic-wide CATALOG of treatment names (Nueva cita's picker), not a
-//      per-patient "currently undergoing" record — no patient_id, no
-//      active/completed lifecycle. patient_clinical_encounters.treatment is
-//      free text per past visit, not a standing course of care. Per this
-//      task's own rule ("NO inferir automáticamente de procedimientos
-//      realizados... si no existe ese concepto persistido, NO inventar
-//      datos"), this stays an honest placeholder until a real entity exists.
+//   5. Tratamientos activos  → REAL, public.patient_treatment_plan_items
+//      (see "PROMPT NINJA — Plan de Tratamiento" and that migration's own
+//      comment) — a dedicated, patient-level plan, explicitly distinct
+//      from public.treatments (a clinic-wide catalog, no per-patient
+//      lifecycle) and from patient_clinical_encounters (past visits, not
+//      a standing plan). "Activo" = status planned or in_progress
+//      (ACTIVE_TREATMENT_STATUSES) — completed/cancelled items exist but
+//      never count here.
 //   6. Próxima cita          → REAL/DERIVADO, public.appointments — earliest
 //      non-terminal (not completed/no_show/cancelled) row with startsAt in
 //      the future, via nextAppointmentLabelFrom. Never derived from
@@ -54,14 +59,14 @@ import type { ToothFindingRecord } from "./tooth-findings-data";
 //      already uses on-screen), professional resolved best-effort via
 //      resolveUpdatedByProfessional (same helper Antecedentes/Odontograma
 //      already use) — date alone if that resolution isn't available.
-//   8. Notas clínicas importantes → NO EXISTE fuente real. No column/table
-//      represents a curated "important note" distinct from a specific
-//      encounter's own notes (patient_clinical_encounters.notes) or
-//      Antecedentes' general "Observaciones" (patient_medical_histories.
-//      observations, already surfaced under its own real label there).
-//      Per this task's own rule ("NO reutilizar arbitrariamente notas de
-//      encounters"), relabeling either of those under this card would
-//      misrepresent what they mean — stays an honest placeholder.
+//   8. Notas clínicas importantes → REAL, public.patient_clinical_notes
+//      (see "PROMPT NINJA — Notas clínicas importantes" and that
+//      migration's own comment) — a dedicated, patient-level, multi-row
+//      entity, explicitly distinct from a specific encounter's own notes
+//      (patient_clinical_encounters.notes) and from Antecedentes' general
+//      "Observaciones" (patient_medical_histories.observations, already
+//      surfaced under its own real label there). Active notes only,
+//      most-recently-updated first (same order the fetch already returns).
 const DATE_FORMATTER = new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "short", year: "numeric" });
 const TIME_FORMATTER = new Intl.DateTimeFormat("es-CO", { hour: "numeric", minute: "2-digit" });
 
@@ -113,14 +118,32 @@ export function ResumenTab({
   toothFindings,
   appointments,
   clinicId,
+  patientId,
+  clinicalNotes,
+  treatmentPlanItems,
+  treatmentOptions,
+  canEditClinicalData,
+  onClinicalNotesChanged,
+  onTreatmentPlanItemsChanged,
 }: {
   history: PatientMedicalHistory | null;
   encounters: ClinicalEncounterRecord[];
   toothFindings: ToothFindingRecord[];
   appointments: Appointment[];
   clinicId: string | null;
+  patientId: string;
+  clinicalNotes: ClinicalNoteRecord[];
+  treatmentPlanItems: TreatmentPlanItem[];
+  treatmentOptions: Treatment[];
+  canEditClinicalData: boolean;
+  onClinicalNotesChanged: (notes: ClinicalNoteRecord[]) => void;
+  onTreatmentPlanItemsChanged: (items: TreatmentPlanItem[]) => void;
 }) {
   const latestFinding = latestToothFindingUpdate(toothFindings);
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [showTreatmentPlanModal, setShowTreatmentPlanModal] = useState(false);
+  const activeNotes = clinicalNotes.filter((n) => !n.archivedAt);
+  const activeTreatments = treatmentPlanItems.filter((item) => ACTIVE_TREATMENT_STATUSES.includes(item.status));
 
   // Best-effort professional name for the odontogram card — same pattern
   // as AtencionesTab/OdontogramaTab's own resolvedByProfileId: never blocks
@@ -164,15 +187,100 @@ export function ResumenTab({
         value={history?.medicalConditions ?? "Sin registrar"}
       />
       <ClinicalInfoCard icon={ClockIcon} label="Última atención" value={lastVisitLabelFrom(encounters)} />
-      {/* Tratamientos activos / Notas clínicas importantes: no persisted
-          entity represents either concept yet — see this file's own top
-          comment (cards 5 and 8) for what was actually audited. Honest
-          empty states, never inferred/inventado (see CLAUDE.md task
-          scope). */}
-      <ClinicalInfoCard icon={PlayCircleIcon} label="Tratamientos activos" value="Ninguno registrado" />
+
+      {/* Tratamientos activos — REAL, multi-row, with its own "Ver plan de
+          tratamiento" CRUD surface (see treatment-plan-modal.tsx) — same
+          reasoning as Notas clínicas importantes below: needs more than
+          ClinicalInfoCard's single-string `value`. */}
+      <div className="rounded-xl border border-border bg-background p-4 shadow-sm">
+        <div className="flex items-center gap-2">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <PlayCircleIcon className="size-4" />
+          </span>
+          <p className="text-xs text-label-foreground">Tratamientos activos</p>
+        </div>
+        {activeTreatments.length === 0 ? (
+          <p className="mt-2 text-sm font-medium text-foreground">Sin tratamientos activos</p>
+        ) : (
+          <ul className="mt-2 flex flex-col gap-1.5">
+            {activeTreatments.slice(0, 3).map((item) => (
+              <li key={item.id} className="line-clamp-2 text-sm leading-relaxed break-words text-foreground">
+                {item.treatmentName}
+              </li>
+            ))}
+          </ul>
+        )}
+        {activeTreatments.length > 3 && (
+          <p className="mt-1 text-[11px] text-muted-foreground">+{activeTreatments.length - 3} más</p>
+        )}
+        <button
+          type="button"
+          onClick={() => setShowTreatmentPlanModal(true)}
+          className="mt-2.5 text-xs font-medium text-primary hover:underline"
+        >
+          Ver plan de tratamiento
+        </button>
+      </div>
+
+      {showTreatmentPlanModal && (
+        <TreatmentPlanModal
+          patientId={patientId}
+          items={treatmentPlanItems}
+          treatmentOptions={treatmentOptions}
+          canEdit={canEditClinicalData}
+          onClose={() => setShowTreatmentPlanModal(false)}
+          onChanged={onTreatmentPlanItemsChanged}
+        />
+      )}
+
       <ClinicalInfoCard icon={CalendarIcon} label="Próxima cita" value={nextAppointmentLabelFrom(appointments)} />
       <ClinicalInfoCard icon={ToothIcon} label="Última actualización del odontograma" value={odontogramUpdatedLabel} />
-      <ClinicalInfoCard icon={NoteIcon} label="Notas clínicas importantes" value="No registradas" relaxedLeading />
+
+      {/* Notas clínicas importantes — REAL, multi-row, with its own
+          "Gestionar notas" CRUD surface (see clinical-notes-modal.tsx) —
+          the only Resumen card that needs more than ClinicalInfoCard's
+          plain label/value shell, so it gets its own small block instead
+          of forcing a list into that component's single-string `value`. */}
+      <div className="rounded-xl border border-border bg-background p-4 shadow-sm">
+        <div className="flex items-center gap-2">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <NoteIcon className="size-4" />
+          </span>
+          <p className="text-xs text-label-foreground">Notas clínicas importantes</p>
+        </div>
+        {activeNotes.length === 0 ? (
+          <p className="mt-2 text-sm font-medium text-foreground">Sin notas clínicas importantes</p>
+        ) : (
+          <ul className="mt-2 flex flex-col gap-1.5">
+            {activeNotes.slice(0, 3).map((note) => (
+              <li key={note.id} className="line-clamp-2 text-sm leading-relaxed break-words text-foreground">
+                {note.content}
+              </li>
+            ))}
+          </ul>
+        )}
+        {activeNotes.length > 3 && (
+          <p className="mt-1 text-[11px] text-muted-foreground">+{activeNotes.length - 3} más</p>
+        )}
+        <button
+          type="button"
+          onClick={() => setShowNotesModal(true)}
+          className="mt-2.5 text-xs font-medium text-primary hover:underline"
+        >
+          Gestionar notas
+        </button>
+      </div>
+
+      {showNotesModal && (
+        <ClinicalNotesModal
+          patientId={patientId}
+          clinicId={clinicId}
+          notes={clinicalNotes}
+          canEdit={canEditClinicalData}
+          onClose={() => setShowNotesModal(false)}
+          onChanged={onClinicalNotesChanged}
+        />
+      )}
     </div>
   );
 }

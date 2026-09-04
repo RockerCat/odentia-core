@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Tooltip } from "@/components/tooltip";
+import { useToast } from "@/components/toast";
 import { UserAvatar } from "@/components/user-avatar";
 import {
   AlertTriangleIcon,
@@ -131,6 +132,15 @@ export function RealAppointmentDetailModal({
   const [markingArrived, setMarkingArrived] = useState(false);
   const [savingStatus, setSavingStatus] = useState(false);
   const [startingEncounter, setStartingEncounter] = useState(false);
+  // Purely cosmetic pending flag for "Ver paciente" — onViewPatient is
+  // sometimes a real router.push (real-summary-cards.tsx), sometimes a
+  // synchronous local state update that unmounts this modal immediately
+  // (real-appointments-board.tsx's own PatientRecordModal toggle); either
+  // way this component has no way to know which, so it just shows
+  // "Cargando…" for however long it stays mounted — same convention as
+  // PatientHistoryPanel's own "Ver historial completo" button below, never
+  // reset back to false since there's nothing left to reset it for.
+  const [viewPatientPending, setViewPatientPending] = useState(false);
   // Captured once per click, at the moment handlePrimaryCta runs — whether
   // THIS click is a fresh "Iniciar atención" (appointment not yet
   // in_progress) or a "Continuar atención" (already in_progress). Needed
@@ -204,10 +214,20 @@ export function RealAppointmentDetailModal({
     };
   }, [appointment.clinicId, appointment.patientId, appointment.id]);
 
+  const { showToast } = useToast();
+
   const handleSave = async (patch: AppointmentPatch): Promise<void> => {
     const result = await updateAppointment(appointment.id, patch);
     if (result.status === "error") throw new Error(result.message);
-    onUpdated({ ...appointment, ...patch });
+    const updated = { ...appointment, ...patch };
+    onUpdated(updated);
+    // Only Fecha/Horario (the actual "reschedule" action) always include
+    // startsAt in their patch — room/reason/phone/notes/status edits never
+    // do, so this never fires a reschedule toast for an unrelated field
+    // save.
+    if (patch.startsAt !== undefined) {
+      showToast(`Cita reprogramada correctamente — ${appointment.patientName} · ${formatDateLabel(updated.startsAt)} · ${formatTimeLabel(updated.startsAt)}`);
+    }
   };
 
   const duration = appointment.durationMinutes;
@@ -521,11 +541,16 @@ export function RealAppointmentDetailModal({
             )}
             <button
               type="button"
-              onClick={() => onViewPatient(appointment.patientId)}
-              className="flex flex-col items-center gap-1 rounded-lg border border-border px-2 py-2.5 text-center text-[11px] font-medium text-foreground/80 transition-colors hover:bg-foreground/5"
+              disabled={viewPatientPending}
+              onClick={() => {
+                if (viewPatientPending) return;
+                setViewPatientPending(true);
+                onViewPatient(appointment.patientId);
+              }}
+              className="flex flex-col items-center gap-1 rounded-lg border border-border px-2 py-2.5 text-center text-[11px] font-medium text-foreground/80 transition-colors hover:bg-foreground/5 disabled:opacity-60"
             >
               <UserIcon className="size-[18px]" />
-              Ver paciente
+              {viewPatientPending ? "Cargando…" : "Ver paciente"}
             </button>
             {showPrimaryCta && (
               <button
@@ -636,6 +661,7 @@ function ViewDetails({
         <WeekDayPickerContent
           weekDays={currentWeekDays}
           currentDayKey={currentDayKey}
+          disabled={savingDate}
           onSelect={(dayKey) => {
             if (savingDate) return;
             // WeekDayPickerContent only disables a whole PAST DAY

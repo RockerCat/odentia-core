@@ -18,10 +18,21 @@ export function WeekDayPickerContent({
   weekDays,
   currentDayKey,
   onSelect,
+  disabled,
 }: {
   weekDays: WeekDay[];
   currentDayKey: string;
   onSelect: (dayKey: string) => void;
+  // Optional, additive — omitted by RealNewAppointmentModal (its Fecha
+  // pick is a plain synchronous state update, nothing to wait on).
+  // RealAppointmentDetailModal's own Fecha reschedule editor passes this
+  // while its save is in flight: onSelect there triggers a real network
+  // write, and without this every day button stayed fully clickable
+  // mid-save — a second click was already a no-op (guarded in JS), but
+  // gave zero visual sign anything was pending, unlike every other
+  // pending action in this codebase (see qa-loading-feedback-check.mjs's
+  // own "immediate pending feedback" convention).
+  disabled?: boolean;
 }) {
   return (
     <div className="grid grid-cols-4 gap-1.5">
@@ -33,7 +44,7 @@ export function WeekDayPickerContent({
         // check would still let "today" be picked with zero selectable
         // hours left (e.g. 5:25 PM, clinic closes 6 PM but every slot up
         // to then already passed) — see that helper's own comment.
-        const past = !hasAvailableFutureSlot(day.key);
+        const past = !hasAvailableFutureSlot(day.key) || disabled;
         return (
           <button
             key={day.key}

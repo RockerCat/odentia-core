@@ -280,6 +280,34 @@ export function RealAppointmentsBoard({
   } | null>(null);
   const [patients, setPatients] = useState<Patient[]>(initialPatients);
   const [viewingPatientId, setViewingPatientId] = useState<string | null>(null);
+  // Briefly highlights the slot cell of a just-created/just-rescheduled
+  // appointment so the user can find it at a glance instead of having to
+  // scan the whole grid for it — cleared automatically, never a
+  // persistent visual state. A ref (not just the timeout id) so a second
+  // highlight fired before the first clears replaces it instead of racing
+  // it.
+  const [highlightedAppointmentId, setHighlightedAppointmentId] = useState<string | null>(null);
+  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashHighlight = (appointmentId: string) => {
+    if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+    setHighlightedAppointmentId(appointmentId);
+    highlightTimeoutRef.current = setTimeout(() => setHighlightedAppointmentId(null), 2500);
+  };
+  // Same-week constraint is structural, not just a UX nicety: both
+  // RealNewAppointmentModal's Fecha picker and this detail modal's own
+  // Fecha reschedule editor (real-week-day-picker.tsx) only ever offer
+  // days from the week already on screen (see that file's own comment) —
+  // so a create/reschedule can never land the appointment outside the
+  // currently-loaded week. The only "locate it" gap left is this board's
+  // own single-DAY filter (dayAppointments below): jump `selectedDay` to
+  // the appointment's day whenever it differs, so it's visible the
+  // instant the mutation succeeds instead of only after the user
+  // separately clicks that day tab.
+  const revealAppointment = (appointment: Appointment) => {
+    const dayKey = dateKeyOf(appointment.startsAt);
+    if (dayKey !== selectedDay) onSelectDay(dayKey);
+    flashHighlight(appointment.id);
+  };
 
   const toggleProfessionalFilter = (id: string) => {
     setProfessionalFilter((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -502,9 +530,9 @@ export function RealAppointmentsBoard({
                         <button
                           type="button"
                           onClick={() => setSelectedAppointmentId(appointment.id)}
-                          className={`relative flex h-12 flex-col items-center justify-center rounded-md border px-1 text-center transition-opacity ${getStatusStyle(getDisplayStatus(appointment))} ${
+                          className={`relative flex h-12 flex-col items-center justify-center rounded-md border px-1 text-center transition-[opacity,box-shadow] ${getStatusStyle(getDisplayStatus(appointment))} ${
                             appointment.status === "cancelled" ? "opacity-70" : ""
-                          }`}
+                          } ${appointment.id === highlightedAppointmentId ? "ring-2 ring-primary/50 ring-offset-1 ring-offset-background" : ""}`}
                         >
                           {appointment.patientArrivedAt && (
                             <span aria-hidden="true" className="absolute -top-1 -right-1 size-3 rounded-full border-2 border-background bg-success" />
@@ -540,7 +568,15 @@ export function RealAppointmentsBoard({
           treatmentOptions={treatmentOptions}
           roomOptions={roomOptions}
           onClose={() => setSelectedAppointmentId(null)}
-          onUpdated={(updated) => onAppointmentUpdated(updated)}
+          onUpdated={(updated) => {
+            // Only a reschedule (startsAt actually changed) needs to
+            // relocate/highlight — a status change, or editing
+            // room/reason/phone/notes, never moves the appointment off
+            // the currently-selected day.
+            const rescheduled = updated.startsAt !== selectedAppointment.startsAt;
+            onAppointmentUpdated(updated);
+            if (rescheduled) revealAppointment(updated);
+          }}
           onViewPatient={(patientId) => setViewingPatientId(patientId)}
         />
       )}
@@ -572,6 +608,7 @@ export function RealAppointmentsBoard({
           onCreated={(created) => {
             onAppointmentCreated(created);
             closeNewAppointment();
+            revealAppointment(created);
           }}
         />
       )}

@@ -33,7 +33,7 @@ export function Header() {
     setAssistantIdentityOverride,
   } = useRole();
   const identity = useShellIdentity();
-  const { signOut } = useShellLogout();
+  const { signOut, signingOut } = useShellLogout();
   const isDentistRole = role === "dentist";
   const isClinicAdmin = role === "clinic-admin";
   const isAssistant = role === "assistant";
@@ -131,14 +131,21 @@ export function Header() {
                 <button
                   type="button"
                   role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void signOut();
-                  }}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-danger hover:bg-danger/5"
+                  disabled={signingOut}
+                  // Deliberately does NOT setMenuOpen(false) here — this
+                  // menu closing immediately used to be exactly the "click
+                  // → silence" bug this task exists to fix: the button
+                  // (and any pending label on it) vanished the instant it
+                  // was clicked, well before Supabase signOut + the
+                  // router.push("/login") transition actually finished.
+                  // Staying open through signOut() lets "Cerrando
+                  // sesión…" actually be seen; the whole header unmounts
+                  // anyway once /login lands.
+                  onClick={() => void signOut()}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-danger hover:bg-danger/5 disabled:opacity-60"
                 >
                   <LogOutIcon className="size-4 shrink-0" />
-                  Salir
+                  {signingOut ? "Cerrando sesión…" : "Salir"}
                 </button>
               </div>
             </>

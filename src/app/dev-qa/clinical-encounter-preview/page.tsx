@@ -15,6 +15,7 @@
 // 404s outside development — never a real, production-reachable route.
 import { notFound } from "next/navigation";
 import { RealClinicalEncounterScreen } from "@/features/dashboard/real-clinical-encounter-screen";
+import { getWeekDaysContaining } from "@/features/dashboard/real-week";
 
 const CLINIC_ID = "00000000-0000-4000-8000-000000000001";
 const PROF_ID = "225d222d-2481-4d05-9750-bfdd30b6a5db";
@@ -26,6 +27,8 @@ function todayAtLocalHour(hour: number): string {
   d.setHours(hour, 0, 0, 0);
   return d.toISOString();
 }
+
+const APPOINTMENT_STARTS_AT = todayAtLocalHour(9);
 
 export default function ClinicalEncounterPreviewPage() {
   if (process.env.NODE_ENV === "production") notFound();
@@ -39,7 +42,7 @@ export default function ClinicalEncounterPreviewPage() {
         patientName: "Laura Diaz",
         patientPhone: "+573173672033",
         professionalProfileId: PROF_ID,
-        startsAt: todayAtLocalHour(9),
+        startsAt: APPOINTMENT_STARTS_AT,
         durationMinutes: 30,
         status: "in_progress",
         reason: "Chequeo general",
@@ -82,7 +85,14 @@ export default function ClinicalEncounterPreviewPage() {
           defaultAppointmentDurationMinutes: 30,
         },
       ]}
-      weekDays={[]}
+      // Matches the real /agenda/atencion/[appointmentId] route's own
+      // weekDays derivation (getWeekDaysContaining(appointment.startsAt)) —
+      // previously an empty array here, harmless for the scenarios that
+      // only exercised "Guardar borrador"/"Finalizar atención" (neither
+      // touches Fecha), but it silently broke "Agendar próxima cita"'s own
+      // Fecha popover (zero selectable days) the moment a script needed to
+      // actually complete that flow (see qa-appointment-feedback-check.mjs).
+      weekDays={getWeekDaysContaining(APPOINTMENT_STARTS_AT)}
       treatmentOptions={["Chequeo general", "Limpieza dental"]}
       roomOptions={["Consultorio 1"]}
       initialToothFindings={[]}

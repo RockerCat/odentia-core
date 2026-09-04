@@ -6,18 +6,21 @@ import { ChevronIcon, DownloadIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { fetchTeamMembers } from "@/features/clinic/data";
 import type { Appointment } from "@/features/dashboard/appointments-data";
+import type { Treatment } from "@/features/treatments/data";
 import { createClient } from "@/lib/supabase/client";
 import { AntecedentesTab } from "./antecedentes-tab";
 import { AtencionesTab } from "./atenciones-tab";
 import { ClinicalAlerts } from "./clinical-alerts";
 import type { ClinicalDocumentRecord } from "./clinical-documents-data";
 import type { ClinicalEncounterRecord } from "./clinical-encounters-data";
+import type { ClinicalNoteRecord } from "./clinical-notes-data";
 import type { Patient } from "./data";
 import { DocumentosTab } from "./documentos-tab";
 import type { PatientMedicalHistory } from "./medical-history-data";
 import { OdontogramaTab } from "./odontograma-tab";
 import type { ProfessionalDirectory } from "./pdf/real-clinical-record-data";
 import { ResumenTab } from "./resumen-tab";
+import type { TreatmentPlanItem } from "./treatment-plan-data";
 import type { ToothFindingRecord } from "./tooth-findings-data";
 
 // Real Historia Clínica shell — deliberately a SEPARATE component from
@@ -74,6 +77,9 @@ export function PatientClinicalRecordScreen({
   toothFindings: initialToothFindings,
   clinicalEncounters,
   clinicalDocuments: initialClinicalDocuments,
+  clinicalNotes: initialClinicalNotes,
+  treatmentPlanItems: initialTreatmentPlanItems,
+  treatmentOptions,
   appointments,
   canEditClinicalData,
 }: {
@@ -85,6 +91,9 @@ export function PatientClinicalRecordScreen({
   toothFindings: ToothFindingRecord[];
   clinicalEncounters: ClinicalEncounterRecord[];
   clinicalDocuments: ClinicalDocumentRecord[];
+  clinicalNotes: ClinicalNoteRecord[];
+  treatmentPlanItems: TreatmentPlanItem[];
+  treatmentOptions: Treatment[];
   appointments: Appointment[];
   canEditClinicalData: boolean;
 }) {
@@ -92,6 +101,8 @@ export function PatientClinicalRecordScreen({
   const [medicalHistory, setMedicalHistory] = useState(initialMedicalHistory);
   const [toothFindings, setToothFindings] = useState(initialToothFindings);
   const [clinicalDocuments, setClinicalDocuments] = useState(initialClinicalDocuments);
+  const [clinicalNotes, setClinicalNotes] = useState(initialClinicalNotes);
+  const [treatmentPlanItems, setTreatmentPlanItems] = useState(initialTreatmentPlanItems);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const age = ageOf(patient);
@@ -132,6 +143,8 @@ export function PatientClinicalRecordScreen({
         toothFindings,
         clinicalEncounters,
         clinicalDocuments,
+        clinicalNotes,
+        treatmentPlanItems,
         professionals,
       });
 
@@ -262,6 +275,13 @@ export function PatientClinicalRecordScreen({
           toothFindings={toothFindings}
           appointments={appointments}
           clinicId={clinicId}
+          patientId={patient.id}
+          clinicalNotes={clinicalNotes}
+          treatmentPlanItems={treatmentPlanItems}
+          treatmentOptions={treatmentOptions}
+          canEditClinicalData={canEditClinicalData}
+          onClinicalNotesChanged={setClinicalNotes}
+          onTreatmentPlanItemsChanged={setTreatmentPlanItems}
         />
       )}
       {activeTab === "Antecedentes" && (

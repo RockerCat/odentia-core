@@ -3,12 +3,15 @@ import { AppShell } from "@/components/shell/app-shell";
 import { fetchAppointmentsForPatient } from "@/features/dashboard/appointments-data";
 import { fetchPatientClinicalDocuments } from "@/features/patients/clinical-documents-data";
 import { fetchPatientClinicalEncounters } from "@/features/patients/clinical-encounters-data";
+import { fetchPatientClinicalNotes } from "@/features/patients/clinical-notes-data";
 import { canEditClinicalData } from "@/features/patients/clinical-permissions";
 import { fetchPatientById } from "@/features/patients/data";
 import { fetchPatientMedicalHistory, type PatientMedicalHistory } from "@/features/patients/medical-history-data";
 import { PatientClinicalRecordScreen } from "@/features/patients/patient-clinical-record-screen";
+import { fetchPatientTreatmentPlanItems } from "@/features/patients/treatment-plan-data";
 import { fetchPatientToothFindings } from "@/features/patients/tooth-findings-data";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
+import { fetchTreatments } from "@/features/treatments/data";
 import { createClient } from "@/lib/supabase/server";
 
 // Reached from "Ver historia clínica" in PatientRecordModal (see
@@ -76,6 +79,34 @@ export default async function PatientClinicalRecordPage({ params }: { params: Pr
     console.error("[/pacientes/[id]/historia-clinica] fetchPatientClinicalDocuments failed", error);
   }
 
+  // Notas clínicas importantes follows the same "optional for the page"
+  // rule as the other clinical tabs above.
+  let clinicalNotes: Awaited<ReturnType<typeof fetchPatientClinicalNotes>> = [];
+  try {
+    clinicalNotes = await fetchPatientClinicalNotes(supabase, context.clinic.id, patient.id);
+  } catch (error) {
+    console.error("[/pacientes/[id]/historia-clinica] fetchPatientClinicalNotes failed", error);
+  }
+
+  // Plan de tratamiento follows the same "optional for the page" rule as
+  // the other clinical tabs above.
+  let treatmentPlanItems: Awaited<ReturnType<typeof fetchPatientTreatmentPlanItems>> = [];
+  try {
+    treatmentPlanItems = await fetchPatientTreatmentPlanItems(supabase, context.clinic.id, patient.id);
+  } catch (error) {
+    console.error("[/pacientes/[id]/historia-clinica] fetchPatientTreatmentPlanItems failed", error);
+  }
+
+  // The clinic's active treatments catalog, for the plan modal's own
+  // "Del catálogo (opcional)" picker — same source Agenda's own Nueva
+  // cita picker reads, never a duplicated list.
+  let treatmentOptions: Awaited<ReturnType<typeof fetchTreatments>> = [];
+  try {
+    treatmentOptions = (await fetchTreatments(supabase, context.clinic.id)).filter((t) => t.active);
+  } catch (error) {
+    console.error("[/pacientes/[id]/historia-clinica] fetchTreatments failed", error);
+  }
+
   // Resumen's own "Próxima cita" card (see resumen-tab.tsx) — the only tab
   // that needs raw appointments at all; every other tab reads clinical
   // rows exclusively. Same "optional for the page" rule as the tabs above:
@@ -99,6 +130,9 @@ export default async function PatientClinicalRecordPage({ params }: { params: Pr
         toothFindings={toothFindings}
         clinicalEncounters={clinicalEncounters}
         clinicalDocuments={clinicalDocuments}
+        clinicalNotes={clinicalNotes}
+        treatmentPlanItems={treatmentPlanItems}
+        treatmentOptions={treatmentOptions}
         appointments={appointments}
         canEditClinicalData={canEditClinicalData(context)}
       />

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ChevronIcon } from "@/components/shell/icons";
+import { NavLinkContent } from "@/components/shell/nav-link-status";
 import { UserAvatar } from "@/components/user-avatar";
 import type { Appointment } from "@/features/dashboard/appointments-data";
 import { formatDateLabel, formatTimeLabel } from "@/features/dashboard/real-format";
@@ -39,8 +40,14 @@ export function RealPatientAppointmentHistoryScreen({
           href="/pacientes"
           className="inline-flex items-center gap-1 text-xs font-medium text-foreground/70 hover:text-foreground"
         >
-          <ChevronIcon className="size-3.5" />
-          Atrás
+          {/* Reuses the Sidebar's own per-Link pending mechanism
+              (nav-link-status.tsx's useLinkStatus wrapper) rather than a
+              second local "navigating" state — this is a plain <Link>,
+              the same shape that mechanism already exists for. */}
+          <NavLinkContent className="inline-flex items-center gap-1">
+            <ChevronIcon className="size-3.5" />
+            Atrás
+          </NavLinkContent>
         </Link>
 
         <div className="mt-3 flex items-center gap-3">

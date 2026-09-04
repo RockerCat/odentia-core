@@ -10,7 +10,14 @@ import {
   type OdontogramData,
 } from "@/features/dashboard/odontogram-teeth";
 import { PDF_COLORS } from "./pdf-theme";
-import type { PdfDocumentRow, PdfEncounterRow, PdfFindingRow, RealClinicalRecordPdfData } from "./real-clinical-record-data";
+import type {
+  PdfClinicalNoteRow,
+  PdfDocumentRow,
+  PdfEncounterRow,
+  PdfFindingRow,
+  PdfTreatmentPlanItemRow,
+  RealClinicalRecordPdfData,
+} from "./real-clinical-record-data";
 import { ToothGlyphPdf } from "./tooth-glyph-pdf";
 
 // Real Historia Clínica PDF — same visual design/hierarchy as the
@@ -463,6 +470,82 @@ function DocumentosSection({ documents }: { documents: PdfDocumentRow[] }) {
   );
 }
 
+function ClinicalNoteRow({ note }: { note: PdfClinicalNoteRow }) {
+  return (
+    <CompactRow color={PDF_COLORS.warning}>
+      <View style={styles.compactTopLine}>
+        <Text style={styles.compactSubLine}>
+          {note.dateLabel} · {note.professionalName}
+        </Text>
+      </View>
+      <Text style={styles.compactNote}>{note.content}</Text>
+    </CompactRow>
+  );
+}
+
+// Active notes only (see real-clinical-record-data.ts's own filter) —
+// archived ones are never part of the exported record, same "Activos"
+// convention DocumentosSection above already uses.
+function NotasImportantesSection({ notes }: { notes: PdfClinicalNoteRow[] }) {
+  const [firstNote, ...restNotes] = notes;
+
+  if (notes.length === 0) {
+    return (
+      <Section
+        title="Notas clínicas importantes"
+        lead={<Text style={styles.emptyState}>Sin notas clínicas importantes.</Text>}
+      />
+    );
+  }
+
+  return (
+    <Section title="Notas clínicas importantes" lead={<ClinicalNoteRow note={firstNote} />}>
+      {restNotes.map((note) => (
+        <ClinicalNoteRow key={note.id} note={note} />
+      ))}
+    </Section>
+  );
+}
+
+function TreatmentPlanItemRow({ item }: { item: PdfTreatmentPlanItemRow }) {
+  return (
+    <CompactRow color={PDF_COLORS.info}>
+      <View style={styles.compactTopLine}>
+        <Text style={styles.compactHeadline}>{item.treatmentName}</Text>
+        <Text style={styles.compactSubLine}>
+          {item.statusLabel} · {item.dateLabel}
+        </Text>
+      </View>
+      {item.notes && <Text style={styles.compactNote}>{item.notes}</Text>}
+    </CompactRow>
+  );
+}
+
+// Active items only (planned/in_progress — see real-clinical-record-data.ts's
+// own filter) — never confused with "Procedimientos realizados"
+// (AtencionesSection above, a completely separate concept: what actually
+// happened during a past visit, not what's still planned).
+function TreatmentPlanSection({ items }: { items: PdfTreatmentPlanItemRow[] }) {
+  const [firstItem, ...restItems] = items;
+
+  if (items.length === 0) {
+    return (
+      <Section
+        title="Plan de tratamiento"
+        lead={<Text style={styles.emptyState}>Sin tratamientos activos.</Text>}
+      />
+    );
+  }
+
+  return (
+    <Section title="Plan de tratamiento" lead={<TreatmentPlanItemRow item={firstItem} />}>
+      {restItems.map((item) => (
+        <TreatmentPlanItemRow key={item.id} item={item} />
+      ))}
+    </Section>
+  );
+}
+
 // "historia-clinica-{nombre-paciente}-{fecha}.pdf" — same convention as
 // the reference document's getClinicalRecordPdfFilename.
 export function getRealClinicalRecordPdfFilename(patientFullName: string): string {
@@ -594,6 +677,10 @@ export function RealClinicalRecordDocument({
         <AtencionesSection encounters={data.encounters} />
 
         <DocumentosSection documents={data.documents} />
+
+        <NotasImportantesSection notes={data.clinicalNotes} />
+
+        <TreatmentPlanSection items={data.activeTreatmentPlanItems} />
 
         <View style={styles.footer} fixed>
           <Text>

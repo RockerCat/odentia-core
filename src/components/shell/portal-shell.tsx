@@ -9,6 +9,7 @@ import { RoleSwitcher } from "@/dev/role-switcher"; // DEV TOOL — see src/dev/
 import { useAuthenticatedIdentity } from "@/features/dashboard/use-authenticated-identity";
 import { CURRENT_PATIENT } from "@/lib/current-user";
 import { BuildingIcon, CalendarIcon, ChevronDownIcon, LogOutIcon, NoteIcon, ToothIcon, UserIcon } from "./icons";
+import { NavLinkContent } from "./nav-link-status";
 import { PageContainer } from "./page-container";
 import { useRouteGuard } from "./use-route-guard";
 
@@ -135,12 +136,15 @@ function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
               <Link
                 key={label}
                 href={href}
+                aria-current={active ? "page" : undefined}
                 className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
                   active ? "bg-primary/10 font-medium text-primary" : "text-foreground/80 hover:bg-foreground/5"
                 }`}
               >
-                <Icon className="size-5 shrink-0" />
-                <span>{label}</span>
+                <NavLinkContent className="flex flex-1 items-center gap-3">
+                  <Icon className="size-5 shrink-0" />
+                  <span>{label}</span>
+                </NavLinkContent>
               </Link>
             );
           })}
@@ -222,14 +226,16 @@ function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
                 aria-current={active ? "page" : undefined}
                 className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px]"
               >
-                <Icon className={`size-[22px] ${active ? "text-primary" : "text-foreground/55"}`} />
-                {/* Clínica's label is the real clinic name, which can run
-                    long — truncate instead of wrapping/overflowing. */}
-                <span
-                  className={`max-w-full truncate px-0.5 ${active ? "font-medium text-primary" : "text-foreground/55"}`}
-                >
-                  {label}
-                </span>
+                <NavLinkContent className="flex flex-1 min-w-0 flex-col items-center justify-center gap-1">
+                  <Icon className={`size-[22px] ${active ? "text-primary" : "text-foreground/55"}`} />
+                  {/* Clínica's label is the real clinic name, which can run
+                      long — truncate instead of wrapping/overflowing. */}
+                  <span
+                    className={`max-w-full truncate px-0.5 ${active ? "font-medium text-primary" : "text-foreground/55"}`}
+                  >
+                    {label}
+                  </span>
+                </NavLinkContent>
               </Link>
             );
           })}

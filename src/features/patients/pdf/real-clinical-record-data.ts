@@ -2,8 +2,10 @@ import type { FindingType, OdontogramData } from "@/features/dashboard/odontogra
 import type { ClinicalDocumentRecord } from "../clinical-documents-data";
 import { CLINICAL_DOCUMENT_KIND_LABELS } from "../clinical-documents-data";
 import type { ClinicalEncounterRecord } from "../clinical-encounters-data";
+import type { ClinicalNoteRecord } from "../clinical-notes-data";
 import type { Patient } from "../data";
 import type { PatientMedicalHistory } from "../medical-history-data";
+import { ACTIVE_TREATMENT_STATUSES, type TreatmentPlanItem } from "../treatment-plan-data";
 import { toOdontogramData, type ToothFindingRecord } from "../tooth-findings-data";
 
 // Pure data-shaping for the real Historia Clínica PDF — takes the same raw
@@ -85,6 +87,21 @@ export type PdfDocumentRow = {
   professionalName: string;
 };
 
+export type PdfClinicalNoteRow = {
+  id: string;
+  content: string;
+  dateLabel: string;
+  professionalName: string;
+};
+
+export type PdfTreatmentPlanItemRow = {
+  id: string;
+  treatmentName: string;
+  statusLabel: string;
+  notes: string | null;
+  dateLabel: string;
+};
+
 export type RealClinicalRecordPdfData = {
   patientFullName: string;
   patientAge: number | null;
@@ -103,7 +120,19 @@ export type RealClinicalRecordPdfData = {
   findingRows: PdfFindingRow[];
   encounters: PdfEncounterRow[];
   documents: PdfDocumentRow[];
+  clinicalNotes: PdfClinicalNoteRow[];
+  activeTreatmentPlanItems: PdfTreatmentPlanItemRow[];
   generatedAtLabel: string;
+};
+
+// Same labels as treatment-plan-modal.tsx's own STATUS_LABELS (not
+// imported — that module is a Client Component, this one must stay
+// import-clean of "use client" code) — kept in sync manually, same
+// convention as this file's own top comment on why AnamnesisBlock etc.
+// are reproduced rather than imported across that boundary.
+const TREATMENT_STATUS_LABEL: Record<string, string> = {
+  planned: "Planeado",
+  in_progress: "En progreso",
 };
 
 export function buildRealClinicalRecordPdfData({
@@ -112,6 +141,8 @@ export function buildRealClinicalRecordPdfData({
   toothFindings,
   clinicalEncounters,
   clinicalDocuments,
+  clinicalNotes,
+  treatmentPlanItems,
   professionals,
 }: {
   patient: Patient;
@@ -119,6 +150,8 @@ export function buildRealClinicalRecordPdfData({
   toothFindings: ToothFindingRecord[];
   clinicalEncounters: ClinicalEncounterRecord[];
   clinicalDocuments: ClinicalDocumentRecord[];
+  clinicalNotes: ClinicalNoteRecord[];
+  treatmentPlanItems: TreatmentPlanItem[];
   professionals: ProfessionalDirectory;
 }): RealClinicalRecordPdfData {
   const antecedentesUpdatedLabel = medicalHistory
@@ -206,6 +239,33 @@ export function buildRealClinicalRecordPdfData({
       professionalName: professionalName(professionals, d.uploadedBy),
     }));
 
+  // Active notes only — archived ones are never part of the exported
+  // record (same "Activos" convention as documents above), most-recently-
+  // updated first (same order fetchPatientClinicalNotes already returns,
+  // preserved here rather than re-sorted).
+  const clinicalNotesRows: PdfClinicalNoteRow[] = clinicalNotes
+    .filter((n) => !n.archivedAt)
+    .map((n) => ({
+      id: n.id,
+      content: n.content,
+      dateLabel: DATE_FORMATTER.format(new Date(n.updatedAt)),
+      professionalName: professionalName(professionals, n.updatedBy ?? n.createdBy),
+    }));
+
+  // Active only (planned/in_progress) — never "Procedimientos realizados"
+  // (an Atenciones concept, completely independent of this plan — see the
+  // migration's own top comment). Preserves sort_order (the order the
+  // plan modal already shows).
+  const activeTreatmentPlanItemsRows: PdfTreatmentPlanItemRow[] = treatmentPlanItems
+    .filter((item) => ACTIVE_TREATMENT_STATUSES.includes(item.status))
+    .map((item) => ({
+      id: item.id,
+      treatmentName: item.treatmentName,
+      statusLabel: TREATMENT_STATUS_LABEL[item.status] ?? item.status,
+      notes: item.notes,
+      dateLabel: DATE_FORMATTER.format(new Date(item.createdAt)),
+    }));
+
   return {
     patientFullName: `${patient.firstName} ${patient.lastName}`.trim(),
     patientAge: ageOf(patient),
@@ -224,6 +284,8 @@ export function buildRealClinicalRecordPdfData({
     findingRows,
     encounters,
     documents,
+    clinicalNotes: clinicalNotesRows,
+    activeTreatmentPlanItems: activeTreatmentPlanItemsRows,
     generatedAtLabel: formatGeneratedAtLabel(),
   };
 }

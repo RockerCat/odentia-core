@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ROLE_NAV_ITEMS } from "@/dev/role"; // DEV TOOL — see src/dev/role.ts
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { type NavGroup, type NavItem } from "./nav-items";
+import { NavLinkContent } from "./nav-link-status";
 
 type SidebarNavProps = {
   activeLabel?: string;
@@ -70,12 +71,16 @@ export function SidebarNav({ activeLabel }: SidebarNavProps) {
                 );
                 // Falls back to an inert button for every nav item with no
                 // real page behind it yet — see the href comment on NavItem.
+                // No NavLinkContent/pending spinner here — this is always
+                // an external URL (see nav-items.ts's MARKETPLACE_URL),
+                // which Next.js Link treats as a full browser navigation,
+                // not a client-side transition useLinkStatus tracks.
                 return href ? (
-                  <Link key={label} href={href} className={className}>
+                  <Link key={label} href={href} aria-current={active ? "page" : undefined} className={className}>
                     {children}
                   </Link>
                 ) : (
-                  <button key={label} type="button" className={className}>
+                  <button key={label} type="button" aria-current={active ? "page" : undefined} className={className}>
                     {children}
                   </button>
                 );
@@ -85,17 +90,17 @@ export function SidebarNav({ activeLabel }: SidebarNavProps) {
                 active ? "bg-primary/10 font-medium text-primary" : "text-foreground/80 hover:bg-foreground/5"
               }`;
               const children = (
-                <>
+                <NavLinkContent className="flex flex-1 items-center gap-3">
                   <Icon className="size-5 shrink-0" />
                   <span>{label}</span>
-                </>
+                </NavLinkContent>
               );
               return href ? (
-                <Link key={label} href={href} className={className}>
+                <Link key={label} href={href} aria-current={active ? "page" : undefined} className={className}>
                   {children}
                 </Link>
               ) : (
-                <button key={label} type="button" className={className}>
+                <button key={label} type="button" aria-current={active ? "page" : undefined} className={className}>
                   {children}
                 </button>
               );

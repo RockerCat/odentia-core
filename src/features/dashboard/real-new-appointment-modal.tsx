@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { Combobox } from "@/components/combobox";
+import { useToast } from "@/components/toast";
 import { UserAvatar } from "@/components/user-avatar";
 import { CalendarIcon, ClockIcon, CloseIcon, FlagIcon, MapPinIcon, NoteIcon } from "@/components/shell/icons";
 import { FIELD_CLASS, PopoverFieldRow, TimePopoverContent } from "./appointment-detail-modal";
@@ -88,6 +89,7 @@ export function RealNewAppointmentModal({
   onClose: () => void;
   onCreated: (created: Appointment) => void;
 }) {
+  const { showToast } = useToast();
   const patientOptions = patients.map(toPatientOption);
 
   const [patientId, setPatientId] = useState(prefill?.patientId ?? "");
@@ -160,6 +162,10 @@ export function RealNewAppointmentModal({
       setError(outcome.message);
       return;
     }
+    // Modal only ever closes on a confirmed backend success (never
+    // optimistically) — the toast fires in that same instant so the user
+    // never has to wonder whether the appointment actually saved.
+    showToast(`Cita creada correctamente — ${selectedPatient.name} · ${dayLabel} · ${time}`);
     onCreated(outcome.appointment);
     onClose();
   };

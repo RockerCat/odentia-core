@@ -2,7 +2,7 @@
 
 # Odentia Core
 
-**Last Updated:** 2026-09-01
+**Last Updated:** 2026-09-04
 
 ---
 
@@ -111,8 +111,14 @@ remaining surface) while its own conversion is pending.
   (estado, "odontólogo habitual" — honestly "Aún sin odontólogo" until that real
   relationship exists in the schema, paciente desde) plus a real "Alertas clínicas"
   banner (alergias/condiciones/medicamentos), all fed by real data, never fabricated.
-- **Resumen** — real KPI grid + Alertas, driven by the same real
-  `patient_medical_histories` row Antecedentes reads/writes.
+- **Resumen** — all 8 cards real, none an inferred/fabricated value: Alergias/
+  Medicamentos/Condiciones (`patient_medical_histories`, same row Antecedentes
+  reads/writes), Última atención (`patient_clinical_encounters`, finalized
+  only), Tratamientos activos (`patient_treatment_plan_items`, see Plan de
+  Tratamiento below), Próxima cita (`appointments`, earliest non-terminal
+  future row), Última actualización del odontograma
+  (`patient_tooth_findings`), Notas clínicas importantes
+  (`patient_clinical_notes`, see below). Plus the existing Alertas banner.
 - **Antecedentes** — real, one row per patient (`patient_medical_histories`),
   editable ("Actualizar antecedentes") by `dentist`/`clinic_admin` with an active
   `professional_profile` (never `clinic_admin` alone) via a `SECURITY DEFINER` RPC.
@@ -142,15 +148,64 @@ remaining surface) while its own conversion is pending.
   (`archived_at`/`archived_by` — never a physical delete, file stays in Storage) by
   `dentist`/`clinic_admin`; read-only for `assistant`/plain admin (flagged, not yet
   explicitly requested otherwise).
+- **Notas clínicas importantes** (Resumen card) — real, `patient_clinical_notes`:
+  persistent, patient-level notes, explicitly distinct from an encounter's own
+  `notes` and from Antecedentes' `observations`. Multiple active notes shown
+  most-recent-first on the card; "Gestionar notas" opens the full create/edit/
+  archive surface. Logical archive only (`archived_at`/`archived_by`, never a
+  physical delete). `dentist`/clinically-active `clinic_admin` can write;
+  `assistant` read-only.
+- **Plan de Tratamiento** (Resumen's "Tratamientos activos" card) — real,
+  `patient_treatment_plans` (one implicit row per patient, created on first
+  item — no "create plan" step) + `patient_treatment_plan_items` (status
+  `planned | in_progress | completed | cancelled`; "activo" = `planned` +
+  `in_progress`). Each item optionally references the `treatments` catalog
+  but always stores its own `treatment_name` **snapshot** — a later catalog
+  rename never rewrites existing plan history. "Ver plan de tratamiento"
+  opens create/edit/change-status, with an Activos/Completados/Cancelados/
+  Todos filter so closed items are never mixed into the active view but are
+  never deleted either. Independent of Atenciones: finishing a procedure
+  during an atención never auto-completes a plan item (not built in this
+  pass). Same `dentist`/clinically-active `clinic_admin` write, `assistant`
+  read-only rule.
 - **Descargar PDF** — real, generated client-side from the same real rows this screen
-  already holds (`@react-pdf/renderer`, dynamically imported). Same approved visual
-  design as the original mock PDF (colors/layout/typography untouched); patient name
-  keeps normal capitalization; footer "Generado por odentia.co" on every page.
+  already holds (`@react-pdf/renderer`, dynamically imported), now including
+  compact "Notas clínicas importantes" (active only) and "Plan de tratamiento"
+  (active only) sections. Same approved visual design as the original mock PDF
+  (colors/layout/typography untouched); patient name keeps normal
+  capitalization; footer "Generado por odentia.co" on every page.
 - Every write in this feature goes through a `SECURITY DEFINER` RPC, never a direct
   table INSERT/UPDATE/DELETE — `clinic_id` and the acting professional are always
   resolved server-side from `auth.uid()`, never client-supplied.
 - Gated to Clinic Admin/Dentist/Assistant roles today; not yet built: Patient access
   to this screen.
+
+---
+
+## Navegación y feedback global (real, cross-cutting)
+
+Two transversal UX gaps were closed across every real screen, not scoped to one
+vertical:
+
+- **Toast/success feedback** — `src/components/toast.tsx`
+  (`ToastProvider`/`useToast()`), mounted once in the root layout. Every
+  mutation across Agenda (crear/reprogramar cita) and Historia Clínica
+  (Notas/Plan de Tratamiento create/edit/archive/status-change) now follows
+  click → pending → backend success → toast, never a false-success toast on
+  error, never a duplicate loader on top of an action's own contextual
+  pending state.
+- **Navigation pending feedback** — real Sidebar/BottomTabBar/Portal-nav
+  `<Link>`s show an immediate, per-item pending indicator (Next's own
+  `useLinkStatus()`, via `src/components/shell/nav-link-status.tsx`) instead
+  of going silent while the next page loads; the active item never flips
+  until the destination actually renders. Closed the same gap for the plain
+  (non-`<Link>`) programmatic-navigation buttons that had none: "Salir",
+  "Ver historia clínica", "Ver paciente", "Volver a Agenda", "Ver o
+  modificar cita", and Historial de citas' own "Atrás".
+- Also fixed in this pass: a slot-collision bug that could hide a live Cita
+  behind a stale row in the same professional+time slot, and a mislabeled
+  "Tratamiento" heading in Atenciones now correctly reading "Procedimientos
+  realizados".
 
 ---
 
@@ -171,6 +226,11 @@ remaining surface) while its own conversion is pending.
   Cita lifecycle than the mock's own flattened 6-value stand-in;
   `patient_arrived`/`waiting_room` are declared but have no dedicated UI action yet
   (same gap the schema already flagged); `no_show` now does (see "Sin cerrar" below).
+  Create/reschedule now close the feedback loop end to end: pending → backend
+  success → a toast ("Cita creada/reprogramada correctamente" with paciente ·
+  fecha · hora) — the modal only ever closes on confirmed success, never
+  before — and the board auto-jumps to the appointment's day and briefly
+  highlights its slot if it landed outside the currently-selected day.
 - **"Sin cerrar"** (`real-status.ts`) — a non-terminal Cita more than 2 hours
   (`UNRESOLVED_GRACE_MINUTES`) past `startsAt + durationMinutes` reads as `Sin cerrar`
   everywhere its status shows (board, KPIs, detail modal, history), purely derived —
@@ -362,9 +422,10 @@ Claude MUST NOT:
 - Patients — real (`/pacientes`).
 - Patient Details — real (part of the `/pacientes` detail modal).
 - Medical Records — real, all five tabs (`/pacientes/[id]/historia-clinica`:
-  Resumen, Antecedentes, Odontograma, Atenciones — now populated by Agenda's real
-  "Finalizar atención" — Documentos, PDF export). Patient access to this screen
-  still pending.
+  Resumen — all 8 cards real, including Notas clínicas importantes and Plan de
+  Tratamiento — Antecedentes, Odontograma, Atenciones — now populated by
+  Agenda's real "Finalizar atención" — Documentos, PDF export). Patient access
+  to this screen still pending.
 - Reports — mock; pending.
 - Team — real display only (`/clinica`'s Equipo); invite/manage flows pending.
 - Subscription — mock; pending.
@@ -411,8 +472,9 @@ Priority order:
 4. Clínica — done, real (Información general, Sede, Logo, Equipo, Mi perfil
    profesional, Consultorios).
 5. Patients — done, real.
-6. Historia Clínica — done, real, all five tabs + PDF export, Atenciones now
-   Agenda-driven; Patient access still pending.
+6. Historia Clínica — done, real, all five tabs + PDF export, Resumen's 8
+   cards all real (Notas clínicas importantes, Plan de Tratamiento included),
+   Atenciones now Agenda-driven; Patient access still pending.
 7. Agenda — done, real (board, KPIs, cita CRUD, Iniciar/Continuar/Finalizar
    atención); front-desk `patient_arrived`/`waiting_room`/no-show actions and
    Solicitud de Cita still pending.

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ROLE_NAV_ITEMS } from "@/dev/role"; // DEV TOOL — see src/dev/role.ts
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
+import { NavLinkContent } from "./nav-link-status";
 
 type BottomTabBarProps = {
   // Matched against the same activeNavLabel each page already passes to
@@ -29,7 +30,7 @@ export function BottomTabBar({ activeLabel }: BottomTabBarProps) {
         const active = label === activeLabel;
         const isMarketplace = group === "marketplace";
         const className = "flex flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px]";
-        const children = (
+        const tabInner = (
           <>
             {isMarketplace ? (
               <span
@@ -44,6 +45,14 @@ export function BottomTabBar({ activeLabel }: BottomTabBarProps) {
             )}
             <span className={active ? "font-medium text-primary" : "text-foreground/55"}>{label}</span>
           </>
+        );
+        // Marketplace is always an external URL (see nav-items.ts) — a
+        // full browser navigation, not a client-side transition
+        // useLinkStatus tracks, so it skips the pending indicator.
+        const children = isMarketplace ? (
+          tabInner
+        ) : (
+          <NavLinkContent className="flex flex-1 flex-col items-center justify-center gap-1">{tabInner}</NavLinkContent>
         );
 
         // Falls back to an inert button for every nav item with no real

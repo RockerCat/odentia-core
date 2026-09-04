@@ -133,6 +133,16 @@ export function RealClinicalEncounterScreen({
   const [timerVisible, setTimerVisible] = useState(true);
   const [showNewAppointmentModal, setShowNewAppointmentModal] = useState(false);
   const [scheduledNextAppointment, setScheduledNextAppointment] = useState<Appointment | null>(null);
+  // Purely cosmetic pending flags for the two plain "navigate away"
+  // buttons below ("Volver a Agenda" header link, "Ver o modificar cita")
+  // — separate from `finalizing` (Finalizar atención's own contextual
+  // pending, already correct, never touched here) since either of these
+  // can be clicked independently of that flow. Neither is ever reset back
+  // to false on success: this whole screen unmounts once /agenda lands,
+  // so there's nothing left to reset it for (resetting early would flash
+  // the plain label back before the navigation actually leaves).
+  const [leavingToAgenda, setLeavingToAgenda] = useState(false);
+  const [openingScheduledAppointment, setOpeningScheduledAppointment] = useState(false);
   const [startedAt] = useState(() => new Date());
   const [now, setNow] = useState(() => new Date());
   const nextProcedureId = useRef(0);
@@ -288,11 +298,16 @@ export function RealClinicalEncounterScreen({
       <header className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3 sm:px-6">
         <button
           type="button"
-          onClick={() => router.push("/agenda")}
-          className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-foreground/70 transition-colors hover:bg-foreground/5 hover:text-foreground"
+          disabled={leavingToAgenda}
+          onClick={() => {
+            if (leavingToAgenda) return;
+            setLeavingToAgenda(true);
+            router.push("/agenda");
+          }}
+          className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-foreground/70 transition-colors hover:bg-foreground/5 hover:text-foreground disabled:opacity-60"
         >
           <ChevronIcon className="size-4" />
-          Volver a Agenda
+          {leavingToAgenda ? "Volviendo a Agenda…" : "Volver a Agenda"}
         </button>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-info/25 bg-info/10 px-2.5 py-1 text-xs font-medium text-info">
           <span className="size-1.5 rounded-full bg-info" aria-hidden="true" />
@@ -491,10 +506,15 @@ export function RealClinicalEncounterScreen({
                           </p>
                           <button
                             type="button"
-                            onClick={() => router.push("/agenda")}
-                            className="mt-2 text-xs font-medium text-primary hover:underline"
+                            disabled={openingScheduledAppointment}
+                            onClick={() => {
+                              if (openingScheduledAppointment) return;
+                              setOpeningScheduledAppointment(true);
+                              router.push("/agenda");
+                            }}
+                            className="mt-2 text-xs font-medium text-primary hover:underline disabled:opacity-60"
                           >
-                            Ver o modificar cita
+                            {openingScheduledAppointment ? "Abriendo cita…" : "Ver o modificar cita"}
                           </button>
                         </div>
                       ) : (

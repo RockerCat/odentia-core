@@ -12,10 +12,10 @@
 //   2. Medicamentos actuales                 → REAL (patient_medical_histories.current_medications)
 //   3. Condiciones médicas relevantes        → REAL (patient_medical_histories.medical_conditions)
 //   4. Última atención                       → REAL/DERIVADO (patient_clinical_encounters, already covered by qa-historia-clinica-ultima-atencion-check.mjs)
-//   5. Tratamientos activos                  → NO real entity exists yet (public.treatments is a clinic-wide catalog, not per-patient) — must stay an honest placeholder, never fabricated from procedures
+//   5. Tratamientos activos                  → REAL (public.patient_treatment_plan_items, added by "PROMPT NINJA — Plan de Tratamiento") — full CRUD coverage lives in qa-treatment-plan-check.mjs; this script only re-confirms the card itself renders real active (planned/in_progress) content and never a completed/cancelled item, so a future change to this card can't silently regress it back to a placeholder without failing here too
 //   6. Próxima cita                          → REAL/DERIVADO (public.appointments — earliest future non-terminal row)
 //   7. Última actualización del odontograma  → REAL/DERIVADO (patient_tooth_findings — THE reported bug)
-//   8. Notas clínicas importantes            → NO real entity exists yet — must stay an honest placeholder, never repurposing encounter/antecedentes notes
+//   8. Notas clínicas importantes            → REAL (public.patient_clinical_notes, added by "PROMPT NINJA — Notas clínicas importantes") — full CRUD coverage lives in qa-clinical-notes-check.mjs; this script only re-confirms the card itself renders real active content and never an archived note, so a future change to this card can't silently regress it back to a placeholder without failing here too.
 //
 // See resumen-tab.tsx's own top comment for the full per-card audit
 // writeup this script verifies.
@@ -76,8 +76,28 @@ async function main() {
     const ultimaAtencion = await cardValue("Última atención");
     assert(ultimaAtencion !== "Sin atenciones registradas", "Última atención is wired (covered in depth elsewhere)", failures);
 
-    const tratamientos = await cardValue("Tratamientos activos");
-    assert(tratamientos === "Ninguno registrado", 'Tratamientos activos stays an honest placeholder — no real per-patient entity exists (got "' + tratamientos + '")', failures);
+    // Same reasoning as the Notas clínicas importantes card below: this is
+    // no longer a plain ClinicalInfoCard, so it's read via its own
+    // container text rather than the shared cardValue() helper above.
+    const tratamientosCardText = await page.evaluate(() => {
+      const label = Array.from(document.querySelectorAll("p")).find((p) => p.textContent.trim() === "Tratamientos activos");
+      return label?.closest("div.rounded-xl")?.textContent ?? null;
+    });
+    assert(
+      Boolean(tratamientosCardText && tratamientosCardText.includes("Tratamiento de conducto")),
+      "Tratamientos activos shows a real active (in_progress) item from the fixture, not a placeholder",
+      failures,
+    );
+    assert(
+      Boolean(tratamientosCardText && !tratamientosCardText.includes("ya realizada")),
+      "never shows a completed item's content on the card",
+      failures,
+    );
+    assert(
+      Boolean(tratamientosCardText && !tratamientosCardText.includes("no continuar")),
+      "never shows a cancelled item's content on the card",
+      failures,
+    );
 
     const proximaCita = await cardValue("Próxima cita");
     assert(proximaCita !== "Sin cita programada", `Próxima cita reflects the real future appointment, never "Sin cita programada" (got "${proximaCita}")`, failures);
@@ -89,8 +109,24 @@ async function main() {
     assert(Boolean(odontograma && odontograma.includes("4 de sept de 2026")), `shows the MOST RECENT finding's date (2026-09-04), not an older one (got "${odontograma}")`, failures);
     assert(Boolean(odontograma && !odontograma.includes("20 de sept")), `never shows a stale/wrong date from an older finding (got "${odontograma}")`, failures);
 
-    const notas = await cardValue("Notas clínicas importantes");
-    assert(notas === "No registradas", `Notas clínicas importantes stays an honest placeholder — no real entity exists (got "${notas}")`, failures);
+    // This card is no longer a plain ClinicalInfoCard (it needs a list +
+    // a "Gestionar notas" action, not just a single string `value` — see
+    // resumen-tab.tsx's own comment), so it's read via its own container
+    // text rather than the shared cardValue() helper above.
+    const notasCardText = await page.evaluate(() => {
+      const label = Array.from(document.querySelectorAll("p")).find((p) => p.textContent.trim() === "Notas clínicas importantes");
+      return label?.closest("div.rounded-xl")?.textContent ?? null;
+    });
+    assert(
+      Boolean(notasCardText && notasCardText.includes("ansiedad dental")),
+      "Notas clínicas importantes shows real active note content (fixture's own note), not a placeholder",
+      failures,
+    );
+    assert(
+      Boolean(notasCardText && !notasCardText.includes("ya resuelta")),
+      "never shows an archived note's content on the card",
+      failures,
+    );
 
     await page.close();
   } finally {

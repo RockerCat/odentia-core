@@ -71,6 +71,16 @@ export function PatientRecordModal({
   const [documentDraft, setDocumentDraft] = useState(patient.documentId ?? "");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Purely cosmetic pending flag for "Ver historia clínica" — router.push
+  // is a real client-side transition to a Server Component route
+  // (resolveClinicContext + patient/history fetches), which used to give
+  // zero feedback between the click and the new screen appearing.
+  // Deliberately never reset back to false: this modal/screen is about to
+  // be replaced by the destination once navigation lands, so there's
+  // nothing left to reset it for (same convention as this file's own
+  // saving/editing flags don't need — see PROMPT NINJA's own "no resetear
+  // manualmente el pending antes de que termine la navegación").
+  const [openingHistory, setOpeningHistory] = useState(false);
 
   // Same patient_medical_histories row Historia Clínica reads/writes (see
   // clinical-alerts.tsx) — resolved client-side on open since this modal,
@@ -341,10 +351,15 @@ export function PatientRecordModal({
         <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-border px-5 py-3">
           <button
             type="button"
-            onClick={() => router.push(`/pacientes/${patient.id}/historia-clinica`)}
-            className="rounded-lg border border-border px-3 py-2.5 text-sm font-medium text-foreground/80 hover:bg-foreground/5"
+            disabled={openingHistory}
+            onClick={() => {
+              if (openingHistory) return;
+              setOpeningHistory(true);
+              router.push(`/pacientes/${patient.id}/historia-clinica`);
+            }}
+            className="rounded-lg border border-border px-3 py-2.5 text-sm font-medium text-foreground/80 hover:bg-foreground/5 disabled:opacity-60"
           >
-            Ver historia clínica
+            {openingHistory ? "Abriendo historia clínica…" : "Ver historia clínica"}
           </button>
           {/* No hay backend real de citas todavía — visible por paridad de
               diseño, deshabilitado en vez de abrir un flujo mock. */}

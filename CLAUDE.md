@@ -138,6 +138,19 @@ client state. "Finalizar atención" always persists the encounter
 (`public.patient_clinical_encounters`, linked 1:1 to its Cita via a unique
 `appointment_id`) before marking the Cita `completed`, never the reverse.
 
+`src/components/toast.tsx` (`ToastProvider`/`useToast()`) is the one shared
+primitive for ephemeral success/error confirmations — mounted once in the
+root layout, available everywhere. Reuse it for any new mutation's
+success/error feedback; never build a second toast/snackbar.
+
+Real internal `<Link>`s (Sidebar, BottomTabBar, Portal nav) get a small
+per-item pending indicator via `src/components/shell/nav-link-status.tsx`'s
+`NavLinkContent`, built on Next's own `useLinkStatus()` — reuse it for any
+new nav `<Link>` rather than a custom router-event tracker. A plain
+`router.push`/`.back()` button (not a `<Link>`) instead gets a local
+pending `useState` + disabled CTA, same convention as every existing one
+(e.g. `patient-clinical-record-screen.tsx`'s "Descargar PDF").
+
 ---
 
 # Multi-Tenant
