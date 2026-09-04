@@ -15,18 +15,27 @@ import { resolveUpdatedByProfessional, type UpdatedByProfessional } from "./reso
 //     scheduled one — the demo's badge only existed because its mock type
 //     borrowed AppointmentStatus for that purpose (see the migration's own
 //     comment).
-//   - Every clinical field (motivo, diagnóstico, tratamiento, notas) gets
+//   - Every clinical field (motivo, diagnóstico, procedimientos, notas) gets
 //     its own inline line instead of the demo's single "treatment" + optional
 //     "findings" — same "nothing hidden, nothing truncated" philosophy,
 //     applied to the real field set. That inline-everything behavior is
 //     itself what satisfies "clear way to view detail" — no separate modal.
+//   - "treatment" (the encounter's own free-text summary of the procedures
+//     actually performed, built from patient_clinical_encounter_procedures
+//     — see clinical-encounter-draft.ts's buildTreatmentText) is labeled
+//     "Procedimientos realizados" here, never "Tratamiento" — that word is
+//     reserved for the still-future Tratamiento/Plan de Tratamiento concept
+//     and for the treatments catalog's own picker (Nueva cita, "Tratamiento
+//     recomendado" for a next visit) — see PROMPT NINJA "Unificar
+//     terminología clínica de procedimientos". The underlying field/type
+//     name (`treatment`) is untouched — this is a label-only distinction.
 const DATE_FORMATTER = new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "short", year: "numeric" });
 const TIME_FORMATTER = new Intl.DateTimeFormat("es-CO", { hour: "numeric", minute: "2-digit" });
 
 const FIELD_LABELS = [
   { key: "reason", label: "Motivo de consulta" },
   { key: "diagnosis", label: "Diagnóstico / valoración" },
-  { key: "treatment", label: "Tratamiento realizado" },
+  { key: "treatment", label: "Procedimientos realizados" },
   { key: "notes", label: "Notas clínicas" },
   { key: "indications", label: "Indicaciones al paciente" },
 ] as const satisfies readonly { key: keyof ClinicalEncounterRecord; label: string }[];

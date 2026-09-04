@@ -330,7 +330,12 @@ function EncounterRow({ encounter }: { encounter: PdfEncounterRow }) {
       </View>
       {encounter.reason && <Text style={styles.compactNote}>Motivo: {encounter.reason}</Text>}
       {encounter.diagnosis && <Text style={styles.compactNote}>Diagnóstico: {encounter.diagnosis}</Text>}
-      {encounter.treatment && <Text style={styles.compactNote}>Tratamiento: {encounter.treatment}</Text>}
+      {/* "treatment" is the encounter's own free-text summary of the
+          procedures actually performed (see atenciones-tab.tsx's own
+          comment on why this is never labeled "Tratamiento" — that word is
+          reserved for the still-future Tratamiento/Plan de Tratamiento
+          concept and the treatments catalog's own picker). */}
+      {encounter.treatment && <Text style={styles.compactNote}>Procedimientos realizados: {encounter.treatment}</Text>}
       {encounter.notes && <Text style={styles.compactNote}>Notas: {encounter.notes}</Text>}
       {encounter.indications && <Text style={styles.compactNote}>Indicaciones: {encounter.indications}</Text>}
     </CompactRow>
