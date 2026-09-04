@@ -1,3 +1,5 @@
+"use client";
+
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 type TooltipProps = {

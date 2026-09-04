@@ -16,14 +16,16 @@ export type ActionOutcome = { status: "ok" } | { status: "error"; message: strin
 export type CreateAppointmentOutcome = { status: "ok"; appointment: Appointment } | { status: "error"; message: string };
 
 const GENERIC_ERROR = "No pudimos guardar el cambio. Intenta de nuevo.";
-const PAST_DATE_ERROR = "No se pueden agendar citas en una fecha u hora que ya pasó.";
+// Exported so regression tests can assert against it directly instead of
+// duplicating this Spanish string.
+export const PAST_DATE_ERROR = "No se pueden agendar citas en una fecha u hora que ya pasó.";
 
 // Real backend gate against past dates/times — the board's own slot
 // grid already disables past slots visually (see real-appointments-board.tsx's
 // isPastSlot use), but that's UX only. This is the single source of truth
 // enforced no matter which flow tries to write `starts_at` (Nueva cita,
 // or the detail modal's own Fecha/Horario reschedule editors).
-function isPastInstant(iso: string): boolean {
+export function isPastInstant(iso: string): boolean {
   return new Date(iso).getTime() < Date.now();
 }
 

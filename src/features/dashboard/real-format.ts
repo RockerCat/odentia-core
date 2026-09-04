@@ -15,6 +15,7 @@
 // duplicated inline.
 
 import type { ClinicalProfessional } from "./appointments-data";
+import { TIME_SLOTS } from "./schedule-config";
 
 const TIME_FORMATTER = new Intl.DateTimeFormat("es-CO", { hour: "numeric", minute: "2-digit", hour12: true });
 const DATE_FORMATTER = new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "short" });
@@ -59,20 +60,35 @@ export function isPastSlot(dayKey: string, slot: string): boolean {
   return slotDateTime(dayKey, slot).getTime() < Date.now();
 }
 
-// Calendar-day-only check for date pickers (WeekDayPickerContent), which
-// select a day with no time attached yet — today itself is never past here
-// even seconds before midnight; individual slots within today are what
-// isPastSlot above disables. The single real "no past appointments" rule
-// this codebase enforces (see appointments-actions.ts's own isPastInstant,
-// the actual source of truth checked again on every create/reschedule) is
-// deliberately mirrored here at the UI layer so invalid choices are
-// unselectable rather than merely rejected after the fact.
+// Calendar-day-only check: true once a day's OWN midnight is behind "now",
+// regardless of the clinic's actual operating hours — today itself is
+// never past here even seconds before midnight. Kept for what it is (a
+// pure calendar comparison, covered by its own tests below) but no longer
+// what date pickers use to decide if a day is selectable — see
+// hasAvailableFutureSlot, which is.
 export function isPastDayKey(dayKey: string): boolean {
   const [year, month, date] = dayKey.split("-").map(Number);
   const startOfDay = new Date(year, month - 1, date);
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
   return startOfDay.getTime() < startOfToday.getTime();
+}
+
+// The single source of truth for "can this day still be picked" in every
+// Agenda date picker (WeekDayPickerContent — Nueva cita, Reprogramar cita,
+// and Agendar próxima cita, which reuses RealNewAppointmentModal
+// unchanged): a day is selectable only if at least one of the clinic's
+// fixed slots (schedule-config.ts's TIME_SLOTS) is still in the future for
+// it, reusing isPastSlot itself rather than a second date comparison. This
+// naturally covers all four cases isPastDayKey alone couldn't: a fully
+// past day (every slot past) is disabled; a future day (every slot
+// future) is enabled; "today" is enabled exactly while it still has a
+// selectable slot, and disabled once the clinic's last slot for today has
+// also passed (isPastDayKey alone always reads today as selectable, which
+// is what let "jueves 3 sep, 5:25 PM" stay pickable with zero valid hours
+// left).
+export function hasAvailableFutureSlot(dayKey: string): boolean {
+  return TIME_SLOTS.some((slot) => !isPastSlot(dayKey, slot));
 }
 
 export function initialsOf(name: string): string {

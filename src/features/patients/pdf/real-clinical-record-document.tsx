@@ -332,6 +332,7 @@ function EncounterRow({ encounter }: { encounter: PdfEncounterRow }) {
       {encounter.diagnosis && <Text style={styles.compactNote}>Diagnóstico: {encounter.diagnosis}</Text>}
       {encounter.treatment && <Text style={styles.compactNote}>Tratamiento: {encounter.treatment}</Text>}
       {encounter.notes && <Text style={styles.compactNote}>Notas: {encounter.notes}</Text>}
+      {encounter.indications && <Text style={styles.compactNote}>Indicaciones: {encounter.indications}</Text>}
     </CompactRow>
   );
 }

@@ -23,6 +23,7 @@ import { createClient } from "@/lib/supabase/client";
 import { FIELD_CLASS, PopoverFieldRow, TimePopoverContent } from "./appointment-detail-modal";
 import {
   cancelAppointment,
+  isPastInstant,
   markNoShow,
   markPatientArrived,
   reactivateAppointment,
@@ -32,6 +33,7 @@ import {
 import { fetchAppointmentsForPatient, type Appointment, type AppointmentStatus } from "./appointments-data";
 import { dateKeyOf, endTimeIso, formatDateLabel, formatTimeLabel, isPastSlot } from "./real-format";
 import {
+  canStartClinicalEncounter,
   CHANGEABLE_STATUSES,
   getDisplayStatus,
   getHistoryStatusBadgeClass,
@@ -93,6 +95,7 @@ export function RealAppointmentDetailModal({
   appointment,
   professional,
   role,
+  canAttendPatients,
   treatmentOptions,
   roomOptions,
   onClose,
@@ -102,6 +105,15 @@ export function RealAppointmentDetailModal({
   appointment: Appointment;
   professional: BoardProfessional | null;
   role: "clinic_admin" | "dentist" | "assistant";
+  // Mirrors clinical-permissions.ts's canEditClinicalData() exactly — a
+  // dentist/clinic_admin still needs their OWN active professional_profile
+  // to actually finalize an atención (insert_patient_clinical_encounter's
+  // is_active_clinical_professional check), so "Iniciar/Continuar atención"
+  // must never be offered to one who doesn't have one: without this gate, a
+  // Clinic Admin with no professional profile could move the Cita to
+  // in_progress and fill in the whole encounter form only to hit a
+  // permission error at the very last step ("Finalizar atención").
+  canAttendPatients: boolean;
   treatmentOptions: string[];
   roomOptions: string[];
   onClose: () => void;
@@ -200,17 +212,28 @@ export function RealAppointmentDetailModal({
   const showMarkArrived = !isCancelled && isAssistant && canMarkArrived;
   // Starting/continuing a clinical encounter is a clinical action — never
   // for Assistant (see CLAUDE.md's Roles: Assistant supports operations,
-  // it doesn't attend patients). Always offered for any non-terminal Cita,
-  // "Sin cerrar" included — a late start (attention did happen, just never
-  // got logged) is one of the two valid ways to resolve it, see CLAUDE.md's
-  // Appointment Lifecycle.
-  const showStartEncounter = !isAssistant && !isTerminal;
+  // it doesn't attend patients), and never for a dentist/clinic_admin
+  // without their own active professional_profile (canAttendPatients —
+  // see this prop's own comment). The temporal rule (terminal never,
+  // in_progress always, otherwise only from 30 min before startsAt
+  // onward — "Sin cerrar" included, a late start is one of the two valid
+  // ways to resolve it per CLAUDE.md's Appointment Lifecycle) is
+  // centralized in canStartClinicalEncounter — the same helper the real
+  // /agenda/atencion/[appointmentId] route's server-side guard reuses, so
+  // a direct/bookmarked URL opened too early is rejected the same way
+  // this button would already be hidden.
+  const showStartEncounter = !isAssistant && canAttendPatients && canStartClinicalEncounter(appointment, now);
   // The other valid resolution for a "Sin cerrar" Cita that never started
-  // attention at all: the Patient genuinely never showed. Never offered for
-  // one already in_progress (see real-status.ts's isUnresolved — that's the
+  // attention at all: the Patient genuinely never showed. Unlike starting/
+  // continuing an encounter, this is an operational appointment-management
+  // action (recording attendance), not a clinical one — Assistant CAN do
+  // this (CLAUDE.md's Roles: Assistant manages appointments), under the
+  // same operational conditions as any other role. Never offered for one
+  // already in_progress (see real-status.ts's isUnresolved — that's the
   // OTHER "Sin cerrar" case, resolved by "Continuar atención"/"Finalizar
-  // atención" instead, never "No asistió").
-  const showMarkNoShow = !isAssistant && !isTerminal && !isInProgress && isUnresolved;
+  // atención" instead, never "No asistió", and is a clinical action
+  // Assistant still can't touch).
+  const showMarkNoShow = !isTerminal && !isInProgress && isUnresolved;
   const showPrimaryCta = showReactivate || showMarkArrived || showStartEncounter;
   const showCancelCta = !(isAssistant && isInProgress);
   const footerButtonCount = (showCancelCta ? 1 : 0) + (showMarkNoShow ? 1 : 0) + 1 + (showPrimaryCta ? 1 : 0);
@@ -562,8 +585,19 @@ function ViewDetails({
           weekDays={currentWeekDays}
           currentDayKey={currentDayKey}
           onSelect={(dayKey) => {
-            onCancelEdit();
+            // WeekDayPickerContent only disables a whole PAST DAY
+            // (isPastDayKey) — it has no idea this appointment's existing
+            // time-of-day, combined with a day the user CAN pick (e.g.
+            // today), can still land in the past. Reusing isPastInstant
+            // (the same check updateAppointment enforces server-side)
+            // here blocks that write before it's ever attempted, instead
+            // of silently failing: onSaveField isn't awaited by this
+            // picker, so a rejected save here would previously just be an
+            // unhandled promise with the popover already closed and no
+            // feedback shown.
             const newStart = isoDayKeyToLocalDate(dayKey, appointment.startsAt);
+            if (isPastInstant(newStart.toISOString())) return;
+            onCancelEdit();
             onSaveField({ startsAt: newStart.toISOString() });
           }}
         />

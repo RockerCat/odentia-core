@@ -124,12 +124,17 @@ remaining surface) while its own conversion is pending.
   same authorization rule as Antecedentes. Header shows real "Actualizado {fecha} ·
   {profesional}" from the most recently updated finding.
 - **Atenciones** — real, `patient_clinical_encounters` (motivo, diagnóstico,
-  tratamiento, notas, profesional, fecha/hora). Read-only in this screen by design:
-  the approved UI has no "register" action here — rows are created by "Finalizar
-  atención" in Agenda's real Atención flow (see Agenda below), never a second
-  creation flow. Each row is now linked to its originating Cita via a nullable,
-  unique `appointment_id` (historical/manual encounters keep it null) — at most one
-  encounter per Cita, enforced by a partial unique index, not just app logic.
+  tratamiento, notas, indicaciones al paciente, profesional, fecha/hora), only ever
+  shows rows with `finalized_at is not null` — a draft saved but not yet finalized
+  from Agenda's Atención screen is never shown here. Read-only in this screen by
+  design: the approved UI has no "register" action here — rows are created/updated
+  by "Guardar borrador"/"Finalizar atención" in Agenda's real Atención flow (see
+  Agenda below), never a second creation flow. Each row is now linked to its
+  originating Cita via a nullable, unique `appointment_id` (historical/manual
+  encounters keep it null) — at most one encounter per Cita, enforced by a partial
+  unique index, not just app logic. Procedimientos realizados live in their own
+  `patient_clinical_encounter_procedures` child table; this tab still reads the
+  parent row's auto-derived `treatment` summary, unchanged.
 - **Documentos** — real, `patient_clinical_documents` + a private `clinical-documents`
   Storage bucket (20MB limit; JPG/PNG/WEBP/PDF/DOC/DOCX). Two-column layout (list +
   preview: images `object-contain`, PDFs embedded, DOC/DOCX as a file-info card).
@@ -164,8 +169,15 @@ remaining surface) while its own conversion is pending.
   (`scheduled | confirmed | patient_arrived | waiting_room | in_progress | completed
   | no_show | cancelled`, see `appointments-data.ts`) — closer to CLAUDE.md's actual
   Cita lifecycle than the mock's own flattened 6-value stand-in;
-  `patient_arrived`/`waiting_room`/`no_show` are declared but have no dedicated UI
-  action yet (same gap the schema already flagged).
+  `patient_arrived`/`waiting_room` are declared but have no dedicated UI action yet
+  (same gap the schema already flagged); `no_show` now does (see "Sin cerrar" below).
+- **"Sin cerrar"** (`real-status.ts`) — a non-terminal Cita more than 2 hours
+  (`UNRESOLVED_GRACE_MINUTES`) past `startsAt + durationMinutes` reads as `Sin cerrar`
+  everywhere its status shows (board, KPIs, detail modal, history), purely derived —
+  the real `status` never changes on its own. Covers both an `in_progress` Cita stuck
+  running (resolved via "Continuar atención"/"Finalizar atención") and one that never
+  started at all (resolved via "Iniciar atención" or the new "Marcar No asistió",
+  `markNoShow` in `appointments-actions.ts`).
 - **No past appointments, one rule, everywhere**: `appointments-actions.ts`'s
   `isPastInstant` is the single backend source of truth (rejects any past `starts_at`
   on create or reschedule); `real-format.ts`'s `isPastSlot`/`isPastDayKey` mirror it
@@ -185,22 +197,52 @@ remaining surface) while its own conversion is pending.
     second implementation. It shows the patient's whole cumulative odontogram
     (there's no per-visit odontogram concept), so a finding from an earlier visit is
     expected to already show up on a brand-new atención.
-  - **Notas de atención / Procedimientos / Indicaciones / next-appointment answers**
-    stay session-only (no schema field, no acceptance criterion needed one) — same
-    fidelity the approved demo's own "Guardar borrador" already had.
-  - **"Finalizar atención"** persists ONE real `patient_clinical_encounters` row
-    (via `insert_patient_clinical_encounter`, now idempotent by `appointment_id` —
-    a retry or two concurrent tabs can never create a second row) and only THEN
-    marks the Cita `completed` — never the other way around, so a failed write
-    leaves the Cita safely `in_progress` and retryable. Redirects back to `/agenda`
-    afterward, never to Historia Clínica automatically (Historia Clínica just picks
-    the new Atención up next time it's opened, like any other real write).
+  - **"Guardar borrador" (real)**: persists the encounter's current
+    notas/indicaciones/procedimientos via `upsert_patient_clinical_encounter`
+    (`clinic_id`-scoped, clinic-wide clinical write — see Roles below), keyed by
+    `appointment_id` so it always updates the SAME row, never inserts a second one.
+    `finalized_at` (nullable) is the draft/finalized state itself — a draft never
+    flips the Cita's own `status`. Refresh, "Continuar atención," or a second
+    "Guardar borrador" all reconstruct/update the exact same persisted draft
+    (`existingEncounter`/`existingProcedures` in the route's own loader).
+  - **Procedimientos realizados** — real, `patient_clinical_encounter_procedures`
+    (one row per procedure: name + optional note, not JSON), replaced wholesale on
+    every save/finalize (the UI always edits the full set). `treatment` on the
+    parent row stays an auto-derived flattened summary for Historia Clínica/PDF,
+    which read it unchanged.
+  - **"Finalizar atención"** upserts the SAME real `patient_clinical_encounters`
+    row (idempotent by `appointment_id` — a retry, two concurrent tabs, or a
+    resumed draft can never create a second row or overwrite an already-finalized
+    one) and only THEN marks the Cita `completed` — never the other way around, so
+    a failed write leaves the Cita safely `in_progress` and retryable. Redirects
+    back to `/agenda` afterward, never to Historia Clínica automatically (Historia
+    Clínica just picks the new Atención up next time it's opened — filtered to
+    `finalized_at is not null`, a draft is never shown there).
 - Marketplace card still links out to the real external Marketplace app
   (`https://odentia-marketplace.vercel.app`) — the card itself stays a mock preview,
   per Marketplace Independence.
+- "Iniciar/Continuar atención" is gated by `canEditClinicalData()` (the same rule
+  Historia Clínica uses), not just role — a Clinic Admin with no active
+  `professional_profile` never sees the CTA, closing a dead-end where she could
+  otherwise move a Cita to `in_progress` and fill in the whole encounter form only to
+  hit a permission error at "Finalizar atención." `/agenda/atencion/[appointmentId]`
+  also self-heals a scheduled/confirmed Cita to `in_progress` on load, so a
+  direct/bookmarked URL can never skip straight to `completed`.
 - Not yet real: `Solicitud de Cita` (Patient-initiated request lifecycle — Patient
-  Portal is still fully mock), a front-desk flow for `patient_arrived`/`waiting_room`,
-  and a "Marcar no asistió" action.
+  Portal is still fully mock) and a front-desk flow for `patient_arrived`/`waiting_room`.
+- **Roles/RLS for clinical writes (decided)**: any active Dentist, or a Clinic
+  Admin with her own active `professional_profile`, may register/edit clinical
+  data (Atenciones, Antecedentes, Odontograma) for ANY patient in her clinic —
+  deliberately clinic-wide, never restricted to "assigned to this professional."
+  `clinic_id` is the only mandatory isolation boundary. CLAUDE.md's Roles section
+  reflects this; RLS/`is_active_clinical_professional()` already implemented it
+  exactly, untouched. Assistant can read Historia Clínica per existing rules but
+  can never start/continue/edit/finalize a clinical encounter.
+- Known gap (tracked, not yet resolved): "¿Necesita próxima cita?" 's Sí/No
+  toggle in `RealClinicalEncounterScreen` is UI-only — only the "Tratamiento
+  recomendado" selection has real effect (it preselects "Agendar próxima cita"'s
+  reason field); the toggle itself and whether a follow-up was actually needed are
+  never persisted anywhere.
 
 ---
 

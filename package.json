@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:browser": "node scripts/qa-agenda-console-check.mjs && node scripts/qa-no-past-appointments-check.mjs && node scripts/qa-can-start-encounter-check.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",
@@ -26,8 +28,10 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "puppeteer-core": "^25.10.0",
     "supabase": "^2.115.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.7"
   }
 }

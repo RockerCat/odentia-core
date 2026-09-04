@@ -29,6 +29,7 @@ export function RealAgendaScreen({
   treatmentOptions,
   roomOptions,
   canEditPatientData,
+  canAttendPatients,
   clinicIdentityCard,
   marketplaceCard,
 }: {
@@ -41,6 +42,7 @@ export function RealAgendaScreen({
   treatmentOptions: string[];
   roomOptions: string[];
   canEditPatientData: boolean;
+  canAttendPatients: boolean;
   clinicIdentityCard: ReactNode;
   marketplaceCard: ReactNode;
 }) {
@@ -58,7 +60,18 @@ export function RealAgendaScreen({
   const fetchedOffsets = useRef<Set<number>>(new Set([0]));
 
   useEffect(() => {
-    if (fetchedOffsets.current.has(weekOffset)) return;
+    // `loadingWeek` is a single flag, not one per offset — without this
+    // explicit reset, navigating BACK to an already-fetched week while a
+    // different week's fetch is still in flight (e.g. next → next → Hoy,
+    // all within a click or two) leaves it stuck `true` forever: the
+    // in-flight fetch's own cleanup sets `cancelled`, so its `finally`
+    // below skips clearing the flag, and this early return never touches
+    // it either. The board would then render an empty grid for a week
+    // whose data is already sitting in `appointmentsById`.
+    if (fetchedOffsets.current.has(weekOffset)) {
+      setLoadingWeek(false);
+      return;
+    }
     let cancelled = false;
     setLoadingWeek(true);
     (async () => {
@@ -73,6 +86,8 @@ export function RealAgendaScreen({
           for (const row of rows) next[row.id] = row;
           return next;
         });
+      } catch (error) {
+        if (!cancelled) console.error("[RealAgendaScreen] week fetch failed", error);
       } finally {
         if (!cancelled) setLoadingWeek(false);
       }
@@ -142,6 +157,7 @@ export function RealAgendaScreen({
           treatmentOptions={treatmentOptions}
           roomOptions={roomOptions}
           canEditPatientData={canEditPatientData}
+          canAttendPatients={canAttendPatients}
         />
       </div>
 
@@ -154,6 +170,7 @@ export function RealAgendaScreen({
           professionals={initialProfessionals}
           treatmentOptions={treatmentOptions}
           roomOptions={roomOptions}
+          canAttendPatients={canAttendPatients}
           onAppointmentUpdated={applyUpdate}
         />
         {marketplaceCard}

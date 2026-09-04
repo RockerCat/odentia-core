@@ -241,6 +241,7 @@ export function RealAppointmentsBoard({
   treatmentOptions,
   roomOptions,
   canEditPatientData,
+  canAttendPatients,
 }: {
   clinicId: string;
   role: MembershipRole;
@@ -260,6 +261,7 @@ export function RealAppointmentsBoard({
   treatmentOptions: string[];
   roomOptions: string[];
   canEditPatientData: boolean;
+  canAttendPatients: boolean;
 }) {
   const professionals = rawProfessionals.map(toBoardProfessional);
   const isDentist = role === "dentist";
@@ -532,6 +534,7 @@ export function RealAppointmentsBoard({
           appointment={selectedAppointment}
           professional={professionals.find((p) => p.professionalProfileId === selectedAppointment.professionalProfileId) ?? null}
           role={role}
+          canAttendPatients={canAttendPatients}
           treatmentOptions={treatmentOptions}
           roomOptions={roomOptions}
           onClose={() => setSelectedAppointmentId(null)}

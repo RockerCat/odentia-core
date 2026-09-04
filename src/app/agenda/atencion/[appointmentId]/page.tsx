@@ -2,8 +2,10 @@ import { notFound } from "next/navigation";
 import { fetchAppointmentById, fetchClinicalProfessionals } from "@/features/dashboard/appointments-data";
 import { RealClinicalEncounterScreen } from "@/features/dashboard/real-clinical-encounter-screen";
 import { toBoardProfessional } from "@/features/dashboard/real-format";
+import { canStartClinicalEncounter } from "@/features/dashboard/real-status";
 import { getWeekDaysContaining } from "@/features/dashboard/real-week";
-import { fetchClinicalEncounterByAppointmentId } from "@/features/patients/clinical-encounters-data";
+import { fetchClinicalEncounterByAppointmentId, fetchClinicalEncounterProcedures } from "@/features/patients/clinical-encounters-data";
+import { canEditClinicalData } from "@/features/patients/clinical-permissions";
 import { fetchPatients } from "@/features/patients/data";
 import { fetchPatientToothFindings } from "@/features/patients/tooth-findings-data";
 import { fetchActiveTreatmentNames } from "@/features/treatments/data";
@@ -21,27 +23,56 @@ import { createClient } from "@/lib/supabase/server";
 // refresh mid-attention reconstruct correctly: the Cita and its Odontograma
 // findings are re-read fresh from Postgres, not from client-only state.
 //
-// Assistant is excluded from allowedRoles-equivalent gating here (see
-// CLAUDE.md's Roles: Assistant never attends patients) — enforced
-// server-side via the role check below, not just by RealClinicalEncounterScreen's
-// own client-side useRouteGuard (which only handles a role switch mid-session).
+// Gated by canEditClinicalData() (Assistant is always excluded — CLAUDE.md's
+// Roles: Assistant never attends patients — and so is a dentist/clinic_admin
+// with no active professional_profile, mirroring RealAppointmentDetailModal's
+// own canAttendPatients gate on "Iniciar/Continuar atención") — enforced
+// server-side here, not just by RealClinicalEncounterScreen's own
+// client-side useRouteGuard (which only handles a role switch mid-session).
 //
-// A terminal Cita (cancelled/completed/no_show) is not a valid target to
-// attend — notFound() rather than a redirect, matching this codebase's
-// existing convention for invalid/unauthorized real routes (see
-// fetchPatientById's own callers) instead of silently bouncing elsewhere.
+// A terminal Cita (cancelled/completed/no_show), or one whose start time
+// is still more than canStartClinicalEncounter's window away, is not a
+// valid target to attend right now — notFound() rather than a redirect,
+// matching this codebase's existing convention for invalid/unauthorized
+// real routes (see fetchPatientById's own callers) instead of silently
+// bouncing elsewhere. canStartClinicalEncounter (real-status.ts) is the
+// exact same helper RealAppointmentDetailModal's "Iniciar atención" CTA
+// uses to decide whether to even show the button — reused here, not
+// duplicated, so a direct/bookmarked/shared URL opened too early is
+// rejected outright instead of only being hidden from the normal UI path
+// (and, critically, never flips the Cita to `in_progress` below).
 export default async function ClinicalEncounterPage({ params }: { params: Promise<{ appointmentId: string }> }) {
   const { appointmentId } = await params;
   const supabase = await createClient();
-  const context = await resolveClinicContext(supabase);
+
+  let context;
+  try {
+    context = await resolveClinicContext(supabase);
+  } catch (error) {
+    console.error("[/agenda/atencion] resolveClinicContext failed", error);
+    notFound();
+  }
   if (context.status !== "ok") notFound();
-  if (context.membership.role === "assistant") notFound();
+  if (!canEditClinicalData(context)) notFound();
 
   const clinicId = context.clinic.id;
-  const appointment = await fetchAppointmentById(supabase, clinicId, appointmentId);
-  if (!appointment) notFound();
-  if (appointment.status === "cancelled" || appointment.status === "completed" || appointment.status === "no_show") {
-    notFound();
+  const rawAppointment = await fetchAppointmentById(supabase, clinicId, appointmentId);
+  if (!rawAppointment) notFound();
+  if (!canStartClinicalEncounter(rawAppointment)) notFound();
+
+  // Self-heals a direct/bookmarked/shared URL for a Cita that never went
+  // through RealAppointmentDetailModal's "Iniciar atención" (which is the
+  // only other place `in_progress` gets set) — without this, the screen
+  // would render "En atención" while the real status stayed
+  // scheduled/confirmed, and "Finalizar atención" would jump straight to
+  // `completed`, skipping `in_progress` entirely (see CLAUDE.md's
+  // Appointment Lifecycle). Never runs for an already-`in_progress` Cita
+  // (the normal "Continuar atención" case), so a refresh mid-attention is
+  // a no-op here.
+  let appointment = rawAppointment;
+  if (appointment.status !== "in_progress") {
+    const { error } = await supabase.from("appointments").update({ status: "in_progress" }).eq("id", appointment.id);
+    if (!error) appointment = { ...appointment, status: "in_progress" };
   }
 
   const weekDays = getWeekDaysContaining(appointment.startsAt);
@@ -51,13 +82,20 @@ export default async function ClinicalEncounterPage({ params }: { params: Promis
     fetchActiveTreatmentNames(supabase, clinicId),
     fetchActiveRoomNames(supabase, clinicId),
     fetchPatientToothFindings(supabase, clinicId, appointment.patientId),
-    // Load/resume check: does this Cita already have its encounter
-    // recorded (a previous "Finalizar atención" that persisted the
+    // Load/resume check: does this Cita already have a draft or finalized
+    // encounter recorded ("Guardar borrador" from an earlier visit to this
+    // same URL, or a previous "Finalizar atención" that persisted the
     // encounter but never got to flip the Cita to `completed`)? See
     // real-clinical-encounter-screen.tsx's own comment on how this is
-    // used — never re-inserted, only ever completed from here on.
+    // used — never re-inserted, only ever upserted from here on.
     fetchClinicalEncounterByAppointmentId(supabase, clinicId, appointmentId),
   ]);
+
+  // Only fetch once we know an encounter (draft or finalized) actually
+  // exists — a brand-new attention has no procedures to reconstruct yet.
+  const existingProcedures = existingEncounter
+    ? await fetchClinicalEncounterProcedures(supabase, clinicId, existingEncounter.id)
+    : [];
 
   const professionals = rawProfessionals.map(toBoardProfessional);
   const professional = professionals.find((p) => p.professionalProfileId === appointment.professionalProfileId) ?? null;
@@ -74,6 +112,7 @@ export default async function ClinicalEncounterPage({ params }: { params: Promis
       roomOptions={roomOptions}
       initialToothFindings={toothFindings}
       existingEncounter={existingEncounter}
+      existingProcedures={existingProcedures}
     />
   );
 }

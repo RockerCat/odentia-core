@@ -74,6 +74,7 @@ export type PdfEncounterRow = {
   diagnosis: string | null;
   treatment: string | null;
   notes: string | null;
+  indications: string | null;
 };
 
 export type PdfDocumentRow = {
@@ -188,6 +189,7 @@ export function buildRealClinicalRecordPdfData({
       diagnosis: encounter.diagnosis,
       treatment: encounter.treatment,
       notes: encounter.notes,
+      indications: encounter.indications,
     };
   });
 

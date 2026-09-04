@@ -28,6 +28,7 @@ const FIELD_LABELS = [
   { key: "diagnosis", label: "Diagnóstico / valoración" },
   { key: "treatment", label: "Tratamiento realizado" },
   { key: "notes", label: "Notas clínicas" },
+  { key: "indications", label: "Indicaciones al paciente" },
 ] as const satisfies readonly { key: keyof ClinicalEncounterRecord; label: string }[];
 
 export function AtencionesTab({ clinicId, encounters }: { clinicId: string | null; encounters: ClinicalEncounterRecord[] }) {

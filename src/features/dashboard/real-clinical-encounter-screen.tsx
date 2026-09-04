@@ -23,9 +23,10 @@ import {
 import { formatClockLabel, formatElapsed } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import type { Patient } from "@/features/patients/data";
+import { buildProceduresPayload, buildTreatmentText } from "@/features/patients/clinical-encounter-draft";
 import { EditOdontogramaModal } from "@/features/patients/edit-odontograma-modal";
-import { insertPatientClinicalEncounter } from "@/features/patients/clinical-encounters-actions";
-import type { ClinicalEncounterRecord } from "@/features/patients/clinical-encounters-data";
+import { upsertPatientClinicalEncounter } from "@/features/patients/clinical-encounters-actions";
+import type { ClinicalEncounterProcedureRecord, ClinicalEncounterRecord } from "@/features/patients/clinical-encounters-data";
 import { toOdontogramData, type ToothFindingRecord } from "@/features/patients/tooth-findings-data";
 import { FIELD_CLASS } from "./appointment-detail-modal";
 import { updateAppointment } from "./appointments-actions";
@@ -42,29 +43,38 @@ import type { WeekDay } from "./real-week";
 // in-page overlay like the mock ClinicalEncounterScreen it ports (that file
 // stays untouched — still used by the Patient Portal/still-mock dashboard).
 // Same approved visual design (chrome, section layout, classNames) — not
-// redesigned. What's real: the header/patient/professional info (real
-// Appointment), Odontograma (public.patient_tooth_findings, via the SAME
-// EditOdontogramaModal already used by Historia Clínica — not a second
-// odontogram editor), and "Finalizar atención" (writes ONE real
-// patient_clinical_encounters row via insert_patient_clinical_encounter,
-// THEN marks the Cita `completed` — never the other way around, see
-// handleFinalize's own comment). "Notas de atención"/"Procedimientos
-// realizados"/"Indicaciones al paciente"/next-appointment answers stay
-// session-only local state, same fidelity the approved demo itself already
-// had (its own "Guardar borrador" was always a no-op `simulateSave`) — no
-// draft field exists on any real table for this, and none of this task's
-// acceptance criteria requires one. The mock's fabricated "next patient"
-// countdown alert (a hardcoded name, no real lookup behind it) is dropped
-// entirely rather than ported — showing invented patient data on a real
-// screen is not an option, see CLAUDE.md's Security section.
+// redesigned. Everything here is real: header/patient/professional info
+// (real Appointment), Odontograma (public.patient_tooth_findings, via the
+// SAME EditOdontogramaModal already used by Historia Clínica — not a
+// second odontogram editor), and "Notas de atención"/"Procedimientos
+// realizados"/"Indicaciones al paciente" (public.patient_clinical_encounters
+// + patient_clinical_encounter_procedures, see the 20260903120000
+// migration) — persisted via upsert_patient_clinical_encounter, both by
+// "Guardar borrador" (finalize: false) and "Finalizar atención"
+// (finalize: true). The mock's fabricated "next patient" countdown alert
+// (a hardcoded name, no real lookup behind it) is dropped entirely rather
+// than ported — showing invented patient data on a real screen is not an
+// option, see CLAUDE.md's Security section.
 //
-// existingEncounter (see the page.tsx loader) is the load/resume check: a
-// non-null value means a PREVIOUS "Finalizar atención" already persisted
-// the encounter but never got to flip the Cita to `completed` (the write
-// that failed, or the tab that closed, in between) — this screen only ever
-// reaches an in_progress Cita (a completed one 404s at the route), so that
-// is the only way a real encounter can already exist here. handleFinalize
-// treats it as done and simply completes the Cita, never re-inserting.
+// Draft vs finalized: a row's finalized_at (null = draft) IS the state —
+// "Guardar borrador" upserts with finalize:false (creates the row on first
+// save, updates it in place on every later save — never a second row, see
+// the RPC's own idempotent-by-appointment_id comment); "Finalizar
+// atención" always calls the SAME upsert with finalize:true (persisting
+// whatever notes/procedures/indications are currently on screen, even if
+// nothing was explicitly drafted first) and only then marks the Cita
+// `completed`. Once finalized_at is set, the RPC treats the row as
+// immutable and returns it unchanged on any further call — this is what
+// makes both a retried "Finalizar atención" and a stray extra "Guardar
+// borrador" click safe (no duplicate row, no overwritten clinical record).
+//
+// existingEncounter/existingProcedures (see the page.tsx loader) are the
+// load/resume check AND the draft reconstruction: a non-null encounter
+// means a PREVIOUS "Guardar borrador" or "Finalizar atención" already
+// persisted this Cita's row — draft or finalized — and its notes/
+// indications/procedures seed this screen's initial state below, so a
+// refresh or "Continuar atención" always reconstructs exactly what was
+// last saved, never a blank form.
 
 type ProcedureRow = { id: string; name: string; note: string };
 
@@ -81,6 +91,7 @@ export function RealClinicalEncounterScreen({
   roomOptions,
   initialToothFindings,
   existingEncounter,
+  existingProcedures,
 }: {
   appointment: Appointment;
   professional: BoardProfessional | null;
@@ -92,6 +103,7 @@ export function RealClinicalEncounterScreen({
   roomOptions: string[];
   initialToothFindings: ToothFindingRecord[];
   existingEncounter: ClinicalEncounterRecord | null;
+  existingProcedures: ClinicalEncounterProcedureRecord[];
 }) {
   const router = useRouter();
   // Clinical action — never Assistant (see CLAUDE.md's Roles: Assistant
@@ -101,17 +113,22 @@ export function RealClinicalEncounterScreen({
   // the destination page.tsx also refuses to load the data server-side.
   const authorized = useRouteGuard(["clinic-admin", "dentist"]);
 
-  const [notes, setNotes] = useState("");
-  const [indications, setIndications] = useState("");
-  const [procedures, setProcedures] = useState<ProcedureRow[]>([]);
+  // Seeded from the persisted draft/finalized row (see this file's own
+  // header comment) — never blank just because the screen remounted.
+  const [notes, setNotes] = useState(existingEncounter?.notes ?? "");
+  const [indications, setIndications] = useState(existingEncounter?.indications ?? "");
+  const [procedures, setProcedures] = useState<ProcedureRow[]>(() =>
+    existingProcedures.map((p) => ({ id: p.id, name: p.name, note: p.note ?? "" })),
+  );
   const [needsNextAppointment, setNeedsNextAppointment] = useState<boolean | null>(null);
   const [nextTreatment, setNextTreatment] = useState("");
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [showFinalizeConfirm, setShowFinalizeConfirm] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
   const [toothFindings, setToothFindings] = useState<ToothFindingRecord[]>(initialToothFindings);
-  const [encounter, setEncounter] = useState<ClinicalEncounterRecord | null>(existingEncounter);
   const [odontogramOpen, setOdontogramOpen] = useState(false);
   const [timerVisible, setTimerVisible] = useState(true);
   const [showNewAppointmentModal, setShowNewAppointmentModal] = useState(false);
@@ -175,45 +192,59 @@ export function RealClinicalEncounterScreen({
     setProcedures((prev) => prev.filter((p) => p.id !== id));
   };
 
-  const handleSaveDraft = () => {
-    // Session-only — see the header comment on why there's no real draft
-    // field to persist this to.
-    setInfoMessage("Borrador guardado en esta sesión.");
+  const handleSaveDraft = async () => {
+    setSavingDraft(true);
+    setDraftError(null);
+    const result = await upsertPatientClinicalEncounter({
+      patientId: appointment.patientId,
+      appointmentId: appointment.id,
+      occurredAt: new Date().toISOString(),
+      reason: appointment.reason,
+      diagnosis: null,
+      treatment: buildTreatmentText(procedures),
+      notes: notes || null,
+      indications: indications || null,
+      procedures: buildProceduresPayload(procedures),
+      finalize: false,
+    });
+    setSavingDraft(false);
+    if (result.status === "error") {
+      setDraftError(result.message);
+      return;
+    }
+    setInfoMessage("Borrador guardado.");
   };
 
   const handleFinalize = async () => {
     setFinalizing(true);
     setFinalizeError(null);
 
-    // The encounter is persisted FIRST, the Cita is only marked `completed`
-    // once that write is confirmed — never the other way around. If the
-    // insert fails, we stop here: the Cita stays `in_progress` and
-    // "Finalizar atención" can simply be pressed again. `encounter` (state,
-    // seeded from the page load's own existence check) is only ever
-    // written to once per Cita — a retry after a status-update failure
-    // below skips straight to completing, it never calls insert twice.
-    // Duplicate protection isn't just this client check, though: the RPC
-    // itself is idempotent by appointment_id, and a partial unique index
-    // in Postgres is the real guarantee even under two concurrent tabs.
-    let persistedEncounter = encounter;
-    if (!persistedEncounter) {
-      const treatmentText = procedures.map((p) => p.name).filter(Boolean).join(", ") || null;
-      const encounterResult = await insertPatientClinicalEncounter({
-        patientId: appointment.patientId,
-        appointmentId: appointment.id,
-        occurredAt: new Date().toISOString(),
-        reason: appointment.reason,
-        diagnosis: null,
-        treatment: treatmentText,
-        notes: notes || null,
-      });
-      if (encounterResult.status === "error") {
-        setFinalizing(false);
-        setFinalizeError(encounterResult.message);
-        return;
-      }
-      persistedEncounter = encounterResult.encounter;
-      setEncounter(persistedEncounter);
+    // Always upserts — even when a draft already exists from an earlier
+    // "Guardar borrador" or a resumed session — so whatever's currently on
+    // screen (including anything typed since the last save) is what
+    // actually gets finalized. The Cita is only marked `completed` once
+    // this write is confirmed, never the other way around. If it fails, we
+    // stop here: the Cita stays `in_progress` and "Finalizar atención" can
+    // simply be pressed again — the RPC is idempotent by appointment_id
+    // and, once finalized_at is set, treats the row as immutable, so a
+    // retry (or a second tab) can never duplicate or overwrite the real
+    // clinical record.
+    const encounterResult = await upsertPatientClinicalEncounter({
+      patientId: appointment.patientId,
+      appointmentId: appointment.id,
+      occurredAt: new Date().toISOString(),
+      reason: appointment.reason,
+      diagnosis: null,
+      treatment: buildTreatmentText(procedures),
+      notes: notes || null,
+      indications: indications || null,
+      procedures: buildProceduresPayload(procedures),
+      finalize: true,
+    });
+    if (encounterResult.status === "error") {
+      setFinalizing(false);
+      setFinalizeError(encounterResult.message);
+      return;
     }
 
     const statusResult = await updateAppointment(appointment.id, { status: "completed" });
@@ -221,7 +252,8 @@ export function RealClinicalEncounterScreen({
     if (statusResult.status === "error") {
       // The encounter is already safely recorded — only the Cita's own
       // status write needs retrying, which the next "Finalizar atención"
-      // click does (skipping the insert, since `encounter` is now set).
+      // click does (the RPC call above just re-confirms the same already-
+      // finalized row, then this status write is retried).
       setFinalizeError(statusResult.message);
       return;
     }
@@ -299,6 +331,14 @@ export function RealClinicalEncounterScreen({
             <div className="mb-4 flex items-start justify-between gap-2 rounded-lg border border-danger/25 bg-danger/10 px-3 py-2 text-xs font-medium text-danger">
               <span>{finalizeError}</span>
               <button type="button" onClick={() => setFinalizeError(null)} aria-label="Cerrar aviso" className="shrink-0">
+                <CloseIcon className="size-3.5" />
+              </button>
+            </div>
+          )}
+          {draftError && (
+            <div className="mb-4 flex items-start justify-between gap-2 rounded-lg border border-danger/25 bg-danger/10 px-3 py-2 text-xs font-medium text-danger">
+              <span>{draftError}</span>
+              <button type="button" onClick={() => setDraftError(null)} aria-label="Cerrar aviso" className="shrink-0">
                 <CloseIcon className="size-3.5" />
               </button>
             </div>
@@ -592,14 +632,16 @@ export function RealClinicalEncounterScreen({
           <button
             type="button"
             onClick={handleSaveDraft}
+            disabled={savingDraft}
             className="rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-foreground/5 disabled:opacity-60 sm:px-6"
           >
-            Guardar borrador
+            {savingDraft ? "Guardando…" : "Guardar borrador"}
           </button>
           <button
             type="button"
             onClick={() => setShowFinalizeConfirm(true)}
-            className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 sm:px-6"
+            disabled={savingDraft}
+            className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60 sm:px-6"
           >
             Finalizar atención
           </button>
@@ -666,7 +708,11 @@ export function RealClinicalEncounterScreen({
           weekDays={weekDays}
           treatmentOptions={treatmentOptions}
           roomOptions={roomOptions}
-          prefill={{ professionalProfileId: appointment.professionalProfileId, patientId: appointment.patientId }}
+          prefill={{
+            professionalProfileId: appointment.professionalProfileId,
+            patientId: appointment.patientId,
+            reason: nextTreatment || undefined,
+          }}
           onClose={() => setShowNewAppointmentModal(false)}
           onCreated={(created) => {
             setScheduledNextAppointment(created);

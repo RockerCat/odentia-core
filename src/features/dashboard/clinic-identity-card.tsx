@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 import { BuildingIcon } from "@/components/shell/icons";
-import { useCurrentUserContext } from "@/features/session/use-current-user-context";
-import { CURRENT_USER } from "@/lib/current-user";
 
 // First step of per-clinic branding in Agenda (see CLAUDE.md Domain Model —
 // SaaS for Clinics): a card above the KPI grid identifying which clinic
@@ -20,16 +18,20 @@ import { CURRENT_USER } from "@/lib/current-user";
 // under Odentia's own sidebar logo so it stays clearly secondary — Odentia
 // is the platform brand, this is just the current clinic's context.
 //
-// This is identity/branding chrome, not Agenda feature content (unlike
-// AppointmentsCard/SummaryCards, which stay on mock data) — see
-// components/shell/use-shell-identity.ts for the same real-over-mock
-// overlay pattern applied to the Header. Needs "use client" for that same
-// hook, which this card didn't need before.
-export function ClinicIdentityCard() {
-  const real = useCurrentUserContext();
-  const clinicName = real && real.status === "ok" ? real.clinic.name : CURRENT_USER.clinicName;
-  const clinicLogoUrl = real && real.status === "ok" ? real.clinic.logoUrl : (CURRENT_USER.clinicLogoUrl ?? null);
-
+// clinicName/clinicLogoUrl come from the caller's already-resolved
+// resolveClinicContext() (see src/app/agenda/page.tsx) — never a second,
+// client-side re-resolve with a mock fallback (that pattern, still used by
+// components/shell/use-shell-identity.ts for the Header, briefly shows/
+// permanently falls back to mock clinic branding on a slow or failed
+// client fetch; this card's only caller already has the real value one
+// request earlier, so there's no reason to risk that here).
+export function ClinicIdentityCard({
+  clinicName,
+  clinicLogoUrl,
+}: {
+  clinicName: string;
+  clinicLogoUrl: string | null;
+}) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-background px-5 py-5">
       <div className="flex h-20 w-20 items-center justify-center sm:h-24 sm:w-24">

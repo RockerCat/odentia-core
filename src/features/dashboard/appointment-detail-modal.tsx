@@ -952,6 +952,15 @@ export function TimePopoverContent({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
 
+  // `time` (and so `localTime`'s initial value) can already be a disabled
+  // slot — real-new-appointment-modal.tsx falls back to the clinic's first
+  // slot while no time has been chosen yet, which is often already past
+  // for "today". An <option disabled> only blocks picking it FROM the
+  // dropdown; it doesn't stop this button from confirming whatever value
+  // is already selected. Gating Guardar on the same isSlotDisabled check
+  // closes that gap without a second past/future comparison.
+  const localTimeDisabled = isSlotDisabled?.(localTime) ?? false;
+
   const handleSaveClick = async () => {
     setSaving(true);
     setError(false);
@@ -999,6 +1008,9 @@ export function TimePopoverContent({
           ))}
         </select>
       </div>
+      {localTimeDisabled && (
+        <p className="text-[11px] text-danger">Elige un horario que no haya pasado.</p>
+      )}
       {error && <p className="text-[11px] text-danger">No se pudo guardar. Inténtalo de nuevo.</p>}
       <div className="flex items-center justify-end gap-2 pt-0.5">
         <button
@@ -1012,7 +1024,7 @@ export function TimePopoverContent({
         <button
           type="button"
           onClick={handleSaveClick}
-          disabled={saving}
+          disabled={saving || localTimeDisabled}
           className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           {saving ? "Guardando…" : "Guardar"}

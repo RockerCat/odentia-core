@@ -104,6 +104,43 @@ const UNRESOLVED_LABEL = "Sin cerrar";
 const UNRESOLVED_STYLE = "border-noshow/25 bg-noshow/10 text-noshow";
 const UNRESOLVED_HISTORY_BADGE_CLASS = "border-noshow/25 bg-noshow/10 text-noshow";
 
+// "Iniciar atención" opens this early relative to startsAt — a
+// professional running ahead of schedule isn't blocked, but the CTA can't
+// be used hours in advance either.
+export const START_ENCOUNTER_WINDOW_MINUTES = 30;
+
+// Whether "Iniciar/Continuar atención" is allowed for this Cita right now
+// — the single source of truth for RealAppointmentDetailModal's primary
+// CTA and the real /agenda/atencion/[appointmentId] route's own
+// server-side guard (which must reject the same cases outright, not just
+// hide a button — see that route's own comment). Pure function of
+// (appointment, now): no role or professional-profile knowledge, since
+// that's a separate gate (canAttendPatients/Assistant) callers AND this
+// together, never folded in here.
+//   - Terminal (completed/cancelled/no_show): never — a closed Cita has
+//     nothing left to start.
+//   - in_progress: always — this is "Continuar atención", not a new
+//     start, and has no time window of its own.
+//   - Anything else (scheduled/confirmed/patient_arrived/waiting_room):
+//     only from START_ENCOUNTER_WINDOW_MINUTES before startsAt onward.
+//     There's no upper bound — once the window opens it never closes on
+//     its own, covering both "during the appointment" and arbitrarily
+//     long after (including well past isUnresolved's own grace period: a
+//     "Sin cerrar" Cita that never started attention must stay startable
+//     until something else resolves it, per CLAUDE.md's Appointment
+//     Lifecycle).
+export function canStartClinicalEncounter(
+  appointment: Pick<Appointment, "status" | "startsAt">,
+  now: Date = new Date(),
+): boolean {
+  if (appointment.status === "completed" || appointment.status === "cancelled" || appointment.status === "no_show") {
+    return false;
+  }
+  if (appointment.status === "in_progress") return true;
+  const startMs = new Date(appointment.startsAt).getTime();
+  return now.getTime() >= startMs - START_ENCOUNTER_WINDOW_MINUTES * 60_000;
+}
+
 export function getStatusLabel(status: DisplayStatus): string {
   return status === "unresolved" ? UNRESOLVED_LABEL : REAL_STATUS_LABELS[status];
 }

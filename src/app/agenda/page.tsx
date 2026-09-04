@@ -4,6 +4,7 @@ import { MarketplaceCard } from "@/features/dashboard/marketplace-card";
 import { RealAgendaScreen } from "@/features/dashboard/real-agenda-screen";
 import { fetchAppointmentsForRange, fetchClinicalProfessionals } from "@/features/dashboard/appointments-data";
 import { getWeekRangeIso } from "@/features/dashboard/real-week";
+import { canEditClinicalData } from "@/features/patients/clinical-permissions";
 import { fetchPatients } from "@/features/patients/data";
 import { fetchActiveTreatmentNames } from "@/features/treatments/data";
 import { fetchActiveRoomNames } from "@/features/rooms/data";
@@ -63,6 +64,15 @@ export default async function AgendaPage() {
   }
 
   const canEditPatientData = context.membership.role !== "dentist";
+  // "Iniciar/Continuar atención" writes a real clinical encounter at
+  // "Finalizar atención" (insert_patient_clinical_encounter), which requires
+  // an active professional_profile (see clinical-permissions.ts and that
+  // RPC's own is_active_clinical_professional check) — a Clinic Admin with
+  // no professional_profile configured can otherwise move a Cita to
+  // in_progress and fill in the whole encounter form before hitting a
+  // permission error only at the very last step. Gating the CTA with the
+  // same rule Historia Clínica already uses avoids that dead-end.
+  const canAttendPatients = canEditClinicalData(context);
 
   return (
     <AppShell activeNavLabel="Agenda" heading={<Greeting />} allowedRoles={["clinic-admin", "dentist", "assistant"]}>
@@ -79,8 +89,21 @@ export default async function AgendaPage() {
           treatmentOptions={treatmentOptions}
           roomOptions={roomOptions}
           canEditPatientData={canEditPatientData}
-          clinicIdentityCard={<ClinicIdentityCard />}
-          marketplaceCard={<MarketplaceCard />}
+          canAttendPatients={canAttendPatients}
+          // key= here isn't for a list — RealAgendaScreen places these as
+          // static siblings, not a .map() — but React 19.2.8's dev-mode key
+          // validation flags a Client Component's static children array
+          // when it mixes elements it created itself (RealSummaryCards)
+          // with ones created by an ancestor Server Component (this page)
+          // and passed down as props (these two). Without a key here, this
+          // page reliably logs "Each child in a list should have a unique
+          // key prop... Check the render method of RealAgendaScreen. It
+          // was passed a child from AgendaPage." on every real load — see
+          // src/app/dev-qa/agenda-preview/page.tsx, the regression fixture
+          // for exactly this (it must stay a Server Component, not "use
+          // client", to actually catch this class of bug).
+          clinicIdentityCard={<ClinicIdentityCard key="clinic-identity" clinicName={context.clinic.name} clinicLogoUrl={context.clinic.logoUrl} />}
+          marketplaceCard={<MarketplaceCard key="marketplace" />}
         />
       )}
     </AppShell>

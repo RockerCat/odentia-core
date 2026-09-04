@@ -1,4 +1,4 @@
-import { isPastDayKey } from "./real-format";
+import { hasAvailableFutureSlot } from "./real-format";
 import type { WeekDay } from "./real-week";
 
 // Shared by both real Agenda modals (real-new-appointment-modal.tsx,
@@ -29,7 +29,11 @@ export function WeekDayPickerContent({
         const active = day.key === currentDayKey;
         // Same disabled-state classes as the board's own past-slot cells
         // (real-appointments-board.tsx) — not a new visual treatment.
-        const past = isPastDayKey(day.key);
+        // hasAvailableFutureSlot, not isPastDayKey: a calendar-day-only
+        // check would still let "today" be picked with zero selectable
+        // hours left (e.g. 5:25 PM, clinic closes 6 PM but every slot up
+        // to then already passed) — see that helper's own comment.
+        const past = !hasAvailableFutureSlot(day.key);
         return (
           <button
             key={day.key}

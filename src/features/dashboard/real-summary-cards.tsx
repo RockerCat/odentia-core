@@ -32,6 +32,7 @@ export function RealSummaryCards({
   professionals: rawProfessionals,
   treatmentOptions,
   roomOptions,
+  canAttendPatients,
   onAppointmentUpdated,
 }: {
   role: MembershipRole;
@@ -40,6 +41,7 @@ export function RealSummaryCards({
   professionals: ClinicalProfessional[];
   treatmentOptions: string[];
   roomOptions: string[];
+  canAttendPatients: boolean;
   onAppointmentUpdated: (updated: Appointment) => void;
 }) {
   const router = useRouter();
@@ -120,6 +122,7 @@ export function RealSummaryCards({
           appointment={selectedAppointment}
           professional={professionals.find((p) => p.professionalProfileId === selectedAppointment.professionalProfileId) ?? null}
           role={role}
+          canAttendPatients={canAttendPatients}
           treatmentOptions={treatmentOptions}
           roomOptions={roomOptions}
           onClose={() => setSelectedAppointmentId(null)}

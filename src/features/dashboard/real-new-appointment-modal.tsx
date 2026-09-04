@@ -84,7 +84,7 @@ export function RealNewAppointmentModal({
   weekDays: WeekDay[];
   treatmentOptions: string[];
   roomOptions: string[];
-  prefill?: { professionalProfileId?: string; dayKey?: string; time?: string; patientId?: string } | null;
+  prefill?: { professionalProfileId?: string; dayKey?: string; time?: string; patientId?: string; reason?: string } | null;
   onClose: () => void;
   onCreated: (created: Appointment) => void;
 }) {
@@ -99,7 +99,7 @@ export function RealNewAppointmentModal({
   );
   const [durationTouched, setDurationTouched] = useState(false);
   const [room, setRoom] = useState("");
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState(prefill?.reason ?? "");
   const [notes, setNotes] = useState("");
   const [editingField, setEditingField] = useState<"date" | "time" | null>(null);
   const [creating, setCreating] = useState(false);
@@ -120,7 +120,14 @@ export function RealNewAppointmentModal({
   const dayLabel = dayEntry ? `${dayEntry.label}, ${dayEntry.dateLabel}` : "Selecciona una fecha";
   const timeLabel = time ? `${time} (${durationMinutes} min)` : "Selecciona un horario";
 
-  const canCreate = Boolean(patientId && professionalId && dayKey && time) && !creating;
+  // isPastSlot re-checked here too, not just as TimePopoverContent's
+  // isSlotDisabled — Fecha and Horario are edited independently (each its
+  // own popover), so a time picked while a later Fecha was selected can be
+  // stale and past once the user changes Fecha back to an earlier day
+  // without reopening Horario. This is the same centralized check, just
+  // applied to the final dayKey+time pair right before it can be created.
+  const staleTime = Boolean(dayKey && time) && isPastSlot(dayKey, time);
+  const canCreate = Boolean(patientId && professionalId && dayKey && time) && !staleTime && !creating;
 
   const handleSelectProfessional = (professional: BoardProfessional) => {
     setProfessionalId(professional.professionalProfileId);
@@ -353,6 +360,9 @@ export function RealNewAppointmentModal({
                 />
               </Field>
 
+              {staleTime && !error && (
+                <p className="text-xs text-danger">El horario elegido ya pasó para esta fecha. Ábrelo de nuevo y elige otro.</p>
+              )}
               {error && <p className="text-xs text-danger">{error}</p>}
             </div>
           </div>

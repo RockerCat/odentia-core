@@ -202,10 +202,13 @@ Also has all the clinical permissions of a Dentist.
 **The Clinic Admin never needs a second role to see patients.**
 
 Exception: authoring/editing a patient's clinical record entries (e.g.
-Antecedentes in Historia Clínica) stays Dentist-only. The Clinic Admin's
-clinical permissions cover operating the practice, not writing clinical
-documentation on a Dentist's behalf — she (and the Assistant, and the
-Patient) can always read it.
+Antecedentes in Historia Clínica) requires clinical capacity — a Clinic
+Admin needs her own active professional profile, exactly like a Dentist
+(see `canEditClinicalData()`). Once she has one, she may author/edit
+clinical documentation for any patient in the clinic, same as any active
+Dentist — see Dentist's own note below on why this is never restricted to
+"her own patients." The Assistant and the Patient can always read it,
+never write it.
 
 ### Dentist
 
@@ -222,6 +225,14 @@ Can manage:
 - Personal settings
 
 Does not manage users, subscriptions, or clinic-wide configuration.
+
+"Their own patients" above is about schedule/queue, not a clinical-write
+restriction: writing clinical documentation (Antecedentes, Atenciones,
+Odontograma, etc.) is scoped to the Clinic, never to "assigned to this
+Dentist" — any active Dentist may author/edit clinical records for any
+patient in the clinic, same as a clinically-active Clinic Admin (see her
+own Exception note above). The only mandatory isolation boundary for
+clinical data is `clinic_id`.
 
 ### Assistant
 
