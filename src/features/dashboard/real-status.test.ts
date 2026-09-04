@@ -6,7 +6,9 @@ import {
   getHistoryStatusBadgeClass,
   getStatusLabel,
   getStatusStyle,
+  isTerminalStatus,
   isUnresolved,
+  pickSlotAppointment,
   START_ENCOUNTER_WINDOW_MINUTES,
   UNRESOLVED_GRACE_MINUTES,
 } from "./real-status";
@@ -157,6 +159,59 @@ describe("canStartClinicalEncounter", () => {
       expect(canStartClinicalEncounter(aptTomorrow("confirmed"), new Date("2026-01-16T07:30:00.000Z"))).toBe(true);
       expect(canStartClinicalEncounter(aptTomorrow("confirmed"), new Date("2026-01-16T08:00:00.000Z"))).toBe(true);
     });
+  });
+});
+
+describe("isTerminalStatus", () => {
+  it("is true only for completed/no_show/cancelled", () => {
+    for (const status of ["completed", "no_show", "cancelled"] as const) {
+      expect(isTerminalStatus(status)).toBe(true);
+    }
+    for (const status of ["scheduled", "confirmed", "patient_arrived", "waiting_room", "in_progress"] as const) {
+      expect(isTerminalStatus(status)).toBe(false);
+    }
+  });
+});
+
+// Regression coverage for the real reported bug: two Citas landing on the
+// exact same professional+slot (nothing previously prevented this — see
+// appointments-actions.ts's hasOverlappingAppointment, the actual fix for
+// new bookings) made the Agenda grid's single-appointment-per-cell lookup
+// pick whichever row came first in fetch order, with no regard for
+// status — a stale `completed` row could silently win over a live
+// `confirmed` one, making the real Cita unreachable and showing the wrong
+// status entirely. pickSlotAppointment is the defensive display fallback:
+// given every candidate appointment already known to occupy one visual
+// slot, prefer a non-terminal one.
+describe("pickSlotAppointment", () => {
+  const withStatus = (status: AppointmentStatus) => ({ status });
+
+  it("returns null for an empty slot", () => {
+    expect(pickSlotAppointment([])).toBeNull();
+  });
+
+  it("returns the only candidate when there's no collision", () => {
+    const only = withStatus("confirmed");
+    expect(pickSlotAppointment([only])).toBe(only);
+  });
+
+  it("prefers a non-terminal candidate over a terminal one, regardless of order", () => {
+    const completed = withStatus("completed");
+    const confirmed = withStatus("confirmed");
+    expect(pickSlotAppointment([completed, confirmed])).toBe(confirmed);
+    expect(pickSlotAppointment([confirmed, completed])).toBe(confirmed);
+  });
+
+  it("in_progress counts as non-terminal — preferred over a completed collision", () => {
+    const completed = withStatus("completed");
+    const inProgress = withStatus("in_progress");
+    expect(pickSlotAppointment([completed, inProgress])).toBe(inProgress);
+  });
+
+  it("falls back to the first candidate when every one is terminal", () => {
+    const cancelled = withStatus("cancelled");
+    const noShow = withStatus("no_show");
+    expect(pickSlotAppointment([cancelled, noShow])).toBe(cancelled);
   });
 });
 

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
+import { fetchAppointmentsForPatient } from "@/features/dashboard/appointments-data";
 import { fetchPatientClinicalDocuments } from "@/features/patients/clinical-documents-data";
 import { fetchPatientClinicalEncounters } from "@/features/patients/clinical-encounters-data";
 import { canEditClinicalData } from "@/features/patients/clinical-permissions";
@@ -75,6 +76,18 @@ export default async function PatientClinicalRecordPage({ params }: { params: Pr
     console.error("[/pacientes/[id]/historia-clinica] fetchPatientClinicalDocuments failed", error);
   }
 
+  // Resumen's own "Próxima cita" card (see resumen-tab.tsx) — the only tab
+  // that needs raw appointments at all; every other tab reads clinical
+  // rows exclusively. Same "optional for the page" rule as the tabs above:
+  // a transient failure here degrades that one card to its honest empty
+  // state, never the whole page.
+  let appointments: Awaited<ReturnType<typeof fetchAppointmentsForPatient>> = [];
+  try {
+    appointments = await fetchAppointmentsForPatient(supabase, context.clinic.id, patient.id);
+  } catch (error) {
+    console.error("[/pacientes/[id]/historia-clinica] fetchAppointmentsForPatient failed", error);
+  }
+
   return (
     <AppShell activeNavLabel="Pacientes" heading="Historia clínica" allowedRoles={["clinic-admin", "dentist", "assistant"]}>
       <PatientClinicalRecordScreen
@@ -86,6 +99,7 @@ export default async function PatientClinicalRecordPage({ params }: { params: Pr
         toothFindings={toothFindings}
         clinicalEncounters={clinicalEncounters}
         clinicalDocuments={clinicalDocuments}
+        appointments={appointments}
         canEditClinicalData={canEditClinicalData(context)}
       />
     </AppShell>

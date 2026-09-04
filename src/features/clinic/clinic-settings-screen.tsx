@@ -87,7 +87,12 @@ function StatusBadge({ active }: { active: boolean }) {
 // task report.
 function InformacionGeneralSection({ clinic, location }: { clinic: ClinicDetail; location: PrimaryLocation | null }) {
   const [logoUrl, setLogoUrl] = useState<string | null>(clinic.logoUrl);
-  const [logoBusy, setLogoBusy] = useState(false);
+  // Which logo action is in flight, not just whether one is — "Cambiar
+  // logo" and "Eliminar logo" used to share a single boolean, so removing
+  // the logo showed "Guardando…" on the OTHER (Cambiar logo) button while
+  // Eliminar logo itself just went disabled with no label change of its
+  // own — looked like the wrong action was running.
+  const [logoAction, setLogoAction] = useState<"uploading" | "removing" | null>(null);
   const [logoError, setLogoError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -130,10 +135,10 @@ function InformacionGeneralSection({ clinic, location }: { clinic: ClinicDetail;
       return;
     }
 
-    setLogoBusy(true);
+    setLogoAction("uploading");
     setLogoError(null);
     const outcome = await uploadClinicLogo(clinic.id, file);
-    setLogoBusy(false);
+    setLogoAction(null);
     if ("failed" in outcome) {
       setLogoError("No pudimos subir el logo. Intenta de nuevo.");
       return;
@@ -142,10 +147,10 @@ function InformacionGeneralSection({ clinic, location }: { clinic: ClinicDetail;
   };
 
   const handleRemoveLogo = async () => {
-    setLogoBusy(true);
+    setLogoAction("removing");
     setLogoError(null);
     const outcome = await removeClinicLogo(clinic.id);
-    setLogoBusy(false);
+    setLogoAction(null);
     if (outcome.status === "error") {
       setLogoError("No pudimos quitar el logo. Intenta de nuevo.");
       return;
@@ -227,18 +232,18 @@ function InformacionGeneralSection({ clinic, location }: { clinic: ClinicDetail;
             <button
               type="button"
               onClick={handleChangeClick}
-              disabled={logoBusy}
+              disabled={logoAction !== null}
               className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80 hover:bg-foreground/5 disabled:opacity-50"
             >
-              {logoBusy ? "Guardando…" : "Cambiar logo"}
+              {logoAction === "uploading" ? "Guardando…" : "Cambiar logo"}
             </button>
             <button
               type="button"
               onClick={handleRemoveLogo}
-              disabled={!logoUrl || logoBusy}
+              disabled={!logoUrl || logoAction !== null}
               className="text-xs font-medium text-danger/80 hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Eliminar logo
+              {logoAction === "removing" ? "Eliminando…" : "Eliminar logo"}
             </button>
             <input
               ref={fileInputRef}

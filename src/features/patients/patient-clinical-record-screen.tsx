@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ChevronIcon, DownloadIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { fetchTeamMembers } from "@/features/clinic/data";
+import type { Appointment } from "@/features/dashboard/appointments-data";
 import { createClient } from "@/lib/supabase/client";
 import { AntecedentesTab } from "./antecedentes-tab";
 import { AtencionesTab } from "./atenciones-tab";
@@ -73,6 +74,7 @@ export function PatientClinicalRecordScreen({
   toothFindings: initialToothFindings,
   clinicalEncounters,
   clinicalDocuments: initialClinicalDocuments,
+  appointments,
   canEditClinicalData,
 }: {
   patient: Patient;
@@ -83,6 +85,7 @@ export function PatientClinicalRecordScreen({
   toothFindings: ToothFindingRecord[];
   clinicalEncounters: ClinicalEncounterRecord[];
   clinicalDocuments: ClinicalDocumentRecord[];
+  appointments: Appointment[];
   canEditClinicalData: boolean;
 }) {
   const [activeTab, setActiveTab] = useState<Tab>("Resumen");
@@ -90,6 +93,7 @@ export function PatientClinicalRecordScreen({
   const [toothFindings, setToothFindings] = useState(initialToothFindings);
   const [clinicalDocuments, setClinicalDocuments] = useState(initialClinicalDocuments);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const age = ageOf(patient);
 
   // Real PDF export — cero mocks: reuses the exact same rows this screen
@@ -104,6 +108,7 @@ export function PatientClinicalRecordScreen({
   const handleDownloadPdf = async () => {
     if (!clinicId) return;
     setDownloadingPdf(true);
+    setPdfError(null);
     try {
       const [{ pdf }, { RealClinicalRecordDocument, getRealClinicalRecordPdfFilename }, { buildRealClinicalRecordPdfData }] =
         await Promise.all([
@@ -140,6 +145,13 @@ export function PatientClinicalRecordScreen({
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
+    } catch {
+      // No error state existed here before — a failure (a dynamic import
+      // failing, fetchTeamMembers erroring, pdf().toBlob() throwing) reset
+      // the button back to "Descargar PDF" via the finally below with zero
+      // indication anything had gone wrong, indistinguishable from a
+      // successful, silent no-op download.
+      setPdfError("No pudimos generar el PDF. Intenta de nuevo.");
     } finally {
       setDownloadingPdf(false);
     }
@@ -168,6 +180,7 @@ export function PatientClinicalRecordScreen({
             {downloadingPdf ? "Generando…" : "Descargar PDF"}
           </button>
         </div>
+        {pdfError && <p className="mt-2 text-right text-xs text-danger">{pdfError}</p>}
 
         <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
@@ -242,7 +255,15 @@ export function PatientClinicalRecordScreen({
         ))}
       </div>
 
-      {activeTab === "Resumen" && <ResumenTab history={medicalHistory} />}
+      {activeTab === "Resumen" && (
+        <ResumenTab
+          history={medicalHistory}
+          encounters={clinicalEncounters}
+          toothFindings={toothFindings}
+          appointments={appointments}
+          clinicId={clinicId}
+        />
+      )}
       {activeTab === "Antecedentes" && (
         <AntecedentesTab
           patientId={patient.id}

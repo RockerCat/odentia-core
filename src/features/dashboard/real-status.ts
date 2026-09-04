@@ -77,12 +77,22 @@ export const UNRESOLVED_GRACE_MINUTES = 120;
 
 export type DisplayStatus = AppointmentStatus | "unresolved";
 
+// The one place "which statuses close a Cita for good" is defined —
+// reused by isTerminalStatus below, RealAppointmentDetailModal's own
+// isTerminal, and appointments-actions.ts's overlap check (as a literal
+// list for its SQL `.not(..., "in", ...)` filter), instead of each
+// repeating the same three-status comparison or list.
+export const TERMINAL_STATUSES: AppointmentStatus[] = ["completed", "no_show", "cancelled"];
+
+export function isTerminalStatus(status: AppointmentStatus): boolean {
+  return TERMINAL_STATUSES.includes(status);
+}
+
 export function isUnresolved(
   appointment: Pick<Appointment, "status" | "startsAt" | "durationMinutes">,
   now: Date = new Date(),
 ): boolean {
-  const isTerminal = appointment.status === "completed" || appointment.status === "no_show" || appointment.status === "cancelled";
-  if (isTerminal) return false;
+  if (isTerminalStatus(appointment.status)) return false;
   const graceDeadline =
     new Date(endTimeIso(appointment.startsAt, appointment.durationMinutes)).getTime() + UNRESOLVED_GRACE_MINUTES * 60_000;
   return now.getTime() > graceDeadline;
@@ -133,12 +143,32 @@ export function canStartClinicalEncounter(
   appointment: Pick<Appointment, "status" | "startsAt">,
   now: Date = new Date(),
 ): boolean {
-  if (appointment.status === "completed" || appointment.status === "cancelled" || appointment.status === "no_show") {
-    return false;
-  }
+  if (isTerminalStatus(appointment.status)) return false;
   if (appointment.status === "in_progress") return true;
   const startMs = new Date(appointment.startsAt).getTime();
   return now.getTime() >= startMs - START_ENCOUNTER_WINDOW_MINUTES * 60_000;
+}
+
+// Real double-booking is possible today — nothing in createAppointment/
+// updateAppointment prevents two Citas from landing on the exact same
+// professional+startsAt slot (see appointments-actions.ts's own comment:
+// only a past-date check exists, no overlap check) — and the Agenda grid
+// only ever renders ONE appointment per visible slot cell. Before this,
+// that cell picked whichever row happened to come first in fetch/insertion
+// order, with no regard for status: a stale `completed` row from old test
+// data occupying the same slot as a real, live `confirmed` Cita would
+// silently win, making the actual live appointment unreachable by
+// clicking that cell at all — its detail modal would show the WRONG
+// Cita's status ("Completada") while a separate fetch elsewhere (e.g. the
+// patient history panel, a different query entirely) correctly showed the
+// live one ("Confirmada"), reading as a "status inconsistency" that was
+// actually two different appointments being conflated into one grid cell.
+// This doesn't fix double-booking itself (see createAppointment/
+// updateAppointment's own overlap check, the real fix for new bookings)
+// but ensures existing collisions never hide the one Cita a user actually
+// needs to act on.
+export function pickSlotAppointment<T extends Pick<Appointment, "status">>(candidates: T[]): T | null {
+  return candidates.find((a) => !isTerminalStatus(a.status)) ?? candidates[0] ?? null;
 }
 
 export function getStatusLabel(status: DisplayStatus): string {

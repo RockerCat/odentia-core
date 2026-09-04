@@ -248,24 +248,25 @@ export function RealClinicalEncounterScreen({
     }
 
     const statusResult = await updateAppointment(appointment.id, { status: "completed" });
-    setFinalizing(false);
     if (statusResult.status === "error") {
       // The encounter is already safely recorded — only the Cita's own
       // status write needs retrying, which the next "Finalizar atención"
       // click does (the RPC call above just re-confirms the same already-
       // finalized row, then this status write is retried).
+      setFinalizing(false);
       setFinalizeError(statusResult.message);
       return;
     }
-    setShowFinalizeConfirm(false);
-    // Back to Agenda, not Historia Clínica — this screen is reached FROM
-    // Agenda ("Iniciar/Continuar atención"), and the encounter/status are
-    // already durably persisted at this point; Historia Clínica picks them
-    // up next time it's opened, same as any other real write. No week/date
-    // is carried back — /agenda has no query-param-based week state to
-    // reuse (see real-agenda-screen.tsx), and the appointment just
-    // completed "now", so /agenda's own default (the week containing
-    // today) already lands on it.
+    // Deliberately no setFinalizing(false)/setShowFinalizeConfirm(false)
+    // here on success — router.push() below starts the transition to
+    // /agenda but doesn't wait for it to finish, so resetting either flag
+    // now would close this confirm dialog and re-enable the plain
+    // "Finalizar atención" trigger button (which isn't even gated by
+    // `finalizing`) while /agenda's own server-side fetch is still in
+    // flight — exactly the "click looks ignored" bug already found and
+    // fixed for "Iniciar atención" in real-appointment-detail-modal.tsx.
+    // This whole screen is about to unmount once the route change lands,
+    // so there's nothing left to reset either flag for.
     router.push("/agenda");
   };
 
@@ -640,10 +641,10 @@ export function RealClinicalEncounterScreen({
           <button
             type="button"
             onClick={() => setShowFinalizeConfirm(true)}
-            disabled={savingDraft}
+            disabled={savingDraft || finalizing}
             className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60 sm:px-6"
           >
-            Finalizar atención
+            {finalizing ? "Finalizando…" : "Finalizar atención"}
           </button>
         </div>
       </footer>

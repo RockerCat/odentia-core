@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/client";
 import type { Appointment, AppointmentStatus } from "./appointments-data";
+import { intervalsOverlap } from "./real-format";
+import { TERMINAL_STATUSES } from "./real-status";
 
 // Real writes on public.appointments — under appointments_insert_scoped /
 // appointments_update_scoped RLS (can_access_appointment: clinic_admin/
@@ -19,6 +21,7 @@ const GENERIC_ERROR = "No pudimos guardar el cambio. Intenta de nuevo.";
 // Exported so regression tests can assert against it directly instead of
 // duplicating this Spanish string.
 export const PAST_DATE_ERROR = "No se pueden agendar citas en una fecha u hora que ya pasó.";
+export const OVERLAP_ERROR = "Este profesional ya tiene otra cita en ese horario.";
 
 // Real backend gate against past dates/times — the board's own slot
 // grid already disables past slots visually (see real-appointments-board.tsx's
@@ -27,6 +30,70 @@ export const PAST_DATE_ERROR = "No se pueden agendar citas en una fecha u hora q
 // or the detail modal's own Fecha/Horario reschedule editors).
 export function isPastInstant(iso: string): boolean {
   return new Date(iso).getTime() < Date.now();
+}
+
+// Real integrity gap this closes: nothing previously stopped two Citas
+// from landing on the exact same professional+time slot — the Agenda
+// grid only ever renders one appointment per visible cell (see
+// real-status.ts's pickSlotAppointment), so a double-booked pair silently
+// hid one of them from the normal click path entirely, surfacing as what
+// looked like a single Cita with an inconsistent status (its detail modal
+// showing one row's status while some other independent fetch, e.g. the
+// patient history panel, showed the other row's). This is the actual fix
+// for new bookings; pickSlotAppointment is only a defensive display
+// fallback for collisions that already exist in the data.
+//
+// Queries a ±1 day window around the candidate slot (a single indexed
+// range scan) and does the exact overlap arithmetic in JS against each
+// candidate's own duration — cancelled/completed/no_show rows never
+// block a slot, matching TERMINAL_STATUSES (the same list the rest of the
+// Agenda already treats as "not actually occupying this time" for display
+// purposes).
+async function hasOverlappingAppointment(
+  supabase: ReturnType<typeof createClient>,
+  clinicId: string,
+  professionalProfileId: string,
+  startsAt: string,
+  durationMinutes: number,
+  excludeAppointmentId?: string,
+): Promise<boolean> {
+  const newStart = new Date(startsAt).getTime();
+  const newEnd = newStart + durationMinutes * 60_000;
+  const windowStart = new Date(newStart - 24 * 60 * 60_000).toISOString();
+  const windowEnd = new Date(newEnd + 24 * 60 * 60_000).toISOString();
+
+  let query = supabase
+    .from("appointments")
+    .select("id, starts_at, duration_minutes")
+    .eq("clinic_id", clinicId)
+    .eq("professional_profile_id", professionalProfileId)
+    .not("status", "in", `(${TERMINAL_STATUSES.join(",")})`)
+    .gte("starts_at", windowStart)
+    .lte("starts_at", windowEnd);
+  if (excludeAppointmentId) query = query.neq("id", excludeAppointmentId);
+
+  const { data, error } = await query;
+  // Fails open on a query error — this is a defense-in-depth UX guard, not
+  // the tenant/authorization boundary (RLS already owns that), so a
+  // transient failure here shouldn't block a write that would otherwise
+  // succeed.
+  if (error || !data) return false;
+
+  return data.some((row) => intervalsOverlap(startsAt, durationMinutes, row.starts_at, row.duration_minutes));
+}
+
+// The pre-check above (hasOverlappingAppointment) closes the common,
+// non-concurrent case with a fast, friendly error before ever writing —
+// but it's still "check, then insert": two concurrent requests can both
+// pass it before either has written. appointments_no_overlap (a Postgres
+// EXCLUDE constraint — see its own migration) is the actual guarantee
+// under concurrency, and raises Postgres error 23P01
+// (exclusion_violation) when it catches what the pre-check's race window
+// let through. Mapped to the same OVERLAP_ERROR message so a request that
+// loses that race still gets the right explanation instead of the generic
+// fallback.
+function isOverlapConstraintError(error: { code?: string } | null): boolean {
+  return error?.code === "23P01";
 }
 
 function mapRow(row: {
@@ -87,6 +154,11 @@ export async function createAppointment(input: CreateAppointmentInput): Promise<
   }
 
   const supabase = createClient();
+
+  if (await hasOverlappingAppointment(supabase, input.clinicId, input.professionalProfileId, input.startsAt, input.durationMinutes)) {
+    return { status: "error", message: OVERLAP_ERROR };
+  }
+
   const { data, error } = await supabase
     .from("appointments")
     .insert({
@@ -106,7 +178,7 @@ export async function createAppointment(input: CreateAppointmentInput): Promise<
     )
     .single();
 
-  if (error) return { status: "error", message: GENERIC_ERROR };
+  if (error) return { status: "error", message: isOverlapConstraintError(error) ? OVERLAP_ERROR : GENERIC_ERROR };
 
   return {
     status: "ok",
@@ -131,6 +203,32 @@ export async function updateAppointment(appointmentId: string, patch: Appointmen
   }
 
   const supabase = createClient();
+
+  // Only re-check overlap when the patch actually touches what defines the
+  // slot (when/how long/who) — a pure status change (cancel, reactivate,
+  // no_show, complete) never needs it. Current row is fetched fresh here
+  // (never trusting a caller-supplied "before" value) since a patch can
+  // change just one of startsAt/durationMinutes/professionalProfileId
+  // while the other two must still come from what's actually stored.
+  if (patch.startsAt !== undefined || patch.durationMinutes !== undefined || patch.professionalProfileId !== undefined) {
+    const { data: current, error: fetchError } = await supabase
+      .from("appointments")
+      .select("clinic_id, professional_profile_id, starts_at, duration_minutes")
+      .eq("id", appointmentId)
+      .single();
+    if (fetchError || !current) return { status: "error", message: GENERIC_ERROR };
+
+    const overlap = await hasOverlappingAppointment(
+      supabase,
+      current.clinic_id,
+      patch.professionalProfileId ?? current.professional_profile_id,
+      patch.startsAt ?? current.starts_at,
+      patch.durationMinutes ?? current.duration_minutes,
+      appointmentId,
+    );
+    if (overlap) return { status: "error", message: OVERLAP_ERROR };
+  }
+
   const dbPatch: Record<string, unknown> = {};
   if (patch.startsAt !== undefined) dbPatch.starts_at = patch.startsAt;
   if (patch.durationMinutes !== undefined) dbPatch.duration_minutes = patch.durationMinutes;
@@ -142,7 +240,7 @@ export async function updateAppointment(appointmentId: string, patch: Appointmen
   if (patch.status !== undefined) dbPatch.status = patch.status;
 
   const { error } = await supabase.from("appointments").update(dbPatch).eq("id", appointmentId);
-  if (error) return { status: "error", message: GENERIC_ERROR };
+  if (error) return { status: "error", message: isOverlapConstraintError(error) ? OVERLAP_ERROR : GENERIC_ERROR };
   return { status: "ok" };
 }
 

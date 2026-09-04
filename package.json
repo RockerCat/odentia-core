@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:browser": "node scripts/qa-agenda-console-check.mjs && node scripts/qa-no-past-appointments-check.mjs && node scripts/qa-can-start-encounter-check.mjs"
+    "test:browser": "node scripts/qa-agenda-console-check.mjs && node scripts/qa-no-past-appointments-check.mjs && node scripts/qa-can-start-encounter-check.mjs && node scripts/qa-slot-collision-status-check.mjs && node scripts/qa-role-gating-and-race-check.mjs && node scripts/qa-start-encounter-transition-check.mjs && node scripts/qa-loading-feedback-check.mjs && node scripts/qa-historia-clinica-ultima-atencion-check.mjs && node scripts/qa-resumen-cards-check.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",

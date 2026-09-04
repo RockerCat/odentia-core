@@ -39,6 +39,7 @@ import {
   getHistoryStatusBadgeClass,
   getStatusLabel,
   getStatusStyle,
+  isTerminalStatus,
   REAL_STATUS_LABELS,
   REAL_STATUS_STYLES,
 } from "./real-status";
@@ -128,7 +129,18 @@ export function RealAppointmentDetailModal({
   const [actionError, setActionError] = useState<string | null>(null);
   const [reactivating, setReactivating] = useState(false);
   const [markingArrived, setMarkingArrived] = useState(false);
+  const [savingStatus, setSavingStatus] = useState(false);
   const [startingEncounter, setStartingEncounter] = useState(false);
+  // Captured once per click, at the moment handlePrimaryCta runs — whether
+  // THIS click is a fresh "Iniciar atención" (appointment not yet
+  // in_progress) or a "Continuar atención" (already in_progress). Needed
+  // because by the time startingEncounter's transitional label is actually
+  // rendered, a fresh start has already called onUpdated({ ..., status:
+  // "in_progress" }) — isInProgress itself has already flipped to true, so
+  // it can no longer tell the two cases apart on its own. State, not a
+  // ref: it drives what gets rendered, and reading a ref during render is
+  // unsafe (not tied to a re-render, can read stale/inconsistent values).
+  const [startedFresh, setStartedFresh] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const leftColumnRef = useRef<HTMLDivElement>(null);
   const isAssistant = role === "assistant";
@@ -205,7 +217,7 @@ export function RealAppointmentDetailModal({
   const professionalName = professional?.name ?? "Sin asignar";
 
   const isCancelled = appointment.status === "cancelled";
-  const isTerminal = isCancelled || appointment.status === "completed" || appointment.status === "no_show";
+  const isTerminal = isTerminalStatus(appointment.status);
   const isUnresolved = displayStatus === "unresolved";
   const canMarkArrived = appointment.status === "confirmed" && !appointment.patientArrivedAt;
   const showReactivate = isCancelled;
@@ -255,7 +267,9 @@ export function RealAppointmentDetailModal({
         ? "Registrando…"
         : "Paciente llegó"
       : startingEncounter
-        ? "Iniciando…"
+        ? startedFresh
+          ? "Iniciando atención…"
+          : "Continuar atención"
         : isInProgress
           ? "Continuar atención"
           : "Iniciar atención";
@@ -294,18 +308,34 @@ export function RealAppointmentDetailModal({
     // finishes, see CLAUDE.md) and hand off to the real attention screen
     // (/agenda/atencion/[id]). Already-in-progress appointments skip the
     // write and just continue there.
+    //
+    // startingEncounter deliberately stays true all the way through
+    // router.push, not just the updateAppointment await: router.push()
+    // starts a client-side transition but doesn't return a Promise that
+    // resolves when it finishes, so a `finally` resetting this flag right
+    // after calling it used to flip the flag back to false while
+    // /agenda/atencion/[id]'s own server-side data fetching was still in
+    // flight — appointment.status had ALREADY become in_progress by then
+    // (onUpdated already ran), so primaryCtaLabel's fallback briefly read
+    // "Continuar atención" for the next few seconds, as if the click
+    // hadn't registered. Only reset it on failure — on success this
+    // component is about to unmount anyway once the route change lands, so
+    // there's nothing left to reset it for.
+    setStartedFresh(!isInProgress);
     setStartingEncounter(true);
     try {
       if (!isInProgress) {
         const result = await updateAppointment(appointment.id, { status: "in_progress" });
         if (result.status === "error") {
           setActionError(result.message);
+          setStartingEncounter(false);
           return;
         }
         onUpdated({ ...appointment, status: "in_progress" });
       }
       router.push(`/agenda/atencion/${appointment.id}`);
-    } finally {
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "No pudimos iniciar la atención. Intenta de nuevo.");
       setStartingEncounter(false);
     }
   };
@@ -334,12 +364,25 @@ export function RealAppointmentDetailModal({
                   <InlineStatusEditor
                     current={appointment.status}
                     onSelect={async (status) => {
-                      setEditingField(null);
+                      // InlineStatusEditor (appointment-detail-modal.tsx,
+                      // shared with still-mock screens, never edited) has
+                      // no pending state of its own and only disables the
+                      // CURRENTLY-active pill — a second pill click before
+                      // this resolves would otherwise fire a second save.
+                      // Closing the editor only on success (not
+                      // immediately) also avoids the badge briefly
+                      // flashing back to the OLD status while the save is
+                      // still in flight.
+                      if (savingStatus) return;
+                      setSavingStatus(true);
                       setActionError(null);
                       try {
                         await handleSave({ status });
+                        setEditingField(null);
                       } catch (e) {
                         setActionError(e instanceof Error ? e.message : "No se pudo guardar. Inténtalo de nuevo.");
+                      } finally {
+                        setSavingStatus(false);
                       }
                     }}
                     onCancel={() => setEditingField(null)}
@@ -436,6 +479,7 @@ export function RealAppointmentDetailModal({
                   onStartEdit={setEditingField}
                   onCancelEdit={() => setEditingField(null)}
                   onSaveField={handleSave}
+                  onSaveFieldError={setActionError}
                 />
               </div>
             </div>
@@ -553,6 +597,7 @@ function ViewDetails({
   onStartEdit,
   onCancelEdit,
   onSaveField,
+  onSaveFieldError,
 }: {
   appointment: Appointment;
   professionalName: string;
@@ -566,9 +611,16 @@ function ViewDetails({
   onStartEdit: (field: FieldKey | null) => void;
   onCancelEdit: () => void;
   onSaveField: (patch: AppointmentPatch) => Promise<void>;
+  onSaveFieldError: (message: string) => void;
 }) {
   const currentWeekDays = getWeekDaysContaining(appointment.startsAt);
   const currentDayKey = dateKeyOf(appointment.startsAt);
+  // WeekDayPickerContent has no pending state of its own (its onSelect is
+  // a plain synchronous callback, unlike TimePopoverContent's own async
+  // onSave) and only disables whole past days, not "a save for this field
+  // is already in flight" — guarding here prevents a second day click
+  // from firing a second save before the first one settles.
+  const [savingDate, setSavingDate] = useState(false);
 
   return (
     <div className="flex flex-col gap-3">
@@ -585,20 +637,26 @@ function ViewDetails({
           weekDays={currentWeekDays}
           currentDayKey={currentDayKey}
           onSelect={(dayKey) => {
+            if (savingDate) return;
             // WeekDayPickerContent only disables a whole PAST DAY
             // (isPastDayKey) — it has no idea this appointment's existing
             // time-of-day, combined with a day the user CAN pick (e.g.
             // today), can still land in the past. Reusing isPastInstant
             // (the same check updateAppointment enforces server-side)
-            // here blocks that write before it's ever attempted, instead
-            // of silently failing: onSaveField isn't awaited by this
-            // picker, so a rejected save here would previously just be an
-            // unhandled promise with the popover already closed and no
-            // feedback shown.
+            // here blocks that write before it's ever attempted.
             const newStart = isoDayKeyToLocalDate(dayKey, appointment.startsAt);
             if (isPastInstant(newStart.toISOString())) return;
-            onCancelEdit();
-            onSaveField({ startsAt: newStart.toISOString() });
+            // Only close the popover once the save actually resolves, and
+            // surface a real failure via the same error mechanism every
+            // other field save uses — this used to fire onSaveField
+            // without awaiting or catching it, closing the popover
+            // immediately regardless of outcome: a rejected save was a
+            // genuinely unhandled promise with zero feedback of any kind.
+            setSavingDate(true);
+            onSaveField({ startsAt: newStart.toISOString() })
+              .then(() => onCancelEdit())
+              .catch((e) => onSaveFieldError(e instanceof Error ? e.message : "No se pudo guardar. Inténtalo de nuevo."))
+              .finally(() => setSavingDate(false));
           }}
         />
       </PopoverFieldRow>
@@ -1020,6 +1078,11 @@ function PatientHistoryPanel({
   const measureListRef = useRef<HTMLOListElement>(null);
   const footerRef = useRef<HTMLButtonElement>(null);
   const [visibleCount, setVisibleCount] = useState(candidates.length);
+  // onViewFullHistory is a plain router.push — a pure navigation with no
+  // mutation, so nothing else in this modal ever indicated it had
+  // registered. This component unmounts once the route change lands, so
+  // there's nothing to reset navigating back to false for.
+  const [navigating, setNavigating] = useState(false);
 
   useLayoutEffect(() => {
     const recalc = () => {
@@ -1089,10 +1152,15 @@ function PatientHistoryPanel({
       <button
         ref={footerRef}
         type="button"
-        onClick={onViewFullHistory}
-        className="mt-3 w-full rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-foreground/5"
+        onClick={() => {
+          if (navigating) return;
+          setNavigating(true);
+          onViewFullHistory();
+        }}
+        disabled={navigating}
+        className="mt-3 w-full rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-foreground/5 disabled:opacity-60"
       >
-        Ver historial completo
+        {navigating ? "Cargando…" : "Ver historial completo"}
       </button>
     </div>
   );

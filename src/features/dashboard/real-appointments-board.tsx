@@ -10,7 +10,7 @@ import type { Patient } from "@/features/patients/data";
 import { PatientRecordModal } from "@/features/patients/patient-record-modal";
 import { AnchoredPopover } from "./appointment-detail-modal";
 import type { Appointment, AppointmentStatus, ClinicalProfessional } from "./appointments-data";
-import { getDisplayStatus, getStatusStyle, REAL_STATUS_LABELS } from "./real-status";
+import { getDisplayStatus, getStatusStyle, pickSlotAppointment, REAL_STATUS_LABELS } from "./real-status";
 import { dateKeyOf, isPastSlot, toBoardProfessional, type BoardProfessional } from "./real-format";
 import type { WeekDay } from "./real-week";
 import { TIME_SLOTS } from "./schedule-config";
@@ -466,7 +466,9 @@ export function RealAppointmentsBoard({
 
                 <div className={`grid ${slotGridColsClass} gap-1.5 p-3`}>
                   {TIME_SLOTS.map((slot) => {
-                    const appointment = professionalAppointments.find((a) => startMinutesLocal(a.startsAt) === slotToMinutes(slot));
+                    const appointment = pickSlotAppointment(
+                      professionalAppointments.filter((a) => startMinutesLocal(a.startsAt) === slotToMinutes(slot)),
+                    );
                     if (!appointment) {
                       const past = isPastSlot(selectedDay, slot);
                       return (

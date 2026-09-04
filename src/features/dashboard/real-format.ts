@@ -60,6 +60,23 @@ export function isPastSlot(dayKey: string, slot: string): boolean {
   return slotDateTime(dayKey, slot).getTime() < Date.now();
 }
 
+// Half-open interval overlap ([start, start+duration)) — the exact rule
+// appointments-actions.ts's hasOverlappingAppointment enforces in the app
+// (and, ultimately, what the appointments_no_overlap Postgres EXCLUDE
+// constraint enforces at the DB layer — see that migration's own
+// comment): two intervals overlap only if each starts strictly before the
+// other ends. This is why back-to-back appointments (one ending exactly
+// when the next starts) are allowed — [8:00,8:30) and [8:30,9:00) share
+// the instant 8:30 as a boundary but neither interval actually contains
+// it as an open end.
+export function intervalsOverlap(aStartIso: string, aDurationMinutes: number, bStartIso: string, bDurationMinutes: number): boolean {
+  const aStart = new Date(aStartIso).getTime();
+  const aEnd = aStart + aDurationMinutes * 60_000;
+  const bStart = new Date(bStartIso).getTime();
+  const bEnd = bStart + bDurationMinutes * 60_000;
+  return aStart < bEnd && bStart < aEnd;
+}
+
 // Calendar-day-only check: true once a day's OWN midnight is behind "now",
 // regardless of the clinic's actual operating hours — today itself is
 // never past here even seconds before midnight. Kept for what it is (a

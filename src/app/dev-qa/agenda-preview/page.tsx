@@ -27,15 +27,31 @@ import { MarketplaceCard } from "@/features/dashboard/marketplace-card";
 import { RealAgendaScreen } from "@/features/dashboard/real-agenda-screen";
 import { FIXTURE_CLINIC_ID, fixtureAppointments, fixturePatients, fixtureProfessionals } from "./fixtures";
 
-export default async function AgendaPreviewPage() {
+export default async function AgendaPreviewPage({
+  searchParams,
+}: {
+  // Dev-only QA knob: ?role=assistant lets scripts/qa-role-gating-check.mjs
+  // exercise Assistant's own gating (Marcar No asistió allowed, Iniciar/
+  // Continuar atención never) without a real Supabase session — real
+  // /agenda always derives both role and canAttendPatients from
+  // resolveClinicContext()/canEditClinicalData() server-side (see that
+  // page's own comment); an Assistant there always has canAttendPatients
+  // false, mirrored here. Defaults to clinic_admin/true, matching every
+  // other script that already depends on this fixture's original
+  // behavior.
+  searchParams: Promise<{ role?: string }>;
+}) {
   if (process.env.NODE_ENV === "production") notFound();
+  const { role: roleParam } = await searchParams;
+  const role = roleParam === "assistant" || roleParam === "dentist" ? roleParam : "clinic_admin";
+  const canAttendPatients = role !== "assistant";
 
   return (
     <AppShell activeNavLabel="Agenda" heading={<Greeting />} allowedRoles={["clinic-admin", "dentist", "assistant"]}>
       <ConsoleCapture />
       <RealAgendaScreen
         clinicId={FIXTURE_CLINIC_ID}
-        role="clinic_admin"
+        role={role}
         ownProfessionalProfileId={fixtureProfessionals[0]!.professionalProfileId}
         initialProfessionals={fixtureProfessionals}
         initialAppointments={fixtureAppointments}
@@ -52,7 +68,7 @@ export default async function AgendaPreviewPage() {
         ]}
         roomOptions={["Consultorio 1", "Consultorio 2", "Consultorio 3"]}
         canEditPatientData={true}
-        canAttendPatients={true}
+        canAttendPatients={canAttendPatients}
         // key= here isn't for a list — RealAgendaScreen places these as
         // static siblings, not a .map() — but React 19.2.8's dev-mode key
         // validation flags a Client Component's static children array when

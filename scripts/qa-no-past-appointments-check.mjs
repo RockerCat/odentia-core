@@ -56,67 +56,21 @@
 // calendar day as the real clock, only the hour changes) so this script's
 // pass/fail never depends on what time of day it happens to run.
 
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import puppeteer from "puppeteer-core";
+import {
+  allow401,
+  assert,
+  attachConsoleMonitor,
+  clickDayInPicker,
+  dayButtonState,
+  ensureDevServer,
+  findChrome,
+  installFakeClock,
+  navigateDayStripTo,
+  stopDevServer,
+} from "./qa-lib.mjs";
 
 const URL = "http://localhost:3000/dev-qa/agenda-preview";
-const CHROME_CANDIDATES = [
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "/Applications/Chromium.app/Contents/MacOS/Chromium",
-  process.env.CHROME_PATH,
-].filter(Boolean);
-
-async function waitForServer(url, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(url, { method: "GET" });
-      if (res.status < 500) return true;
-    } catch {
-      // not up yet
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  return false;
-}
-
-function assert(condition, label, failures) {
-  if (condition) {
-    console.log(`  ok — ${label}`);
-  } else {
-    failures.push(label);
-    console.log(`  FAIL — ${label}`);
-  }
-}
-
-// Pins Date to today's real calendar day at a fixed local hour:minute, for
-// every script and navigation this page loads from here on — so "8:00 AM
-// is already past" / "no slots left today" assertions are deterministic
-// regardless of when this script actually runs, instead of only being
-// true if it happens to run late in the afternoon.
-async function installFakeClock(page, hour, minute) {
-  await page.evaluateOnNewDocument(
-    (h, m) => {
-      const RealDate = Date;
-      const base = new RealDate();
-      base.setHours(h, m, 0, 0);
-      const FIXED = base.getTime();
-      class FakeDate extends RealDate {
-        constructor(...args) {
-          if (args.length === 0) super(FIXED);
-          else super(...args);
-        }
-        static now() {
-          return FIXED;
-        }
-      }
-      window.Date = FakeDate;
-    },
-    hour,
-    minute,
-  );
-}
 
 async function clickByExactText(page, scopeSel, text) {
   return page.evaluate(
@@ -147,24 +101,6 @@ async function focusAndPickFirst(page, placeholder) {
     item.click();
     return true;
   });
-}
-
-async function clickDayInPicker(page, dayNum) {
-  return page.evaluate((num) => {
-    const buttons = Array.from(document.querySelectorAll(".grid.grid-cols-4 button"));
-    const btn = buttons.find((b) => b.querySelector("span:last-child")?.textContent.trim() === String(num));
-    if (!btn) return null;
-    btn.click();
-    return { text: btn.textContent.trim(), wasDisabled: btn.disabled };
-  }, dayNum);
-}
-
-async function dayButtonState(page, dayNum) {
-  return page.evaluate((num) => {
-    const buttons = Array.from(document.querySelectorAll(".grid.grid-cols-4 button"));
-    const btn = buttons.find((b) => b.querySelector("span:last-child")?.textContent.trim() === String(num));
-    return btn ? { text: btn.textContent.trim(), disabled: btn.disabled } : null;
-  }, dayNum);
 }
 
 async function openNewAppointment(page) {
@@ -199,13 +135,7 @@ async function openFechaPicker(page) {
 }
 
 async function main() {
-  const chromePath = CHROME_CANDIDATES.find((p) => {
-    try {
-      return existsSync(p);
-    } catch {
-      return false;
-    }
-  });
+  const chromePath = findChrome();
   if (!chromePath) {
     console.error("qa-no-past-appointments-check: no local Chrome found — set CHROME_PATH.");
     process.exit(2);
@@ -213,16 +143,11 @@ async function main() {
 
   let devServer = null;
   let startedServer = false;
-  const alreadyUp = await waitForServer("http://localhost:3000", 1000);
-  if (!alreadyUp) {
-    devServer = spawn("npm", ["run", "dev"], { stdio: "ignore", detached: true });
-    startedServer = true;
-    const up = await waitForServer("http://localhost:3000", 60_000);
-    if (!up) {
-      console.error("qa-no-past-appointments-check: dev server never became ready.");
-      if (devServer.pid) process.kill(-devServer.pid);
-      process.exit(2);
-    }
+  try {
+    ({ devServer, startedServer } = await ensureDevServer());
+  } catch (e) {
+    console.error("qa-no-past-appointments-check:", e.message);
+    process.exit(2);
   }
 
   const browser = await puppeteer.launch({ executablePath: chromePath, headless: true });
@@ -232,6 +157,10 @@ async function main() {
     // hours, with "8:00 AM" already past and plenty of future slots left)
     // — every scenario below assumes this specific, deterministic clock. --
     const page = await browser.newPage();
+    // allowFakeClockHydrationMismatch: true — this page's clock is faked
+    // (see qa-lib.mjs's own comment on why that alone produces one
+    // specific, understood React warning, never a real product bug).
+    attachConsoleMonitor(page, failures, { allowFakeClockHydrationMismatch: true, extraAllowed: allow401 });
     await installFakeClock(page, 10, 0);
     await page.goto(URL, { waitUntil: "networkidle0", timeout: 30_000 });
     await new Promise((r) => setTimeout(r, 1000));
@@ -347,13 +276,7 @@ async function main() {
     console.log("Scenario: Reprogramar cita — Fecha change blocked when it would make the existing time-of-day past");
     // Fixture's 8:00 AM appointment lives on the day after "today" (see
     // fixtures.ts) — reachable by navigating the day strip forward.
-    const dayStripClicked = await page.evaluate((num) => {
-      const buttons = Array.from(document.querySelectorAll("button"));
-      const btn = buttons.find((b) => { const m = /^[A-Za-zÁÉÍÓÚáéíóú]{3}(\d{1,2})$/.exec(b.textContent.trim()); return m && Number(m[1]) === num && !b.closest(".grid-cols-4"); });
-      if (!btn) return false;
-      btn.click();
-      return true;
-    }, tomorrowNum);
+    const dayStripClicked = await navigateDayStripTo(page, tomorrowNum);
     await new Promise((r) => setTimeout(r, 400));
     if (dayStripClicked) {
       const slotClicked = await page.evaluate(() => {
@@ -406,6 +329,7 @@ async function main() {
     // both render the same shared WeekDayPickerContent. ------------------
     console.log("Scenario: Fecha picker — today disabled once no slot remains (Nueva cita + Reprogramar)");
     const latePage = await browser.newPage();
+    attachConsoleMonitor(latePage, failures, { allowFakeClockHydrationMismatch: true, extraAllowed: allow401 });
     await installFakeClock(latePage, 23, 0); // 11:00 PM, well past the clinic's last 5:30 PM slot
     await latePage.goto(URL, { waitUntil: "networkidle0", timeout: 30_000 });
     await new Promise((r) => setTimeout(r, 1000));
@@ -428,13 +352,7 @@ async function main() {
     );
     await closeAnyOpenModal(latePage);
 
-    const lateDayStripClicked = await latePage.evaluate((num) => {
-      const buttons = Array.from(document.querySelectorAll("button"));
-      const btn = buttons.find((b) => { const m = /^[A-Za-zÁÉÍÓÚáéíóú]{3}(\d{1,2})$/.exec(b.textContent.trim()); return m && Number(m[1]) === num && !b.closest(".grid-cols-4"); });
-      if (!btn) return false;
-      btn.click();
-      return true;
-    }, lateTomorrowNum);
+    const lateDayStripClicked = await navigateDayStripTo(latePage, lateTomorrowNum);
     await new Promise((r) => setTimeout(r, 400));
     if (lateDayStripClicked) {
       const lateSlotClicked = await latePage.evaluate(() => {
@@ -474,9 +392,7 @@ async function main() {
     console.log("  (see npm test: no-past-appointments.test.ts — createAppointment/updateAppointment PAST_DATE_ERROR coverage)");
   } finally {
     await browser.close();
-    if (startedServer && devServer && devServer.pid) {
-      process.kill(-devServer.pid);
-    }
+    stopDevServer(devServer, startedServer);
   }
 
   if (failures.length > 0) {
