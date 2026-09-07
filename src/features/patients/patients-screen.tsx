@@ -6,6 +6,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
 import type { Patient } from "./data";
 import { NewPatientModal } from "./new-patient-modal";
+import type { PatientKpis } from "./patient-kpis";
 import { PatientRecordModal } from "./patient-record-modal";
 
 type PatientStatusFilter = "" | "active" | "inactive";
@@ -29,18 +30,22 @@ function isNewThisMonth(patient: Patient): boolean {
 // from useRole()/RoleContext/the DEV role switcher. "Profesional habitual"
 // is gone entirely — patients belong to the Clinic, not a Dentist (see
 // CLAUDE.md Domain Model). The 4-KPI grid restores the approved demo
-// layout exactly (icons/labels/spacing) — "Con cita próxima"/"Sin
-// atención +6 meses" show "—", not 0: no appointments table exists yet to
-// compute either, and 0 would misrepresent "computed, zero" as opposed to
-// "not computable yet".
+// layout exactly (icons/labels/spacing). "Con cita próxima"/"Sin atención
+// +6 meses" now read from the real, derived src/features/patients/
+// patient-kpis.ts (appointments + patient_clinical_encounters) — kpis is
+// null only when that fetch itself failed server-side (see page.tsx),
+// which still renders the same honest "—" as before; a real zero renders
+// "0", never blurred together with "not computable".
 export function PatientsScreen({
   initialPatients,
   clinicId,
   canCreatePatient,
+  kpis,
 }: {
   initialPatients: Patient[];
   clinicId: string | null;
   canCreatePatient: boolean;
+  kpis: PatientKpis | null;
 }) {
   const [patients, setPatients] = useState<Patient[]>(initialPatients);
   const [search, setSearch] = useState("");
@@ -71,10 +76,16 @@ export function PatientsScreen({
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KpiCard icon={UsersIcon} value={String(activeCount)} label="Pacientes activos" />
         <KpiCard icon={PlusIcon} value={String(newThisMonthCount)} label="Nuevos este mes" />
-        {/* Sin tabla de appointments todavía — "—" honesto, nunca 0 (ver
-            CLAUDE.md task scope). */}
-        <KpiCard icon={CalendarIcon} value="—" label="Con cita próxima" />
-        <KpiCard icon={AlertTriangleIcon} value="—" label="Sin atención +6 meses" />
+        <KpiCard
+          icon={CalendarIcon}
+          value={kpis ? String(kpis.patientsWithUpcomingAppointment) : "—"}
+          label="Con cita próxima"
+        />
+        <KpiCard
+          icon={AlertTriangleIcon}
+          value={kpis ? String(kpis.patientsUnattendedSixMonths) : "—"}
+          label="Sin atención +6 meses"
+        />
       </div>
 
       <div className="flex flex-col gap-3">

@@ -1,6 +1,7 @@
 import { PatientsGreeting } from "@/components/patients-greeting";
 import { AppShell } from "@/components/shell/app-shell";
 import { fetchPatients, type Patient } from "@/features/patients/data";
+import { fetchPatientKpis, type PatientKpis } from "@/features/patients/patient-kpis";
 import { PatientsScreen } from "@/features/patients/patients-screen";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
 import { createClient } from "@/lib/supabase/server";
@@ -34,12 +35,24 @@ export default async function PatientsPage() {
 
   let patients: Patient[] = [];
   let loadFailed = false;
+  // Honest zero-value default: null (not { upcoming: 0, unattended: 0 })
+  // means "we couldn't compute this," which PatientsScreen renders as "—",
+  // never a fabricated 0 (see that component's own comment) — same
+  // "optional for the page as a whole" pattern already used below for
+  // rooms/members in src/app/clinica/page.tsx.
+  let kpis: PatientKpis | null = null;
   if (context.status === "ok") {
     try {
       patients = await fetchPatients(supabase, context.clinic.id);
     } catch (error) {
       console.error("[/pacientes] fetchPatients failed", error);
       loadFailed = true;
+    }
+
+    try {
+      kpis = await fetchPatientKpis(supabase, context.clinic.id);
+    } catch (error) {
+      console.error("[/pacientes] fetchPatientKpis failed", error);
     }
   }
 
@@ -52,7 +65,12 @@ export default async function PatientsPage() {
           No pudimos cargar tus pacientes. Intenta de nuevo en unos minutos.
         </p>
       ) : (
-        <PatientsScreen initialPatients={patients} clinicId={context.status === "ok" ? context.clinic.id : null} canCreatePatient={canCreatePatient} />
+        <PatientsScreen
+          initialPatients={patients}
+          clinicId={context.status === "ok" ? context.clinic.id : null}
+          canCreatePatient={canCreatePatient}
+          kpis={kpis}
+        />
       )}
     </AppShell>
   );
