@@ -9,11 +9,12 @@ import type { ClinicContext } from "@/features/session/types";
 //
 // Refreshes the Supabase auth session/cookies on every request, and gates
 // the clinic team app's private routes (Agenda/Pacientes/Reportes/Clínica/
-// Configuración/Suscripción) against the REAL Supabase session — see
-// CLAUDE.md task scope, section 7. /admin (Superadmin) and /portal
-// (Patient) deliberately stay out of this real gate: neither role has real
-// auth wired up yet (see task scope, sections 14/19) — they keep the
-// existing mock gate in components/shell/use-route-guard.ts unchanged.
+// Configuración/Suscripción/Mi perfil profesional) against the REAL
+// Supabase session — see CLAUDE.md task scope, section 7. /admin
+// (Superadmin) and /portal (Patient) deliberately stay out of this real
+// gate: neither role has real auth wired up yet (see task scope, sections
+// 14/19) — they keep the existing mock gate in
+// components/shell/use-route-guard.ts unchanged.
 //
 // Deliberately NO NODE_ENV === "development" bypass here — unlike
 // use-route-guard.ts's own mock-session bypass, this real gate must hold
@@ -23,7 +24,15 @@ import type { ClinicContext } from "@/features/session/types";
 // · Cambiar rol switcher (src/dev/role-switcher.tsx) is unaffected: it only
 // overrides which mock role/data the already-authorized shell renders,
 // never whether a request gets past this gate.
-const PRIVATE_CLINIC_PATHS = ["/agenda", "/pacientes", "/reportes", "/clinica", "/configuracion", "/suscripcion"];
+const PRIVATE_CLINIC_PATHS = [
+  "/agenda",
+  "/pacientes",
+  "/reportes",
+  "/clinica",
+  "/configuracion",
+  "/suscripcion",
+  "/mi-perfil-profesional",
+];
 
 function isPrivateClinicPath(pathname: string): boolean {
   return PRIVATE_CLINIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));

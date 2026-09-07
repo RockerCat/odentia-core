@@ -5,45 +5,32 @@ import { CloseIcon, PencilIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { CURRENT_USER } from "@/lib/current-user";
 import { FIELD_CLASS } from "./appointment-detail-modal";
-import { DAY_ORDER, SCHEDULE_TIME_OPTIONS } from "./appointments-card";
-import { ROOMS } from "./mock-data";
-import type { AdminIdentityOverride, AdminProfessionalProfile } from "@/dev/role-context";
+import type { AdminIdentityOverride } from "@/dev/role-context";
 
-const DEFAULT_SCHEDULE_DAYS = ["L", "M", "X", "J", "V"];
-const DEFAULT_SCHEDULE_START = "8:00 AM";
-const DEFAULT_SCHEDULE_END = "5:00 PM";
-
-// The Clinic Admin's own "Mi perfil" — deliberately a separate modal from
-// DentistProfileModal (see appointments-card.tsx), and deliberately simple:
-// it only ever handles the "no Perfil profesional yet" flow. The moment one
-// is configured, header.tsx stops opening this modal altogether and opens
-// DentistProfileModal instead (same component the Dentist role's own
-// profile already uses) — see onProfessionalProfileConfigured below. It
-// never changes RoleContext's `role`: an admin who configures one stays
-// "Administrador de Clínica" and is only additionally visible as a
-// professional (see effectiveDentists in AppointmentsCard).
+// The Clinic Admin's own "Mi perfil" — identity fields only (Nombre/
+// Correo/Teléfono/Foto, still mock/local, out of this task's scope). The
+// "Perfil profesional" card below is no longer a second, local, non-
+// persistent form (see PROMPT NINJA "Clinic Admin → crear perfil
+// profesional real"): "Configurar perfil profesional" now navigates
+// straight to /mi-perfil-profesional's own real creation flow
+// (MyProfessionalProfileSection → create_my_professional_profile(), see
+// that migration) — the same real experience an existing Dentist/Admin-
+// odontóloga already edits from, never a second, divergent form. This
+// modal never changes RoleContext's `role`: an admin who creates one stays
+// "Administrador de Clínica", additionally visible as a professional once
+// the real professional_profiles row exists.
 export function AdminProfileModal({
   onClose,
-  onProfessionalProfileConfigured,
+  onConfigureProfessionalProfile,
   adminIdentityOverride,
   setAdminIdentityOverride,
-  setAdminProfessionalProfile,
-  autoConfigureProfessional = false,
 }: {
   onClose: () => void;
-  // Called right after the first-ever "Perfil profesional" save, so
-  // header.tsx can swap this modal out for DentistProfileModal immediately.
-  onProfessionalProfileConfigured: () => void;
+  // "Configurar perfil profesional" — closes this modal and navigates to
+  // the real /mi-perfil-profesional creation flow (see header.tsx).
+  onConfigureProfessionalProfile: () => void;
   adminIdentityOverride: AdminIdentityOverride;
   setAdminIdentityOverride: (patch: AdminIdentityOverride) => void;
-  setAdminProfessionalProfile: (profile: AdminProfessionalProfile | null) => void;
-  // Skips the "¿También atiendes pacientes...?" empty state and opens
-  // straight into the Perfil profesional form — only for the
-  // "Clínica > Mi perfil profesional" entry point (see
-  // clinic-settings-screen.tsx), which is itself the deliberate act of
-  // turning that on; the normal avatar/header entry point never passes
-  // this, so it keeps showing the read/empty state exactly as before.
-  autoConfigureProfessional?: boolean;
 }) {
   const displayName = adminIdentityOverride.name ?? CURRENT_USER.name;
   const displayEmail = adminIdentityOverride.email ?? CURRENT_USER.email;
@@ -90,50 +77,6 @@ export function AdminProfileModal({
       if (typeof reader.result === "string") setPhotoDraft(reader.result);
     };
     reader.readAsDataURL(file);
-  };
-
-  const [configuringProfessional, setConfiguringProfessional] = useState(autoConfigureProfessional);
-  const [specialtyDraft, setSpecialtyDraft] = useState("");
-  const [registrationDraft, setRegistrationDraft] = useState("");
-  const [mainRoomDraft, setMainRoomDraft] = useState(ROOMS[0]);
-  const [scheduleDaysDraft, setScheduleDaysDraft] = useState<string[]>(DEFAULT_SCHEDULE_DAYS);
-  const [scheduleStartDraft, setScheduleStartDraft] = useState(DEFAULT_SCHEDULE_START);
-  const [scheduleEndDraft, setScheduleEndDraft] = useState(DEFAULT_SCHEDULE_END);
-
-  // This modal only ever mounts while there's no Perfil profesional yet
-  // (see header.tsx), so there's never a previous draft to prefill here.
-  const startConfiguringProfessional = () => {
-    setSpecialtyDraft("");
-    setRegistrationDraft("");
-    setMainRoomDraft(ROOMS[0]);
-    setScheduleDaysDraft(DEFAULT_SCHEDULE_DAYS);
-    setScheduleStartDraft(DEFAULT_SCHEDULE_START);
-    setScheduleEndDraft(DEFAULT_SCHEDULE_END);
-    setConfiguringProfessional(true);
-  };
-
-  const toggleScheduleDraftDay = (day: string) => {
-    setScheduleDaysDraft((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
-  };
-
-  const cancelConfiguringProfessional = () => setConfiguringProfessional(false);
-
-  const canSaveProfessionalProfile = Boolean(specialtyDraft.trim() && registrationDraft.trim());
-
-  const saveProfessionalProfile = () => {
-    if (!canSaveProfessionalProfile) return;
-    setAdminProfessionalProfile({
-      specialty: specialtyDraft.trim(),
-      registrationNumber: registrationDraft.trim(),
-      mainRoom: mainRoomDraft,
-      scheduleDays: scheduleDaysDraft,
-      scheduleStart: scheduleStartDraft,
-      scheduleEnd: scheduleEndDraft,
-    });
-    setConfiguringProfessional(false);
-    // Immediately hand off to DentistProfileModal instead of sticking
-    // around to show a summary here — see onProfessionalProfileConfigured.
-    onProfessionalProfileConfigured();
   };
 
   return (
@@ -280,118 +223,23 @@ export function AdminProfileModal({
             </div>
           )}
 
-          {/* Perfil profesional — independent card, opt-in, additive. */}
+          {/* Perfil profesional — independent card, opt-in, additive.
+              "Configurar perfil profesional" navigates straight to the
+              real /mi-perfil-profesional creation flow (see
+              onConfigureProfessionalProfile/header.tsx) — no local
+              draft/form here anymore. */}
           <div className="mt-6 rounded-xl border border-border p-4">
             <h3 className="text-sm font-semibold">Perfil profesional</h3>
-
-            {configuringProfessional ? (
-              <div className="mt-3 flex flex-col gap-3 text-sm">
-                <div>
-                  <label className="text-[11px] text-label-foreground">Especialidad</label>
-                  <input
-                    value={specialtyDraft}
-                    onChange={(e) => setSpecialtyDraft(e.target.value)}
-                    placeholder="Ej. Odontología general"
-                    className={`${FIELD_CLASS} mt-1`}
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] text-label-foreground">Registro profesional</label>
-                  <input
-                    value={registrationDraft}
-                    onChange={(e) => setRegistrationDraft(e.target.value)}
-                    placeholder="Ej. T.P. 00000"
-                    className={`${FIELD_CLASS} mt-1`}
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] text-label-foreground">Consultorio principal</label>
-                  <select
-                    value={mainRoomDraft}
-                    onChange={(e) => setMainRoomDraft(e.target.value)}
-                    className={`${FIELD_CLASS} mt-1`}
-                  >
-                    {ROOMS.map((room) => (
-                      <option key={room} value={room}>
-                        {room}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[11px] text-label-foreground">Disponibilidad de atención</label>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {DAY_ORDER.map((day) => (
-                      <button
-                        key={day}
-                        type="button"
-                        onClick={() => toggleScheduleDraftDay(day)}
-                        className={`flex size-7 items-center justify-center rounded-full border text-xs font-medium transition-colors ${
-                          scheduleDaysDraft.includes(day)
-                            ? "border-primary/30 bg-primary/10 text-primary"
-                            : "border-border text-muted-foreground hover:bg-foreground/5"
-                        }`}
-                      >
-                        {day}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <select
-                      value={scheduleStartDraft}
-                      onChange={(e) => setScheduleStartDraft(e.target.value)}
-                      className={FIELD_CLASS}
-                    >
-                      {SCHEDULE_TIME_OPTIONS.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="text-muted-foreground">-</span>
-                    <select
-                      value={scheduleEndDraft}
-                      onChange={(e) => setScheduleEndDraft(e.target.value)}
-                      className={FIELD_CLASS}
-                    >
-                      {SCHEDULE_TIME_OPTIONS.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="flex justify-end gap-1.5">
-                  <button
-                    type="button"
-                    onClick={cancelConfiguringProfessional}
-                    className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-foreground/70 hover:bg-foreground/5"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={saveProfessionalProfile}
-                    disabled={!canSaveProfessionalProfile}
-                    className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Guardar
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-3">
-                <p className="text-sm text-muted-foreground">¿También atiendes pacientes en esta clínica?</p>
-                <button
-                  type="button"
-                  onClick={startConfiguringProfessional}
-                  className="mt-2.5 rounded-lg border border-dashed border-border px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
-                >
-                  Configurar perfil profesional
-                </button>
-              </div>
-            )}
+            <div className="mt-3">
+              <p className="text-sm text-muted-foreground">¿También atiendes pacientes en esta clínica?</p>
+              <button
+                type="button"
+                onClick={onConfigureProfessionalProfile}
+                className="mt-2.5 rounded-lg border border-dashed border-border px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+              >
+                Configurar perfil profesional
+              </button>
+            </div>
           </div>
         </div>
       </div>

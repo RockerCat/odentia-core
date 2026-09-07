@@ -14,7 +14,7 @@ export type SignUpOutcome =
 // user_metadata; the on_auth_user_created trigger (see the foundation
 // schema migration) is what actually creates the profiles row — never
 // insert into profiles from the client.
-export async function signUpAccount(data: AccountFormData): Promise<SignUpOutcome> {
+export async function signUpAccount(data: AccountFormData, next: string = "/registro"): Promise<SignUpOutcome> {
   const supabase = createClient();
   const { data: result, error } = await supabase.auth.signUp({
     email: data.email.trim(),
@@ -34,8 +34,12 @@ export async function signUpAccount(data: AccountFormData): Promise<SignUpOutcom
       // domain, so this works unmodified in local dev and whatever domain
       // this app is actually deployed to — as long as that origin is
       // present in Supabase Auth's Redirect URLs allow-list (Dashboard →
-      // Authentication → URL Configuration).
-      emailRedirectTo: `${window.location.origin}/auth/confirm?next=${encodeURIComponent("/registro")}`,
+      // Authentication → URL Configuration). `next` defaults to /registro
+      // (this wizard's own reentry) but the Equipo invitation-acceptance
+      // flow (see src/app/invitacion/[token]/page.tsx) passes its own
+      // path, so confirming email there lands back on the same invitation
+      // instead of at the wizard.
+      emailRedirectTo: `${window.location.origin}/auth/confirm?next=${encodeURIComponent(next)}`,
     },
   });
 

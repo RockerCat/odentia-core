@@ -21,20 +21,19 @@ import { signOutSupabase } from "@/features/session/sign-out";
 // navigation, so the now-sessionless check naturally lands on Paso 1.
 export function AlreadyOnboarded({ onSignedOut }: { onSignedOut: () => void }) {
   const [signingOut, setSigningOut] = useState(false);
-  const [signOutError, setSignOutError] = useState<string | null>(null);
 
+  // Always proceeds to onSignedOut() regardless of signOutSupabase()'s own
+  // outcome — same as use-shell-logout.ts's "Salir". auth-js's signOut()
+  // clears the local session before returning even when the server-side
+  // /auth/v1/logout call itself errors (a real, observed transient 503
+  // from Supabase — see sign-out.ts's own comment), so blocking the user
+  // behind a "couldn't sign out" error here would be a false failure, not
+  // a safety measure.
   const handleSignOut = async () => {
     if (signingOut) return;
     setSigningOut(true);
-    setSignOutError(null);
 
-    const outcome = await signOutSupabase();
-    if (outcome.status === "error") {
-      setSigningOut(false);
-      setSignOutError("No pudimos cerrar tu sesión. Intenta de nuevo.");
-      return;
-    }
-
+    await signOutSupabase();
     onSignedOut();
   };
 
@@ -68,7 +67,6 @@ export function AlreadyOnboarded({ onSignedOut }: { onSignedOut: () => void }) {
           >
             {signingOut ? "Cerrando sesión…" : "Cerrar sesión"}
           </button>
-          {signOutError && <p className="mt-1 text-xs text-danger">{signOutError}</p>}
         </div>
       </div>
     </div>

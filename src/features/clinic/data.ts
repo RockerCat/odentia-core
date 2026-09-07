@@ -106,6 +106,11 @@ export type TeamMember = {
     id: string;
     active: boolean;
     licenseNumber: string | null;
+    // Both the resolved display name AND the raw id — Mi perfil
+    // profesional's own edit form (see clinic-settings-screen.tsx) needs
+    // the id to preselect the current specialty in its picker; every other
+    // read-only consumer (Equipo's own roleLabel) keeps using the name.
+    specialtyId: string | null;
     specialtyName: string | null;
     defaultAppointmentDurationMinutes: number | null;
     bio: string | null;
@@ -180,6 +185,7 @@ export async function fetchTeamMembers(supabase: SupabaseClient, clinicId: strin
         id: pp.id,
         active: pp.active,
         licenseNumber: pp.license_number,
+        specialtyId: pp.primary_specialty_id,
         specialtyName: pp.primary_specialty_id ? (specialtyNameById.get(pp.primary_specialty_id) ?? null) : null,
         defaultAppointmentDurationMinutes: pp.default_appointment_duration_minutes,
         bio: pp.bio,
@@ -201,4 +207,23 @@ export async function fetchTeamMembers(supabase: SupabaseClient, clinicId: strin
       professionalProfile: professionalByMembershipId.get(row.id) ?? null,
     };
   });
+}
+
+export type Specialty = { id: string; name: string };
+
+// The global catalog (specialties is NOT clinic-scoped — see the
+// foundation schema) — backs Mi perfil profesional's own specialty picker
+// (see clinic-settings-screen.tsx), same active-only/name-ordered
+// convention as fetchActiveTreatmentNames/fetchActiveRoomNames.
+export async function fetchActiveSpecialties(supabase: SupabaseClient): Promise<Specialty[]> {
+  const { data, error } = await supabase
+    .from("specialties")
+    .select("id, name")
+    .eq("active", true)
+    .order("name", { ascending: true });
+  if (error) {
+    logStepFailed("fetchActiveSpecialties (specialties)", error);
+    throw error;
+  }
+  return data ?? [];
 }

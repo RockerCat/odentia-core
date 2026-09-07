@@ -6,6 +6,7 @@
 import { NAV_ITEMS, type NavItem } from "@/components/shell/nav-items";
 import {
   BuildingIcon,
+  ClipboardIcon,
   CreditCardIcon,
   DashboardIcon,
   SlidersIcon,
@@ -55,6 +56,20 @@ export function homeRouteForRole(role: Role): string {
 // per this iteration's scope), so it's re-added explicitly just for it.
 const HOME_ITEM: NavItem = { label: "Inicio", icon: DashboardIcon, group: "work" };
 
+// Dentist-only — Clinic Admin already reaches the exact same real form
+// (see my-professional-profile-section.tsx, shared by both) via /clinica's
+// own "Mi información profesional" card, so no second nav entry is added
+// there; a plain Dentist has no other route into it at all (see
+// src/app/mi-perfil-profesional/page.tsx's own comment on why /clinica
+// itself stays Clinic Admin only). "admin" group, same as Configuración —
+// both are the Dentist's own personal settings, never clinic-wide.
+const MI_PERFIL_PROFESIONAL_ITEM: NavItem = {
+  label: "Mi perfil profesional",
+  icon: ClipboardIcon,
+  group: "admin",
+  href: "/mi-perfil-profesional",
+};
+
 // Derived from the real Domain Model in CLAUDE.md:
 // - Clinic Admin sees everything (today's default nav).
 // - Dentist manages their own clinical operation, not the team, clinic
@@ -66,7 +81,14 @@ export const ROLE_NAV_ITEMS: Record<Role, readonly NavItem[]> = {
   "clinic-admin": NAV_ITEMS,
   // No Inicio for Dentist — Agenda (already first in NAV_ITEMS) is the
   // entry point, matching homeRouteForRole's dentist landing below.
-  dentist: NAV_ITEMS.filter((item) => item.label !== "Clínica" && item.label !== "Mi Suscripción"),
+  // "Mi perfil profesional" inserted right before "Configuración" —
+  // pulled from NAV_ITEMS the same way (no duplicated item definition)
+  // except for the one item that doesn't exist there yet.
+  dentist: [
+    ...NAV_ITEMS.filter((item) => item.label !== "Clínica" && item.label !== "Mi Suscripción" && item.label !== "Configuración"),
+    MI_PERFIL_PROFESIONAL_ITEM,
+    ...NAV_ITEMS.filter((item) => item.label === "Configuración"),
+  ],
   assistant: [
     HOME_ITEM,
     ...NAV_ITEMS.filter(

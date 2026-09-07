@@ -1,59 +1,50 @@
 "use client"; // needed for the user menu's open/close state below.
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { UserAvatar } from "@/components/user-avatar";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { AdminProfileModal } from "@/features/dashboard/admin-profile-modal";
-import { DentistProfileModal } from "@/features/dashboard/appointments-card";
 import { AssistantProfileModal } from "@/features/dashboard/assistant-profile-modal";
-import { CURRENT_USER } from "@/lib/current-user";
 import { BellIcon, ChevronDownIcon, LogOutIcon, SearchIcon, UserIcon } from "./icons";
 import { useShellIdentity } from "./use-shell-identity";
 import { useShellLogout } from "./use-shell-logout";
 
 // Desktop only — mobile uses MobileHeader + BottomTabBar instead.
 export function Header() {
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
   const [showAdminProfile, setShowAdminProfile] = useState(false);
   const [showAssistantProfile, setShowAssistantProfile] = useState(false);
   // DEV TOOL — see src/dev/role.ts. useShellIdentity() overlays real
   // profile/clinic data on the same mock derivation the Agenda's greeting
   // reads (useAuthenticatedIdentity) — see use-shell-identity.ts. useRole()
-  // is only needed here for the setters the profile modals write back
-  // through.
+  // is only needed here for the setters AdminProfileModal/
+  // AssistantProfileModal (identity fields — still mock, out of this
+  // task's scope) write back through.
   const {
     role,
-    setSelfDentistOverride,
     adminIdentityOverride,
     setAdminIdentityOverride,
-    adminProfessionalProfile,
-    setAdminProfessionalProfile,
     assistantIdentityOverride,
     setAssistantIdentityOverride,
   } = useRole();
   const identity = useShellIdentity();
   const { signOut, signingOut } = useShellLogout();
-  const isDentistRole = role === "dentist";
   const isClinicAdmin = role === "clinic-admin";
   const isAssistant = role === "assistant";
+  // Real Dentist, or real Clinic Admin who already has her own
+  // professional_profile (see role-bridge.ts's soloDentistClinic) — both
+  // go straight to the real, unified /mi-perfil-profesional experience
+  // (see that page + my-professional-profile-section.tsx) instead of the
+  // old DentistProfileModal (100% mock fields — see appointments-card.tsx).
+  // A Clinic Admin with no professional_profile yet still opens
+  // AdminProfileModal's "¿También atiendes pacientes?" card, whose
+  // "Configurar perfil profesional" button now also lands on
+  // /mi-perfil-profesional — its real creation flow
+  // (create_my_professional_profile(), see that migration), never a
+  // second local form.
   const dentistToShow = identity.professionalRecord;
-
-  // Routes DentistProfileModal's name/specialty/avatar edits back to the
-  // right place when it's the admin's own professional record: name/avatar
-  // are also "Mi perfil" identity fields, specialty lives on the
-  // professional profile itself.
-  const handleAdminDentistProfileChange = (patch: { name?: string; specialty?: string; avatar_url?: string }) => {
-    if (patch.name !== undefined || patch.avatar_url !== undefined) {
-      setAdminIdentityOverride({
-        ...(patch.name !== undefined ? { name: patch.name } : {}),
-        ...(patch.avatar_url !== undefined ? { avatar_url: patch.avatar_url } : {}),
-      });
-    }
-    if (patch.specialty !== undefined && adminProfessionalProfile) {
-      setAdminProfessionalProfile({ ...adminProfessionalProfile, specialty: patch.specialty });
-    }
-  };
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -112,13 +103,15 @@ export function Header() {
                   role="menuitem"
                   onClick={() => {
                     setMenuOpen(false);
-                    // DEV TOOL — Dentist, or a Clinic Admin who has already
-                    // configured "Perfil profesional", opens the shared
-                    // DentistProfileModal directly. A Clinic Admin with no
-                    // professional profile yet opens "Mi perfil" instead. An
+                    // Dentist, or a Clinic Admin who already has her own
+                    // professional_profile, goes to the real, unified
+                    // /mi-perfil-profesional — see this block's own comment
+                    // above dentistToShow. A Clinic Admin with no
+                    // professional profile yet still opens "Mi perfil"
+                    // (AdminProfileModal, unchanged/out of scope here). An
                     // Assistant opens their own simple, non-clinical profile.
                     // Every other role keeps the previous no-op behavior.
-                    if (dentistToShow) setShowProfile(true);
+                    if (dentistToShow) router.push("/mi-perfil-profesional");
                     else if (isClinicAdmin) setShowAdminProfile(true);
                     else if (isAssistant) setShowAssistantProfile(true);
                   }}
@@ -153,40 +146,19 @@ export function Header() {
         </div>
       </div>
 
-      {showProfile && dentistToShow && (
-        <DentistProfileModal
-          dentist={dentistToShow}
-          onClose={() => setShowProfile(false)}
-          onSelfProfileChange={isDentistRole ? setSelfDentistOverride : handleAdminDentistProfileChange}
-          initialProfile={
-            !isDentistRole && adminProfessionalProfile
-              ? {
-                  registrationNumber: adminProfessionalProfile.registrationNumber,
-                  mainRoom: adminProfessionalProfile.mainRoom,
-                  scheduleDays: adminProfessionalProfile.scheduleDays,
-                  scheduleStart: adminProfessionalProfile.scheduleStart,
-                  scheduleEnd: adminProfessionalProfile.scheduleEnd,
-                  // Same "Mi perfil" identity fields shown/edited above,
-                  // not a second copy — see AdminProfileModal's own
-                  // displayEmail/displayPhone.
-                  email: adminIdentityOverride.email ?? CURRENT_USER.email,
-                  phone: adminIdentityOverride.phone ?? CURRENT_USER.phone,
-                }
-              : undefined
-          }
-        />
-      )}
-
       {showAdminProfile && (
         <AdminProfileModal
           onClose={() => setShowAdminProfile(false)}
-          onProfessionalProfileConfigured={() => {
+          onConfigureProfessionalProfile={() => {
+            // Same real, unified page a Dentist/Admin-odontóloga already
+            // edits from — its own empty state now offers the real
+            // creation flow (create_my_professional_profile()), never a
+            // second local form here.
             setShowAdminProfile(false);
-            setShowProfile(true);
+            router.push("/mi-perfil-profesional");
           }}
           adminIdentityOverride={adminIdentityOverride}
           setAdminIdentityOverride={setAdminIdentityOverride}
-          setAdminProfessionalProfile={setAdminProfessionalProfile}
         />
       )}
 

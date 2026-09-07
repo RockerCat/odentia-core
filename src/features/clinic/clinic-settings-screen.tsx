@@ -2,12 +2,16 @@
 
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { BuildingIcon, PencilIcon, PlusIcon } from "@/components/shell/icons";
+import { useToast } from "@/components/toast";
 import { UserAvatar } from "@/components/user-avatar";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
 import { updateClinicInfo } from "@/features/clinic/actions";
-import type { ClinicDetail, PrimaryLocation, TeamMember } from "@/features/clinic/data";
+import type { ClinicDetail, PrimaryLocation, Specialty, TeamMember } from "@/features/clinic/data";
 import { CLINIC_LOGO_ACCEPTED_TYPES, CLINIC_LOGO_MAX_BYTES, removeClinicLogo, uploadClinicLogo } from "@/features/clinic/logo";
+import { InviteMemberModal } from "@/features/clinic/invite-member-modal";
+import { MyProfessionalProfileSection, StatusBadge } from "@/features/clinic/my-professional-profile-section";
 import { PrimaryLocationSection } from "@/features/clinic/primary-location-section";
+import { setClinicMemberStatus } from "@/features/clinic/team-actions";
 import { createRoom, renameRoom, setRoomActive } from "@/features/rooms/actions";
 import type { Room } from "@/features/rooms/data";
 
@@ -31,43 +35,50 @@ import type { Room } from "@/features/rooms/data";
 export function ClinicSettingsScreen({
   clinic,
   location,
-  members,
-  selfMember,
+  members: initialMembers,
+  selfMember: initialSelfMember,
   rooms,
+  specialties,
 }: {
   clinic: ClinicDetail;
   location: PrimaryLocation | null;
   members: TeamMember[];
   selfMember: TeamMember | null;
   rooms: Room[];
+  specialties: Specialty[];
 }) {
+  // Lifted above Equipo/Mi perfil profesional (not local to either) so
+  // both sections read the SAME real data — Equipo's own role/specialty
+  // label (roleLabel below) reuses professionalProfile.specialtyName, so a
+  // save in Mi perfil profesional must be reflected there too without a
+  // full page reload, never a second, independently-stale copy of the
+  // same team list (see this task's own "Consistencia" requirement).
+  const [members, setMembers] = useState(initialMembers);
+  const selfMember = initialSelfMember
+    ? (members.find((m) => m.membershipId === initialSelfMember.membershipId) ?? null)
+    : null;
+
   return (
     <div className="flex flex-col gap-6">
       <InformacionGeneralSection clinic={clinic} location={location} />
-      <EquipoSection members={members} />
-      <MiPerfilProfesionalSection selfMember={selfMember} />
+      <EquipoSection members={members} onMembersChange={setMembers} />
+      <MyProfessionalProfileSection
+        selfMember={selfMember}
+        specialties={specialties}
+        onSaved={(updated) =>
+          setMembers((prev) =>
+            prev.map((m) => (m.membershipId === selfMember?.membershipId ? { ...m, professionalProfile: updated } : m)),
+          )
+        }
+      />
       <ConsultoriosSection clinicId={clinic.id} initialRooms={rooms} />
     </div>
   );
 }
 
-// Same border-primary/10 (Activo) vs border-danger/10 (Inactivo) pill
-// already used for Dentist/Patient status elsewhere in the app (see
-// DentistProfileModal, patient-detail-modal.tsx) — reused here for both
-// Equipo's membership.status and Mi perfil profesional's
-// professional_profile.active (two distinct real booleans/enums, both
-// collapsed to this same two-state visual — it never had a third state).
-function StatusBadge({ active }: { active: boolean }) {
-  return (
-    <span
-      className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-        active ? "border-primary/25 bg-primary/10 text-primary" : "border-danger/25 bg-danger/10 text-danger"
-      }`}
-    >
-      {active ? "Activo" : "Inactivo"}
-    </span>
-  );
-}
+// StatusBadge now lives in my-professional-profile-section.tsx (imported
+// above) — shared as-is between Equipo's own membership.status below and
+// Mi perfil profesional's professional_profile.active, never duplicated.
 
 // 1. Información general — a 3-column grid on desktop: cols 1-2 hold the
 // clinic's editable fields (each individually inline-editable, see
@@ -390,14 +401,26 @@ function InfoField({
 // also has a professional_profile is naturally a single row with both
 // role and specialty, never a separate "dentist" entry (see task scope,
 // section 7 — no dedup logic needed, the real data model already
-// guarantees this). "Agregar miembro"/"Editar"/"Activar"/"Desactivar" are
-// visible but disabled: none of them are safely wireable yet — real
-// invitations don't exist (clinic_invitations' accept flow is a future
-// task, see section 9), and clinic_memberships/professional_profiles both
-// have no UPDATE policy at all today, deliberately reserved for a future
-// RPC (see task scope, sections 8/10) — never opened via a broad policy or
-// a direct client UPDATE for convenience.
-function EquipoSection({ members }: { members: TeamMember[] }) {
+// guarantees this). "Agregar miembro" opens InviteMemberModal (real
+// invite_clinic_member() RPC — see that migration/component's own
+// comments on why there's no real email sending yet).
+// "Desactivar"/"Reactivar" call set_clinic_member_status() directly — the
+// RPC itself is the real enforcement (admin-only, blocks deactivating the
+// last active admin), this button is never the only guard. "Editar" stays
+// disabled: editing a member's own details/role is a separate, larger
+// piece of scope this task deliberately didn't include.
+function EquipoSection({
+  members,
+  onMembersChange,
+}: {
+  members: TeamMember[];
+  onMembersChange: (updater: (prev: TeamMember[]) => TeamMember[]) => void;
+}) {
+  const { showToast } = useToast();
+  const [inviting, setInviting] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   const roleLabel = (member: TeamMember): string => {
     const specialty = member.professionalProfile?.specialtyName;
     if (member.role === "clinic_admin") {
@@ -408,20 +431,37 @@ function EquipoSection({ members }: { members: TeamMember[] }) {
     return "Asistente";
   };
 
+  const handleToggleStatus = async (member: TeamMember) => {
+    const nextActive = member.status !== "active";
+    setSavingId(member.membershipId);
+    setError(null);
+    const outcome = await setClinicMemberStatus(member.membershipId, nextActive);
+    setSavingId(null);
+    if (outcome.status === "error") {
+      setError(outcome.message);
+      return;
+    }
+    onMembersChange((prev) =>
+      prev.map((m) => (m.membershipId === member.membershipId ? { ...m, status: outcome.memberStatus } : m)),
+    );
+    showToast(nextActive ? "Miembro reactivado correctamente" : "Miembro desactivado correctamente");
+  };
+
   return (
     <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold">Equipo</h2>
         <button
           type="button"
-          disabled
-          title="El flujo de invitaciones todavía no está disponible."
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80 opacity-50 disabled:cursor-not-allowed"
+          onClick={() => setInviting(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80 hover:bg-foreground/5"
         >
           <PlusIcon className="size-3.5" />
           Agregar miembro
         </button>
       </div>
+
+      {error && <p className="mt-3 text-xs text-danger">{error}</p>}
 
       {members.length === 0 ? (
         <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
@@ -434,6 +474,7 @@ function EquipoSection({ members }: { members: TeamMember[] }) {
             const initials =
               `${member.firstName[0] ?? ""}${member.lastName[0] ?? ""}`.toUpperCase() || member.email[0]?.toUpperCase() || "?";
             const isActive = member.status === "active";
+            const isSaving = savingId === member.membershipId;
             return (
               <li key={member.membershipId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="flex min-w-0 items-center gap-3">
@@ -455,11 +496,11 @@ function EquipoSection({ members }: { members: TeamMember[] }) {
                   </button>
                   <button
                     type="button"
-                    disabled
-                    title="Cambiar el estado de un miembro requiere una función segura que todavía no existe."
-                    className={`text-xs font-medium opacity-50 disabled:cursor-not-allowed ${isActive ? "text-danger/80" : "text-primary"}`}
+                    disabled={isSaving}
+                    onClick={() => handleToggleStatus(member)}
+                    className={`text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${isActive ? "text-danger/80" : "text-primary"}`}
                   >
-                    {isActive ? "Desactivar" : "Reactivar"}
+                    {isSaving ? "Guardando…" : isActive ? "Desactivar" : "Reactivar"}
                   </button>
                 </div>
               </li>
@@ -467,117 +508,19 @@ function EquipoSection({ members }: { members: TeamMember[] }) {
           })}
         </ul>
       )}
+
+      {/* invitations aren't part of this list until accepted — the modal's
+          own success state is where the admin sees/copies the link. */}
+      {inviting && <InviteMemberModal onClose={() => setInviting(false)} />}
     </div>
   );
 }
 
-// 3. Mi perfil profesional — Administrador + Odontólogo, never a role swap
-// (see task scope). Real display only: selfMember comes from the real
-// team list, matched server-side by the authenticated profile.id (see
-// src/app/clinica/page.tsx) — never RoleContext/useRole() (see task
-// scope, sections 5/15). Editing stays disabled: professional_profiles
-// has no INSERT/UPDATE RLS policy at all yet (deliberately reserved for a
-// future RPC with a column whitelist — see the foundation RLS migration),
-// so this never opens a mutation, real or mock.
-function MiPerfilProfesionalSection({ selfMember }: { selfMember: TeamMember | null }) {
-  const professionalProfile = selfMember?.professionalProfile ?? null;
-  // Real equivalent of the old mock "Administrador Odontólogo Único"
-  // framing — she's always the practicing dentist here by definition, so
-  // the "también atiendo pacientes" checkbox copy doesn't apply.
-  const isAdminWithProfile = selfMember?.role === "clinic_admin" && professionalProfile !== null;
-  const selfName = selfMember ? `${selfMember.firstName} ${selfMember.lastName}`.trim() || selfMember.email : "";
-  const selfInitials =
-    selfMember && (`${selfMember.firstName[0] ?? ""}${selfMember.lastName[0] ?? ""}`.toUpperCase() || selfMember.email[0]?.toUpperCase() || "?");
-
-  return (
-    <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
-      {isAdminWithProfile ? (
-        <>
-          <h2 className="text-base font-semibold">Mi información profesional</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Tu especialidad, registro y horario como odontóloga de la clínica.
-          </p>
-        </>
-      ) : (
-        <>
-          <h2 className="text-base font-semibold">Mi perfil profesional</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Tu especialidad y registro como profesional, si atiendes pacientes en esta clínica.
-          </p>
-        </>
-      )}
-
-      {selfMember && (
-        <div className="mt-4 flex items-center gap-3">
-          <UserAvatar name={selfName} initials={selfInitials || "?"} avatar_url={selfMember.avatarUrl ?? undefined} sizeClassName="size-10" />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{selfName}</p>
-            <p className="truncate text-xs text-muted-foreground">{selfMember.email}</p>
-          </div>
-        </div>
-      )}
-
-      {professionalProfile ? (
-        <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
-          <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-xs text-label-foreground">Especialidad</dt>
-              <dd className="mt-0.5 font-medium">{professionalProfile.specialtyName ?? "Sin especialidad configurada"}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-label-foreground">Registro profesional</dt>
-              <dd className="mt-0.5 font-medium">{professionalProfile.licenseNumber || "No configurado"}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-label-foreground">Duración de cita</dt>
-              <dd className="mt-0.5 font-medium">
-                {professionalProfile.defaultAppointmentDurationMinutes
-                  ? `${professionalProfile.defaultAppointmentDurationMinutes} min`
-                  : "No configurado"}
-              </dd>
-            </div>
-            {/* No hay modelo real de horarios todavía (ver task scope,
-                sección 7) — honesto en vez de inventar un horario. */}
-            <div>
-              <dt className="text-xs text-label-foreground">Horario</dt>
-              <dd className="mt-0.5 font-medium text-muted-foreground">Horario aún no configurado</dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-xs text-label-foreground">Biografía</dt>
-              <dd className="mt-0.5 font-medium">{professionalProfile.bio || "No configurado"}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-label-foreground">Estado</dt>
-              <dd className="mt-1">
-                <StatusBadge active={professionalProfile.active} />
-              </dd>
-            </div>
-          </dl>
-          <button
-            type="button"
-            disabled
-            title="La edición de tu perfil profesional todavía no está disponible."
-            className="mt-3 text-xs font-medium text-primary opacity-50 disabled:cursor-not-allowed"
-          >
-            Editar perfil profesional
-          </button>
-        </div>
-      ) : (
-        <div className="mt-4 rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-          <p>Todavía no tienes un perfil profesional configurado en esta clínica.</p>
-          <button
-            type="button"
-            disabled
-            title="Configurar tu perfil profesional todavía no está disponible."
-            className="mt-3 text-xs font-medium text-primary opacity-50 disabled:cursor-not-allowed"
-          >
-            Configurar perfil profesional
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
+// 3. Mi perfil profesional — extracted to its own file, shared by /clinica
+// (this screen) and /mi-perfil-profesional (Dentist's own dedicated
+// route) — see my-professional-profile-section.tsx for the real
+// update_my_professional_profile() form/persistence logic, never
+// duplicated between the two callers.
 
 // 4. Consultorios — real, tenant-scoped catalog (public.rooms, see the
 // rooms migration) backing "Nueva cita"'s Consultorio picker (see
