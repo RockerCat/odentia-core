@@ -33,7 +33,7 @@
 // timing.
 
 import puppeteer from "puppeteer-core";
-import { allow401, assert, attachConsoleMonitor, ensureDevServer, findChrome, installFakeClock, navigateDayStripTo, stopDevServer } from "./qa-lib.mjs";
+import { allow401, assert, attachConsoleMonitor, ensureDevServer, findChrome, installFakeClock, stopDevServer } from "./qa-lib.mjs";
 
 const URL = "http://localhost:3000/dev-qa/agenda-preview";
 
@@ -246,8 +246,9 @@ async function main() {
 
       await page.goto(URL, { waitUntil: "networkidle0", timeout: 30_000 });
       await new Promise((r) => setTimeout(r, 1000));
-      await navigateDayStripTo(page, 1); // fixture's in_progress rows are on Sep 1
-      await new Promise((r) => setTimeout(r, 400));
+      // TODAY_TWELVE_THIRTY_IN_PROGRESS_ID (see fixtures.ts) lives on
+      // "today" — always inside the default week view, no day-strip
+      // navigation needed.
 
       await page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll("button"));

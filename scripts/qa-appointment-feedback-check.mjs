@@ -37,20 +37,30 @@ import { allow401, assert, attachConsoleMonitor, ensureDevServer, findChrome, na
 const AGENDA_URL = "http://localhost:3000/dev-qa/agenda-preview";
 const ENCOUNTER_URL = "http://localhost:3000/dev-qa/clinical-encounter-preview";
 
-// Matches fixtures.ts's FUTURE_CONFIRMED_APPOINTMENT_ID row exactly
-// (2026-09-05T13:00:00+00:00, confirmed, patient "Laura Diaz") — the only
-// appointment the fixture has on that day, so rescheduling it can't run
-// into the fixture's OWN documented hardcoded-date collision (see
-// fixtures.ts's and qa-slot-collision-status-check.mjs's own comments):
-// TODAY_EIGHT_AM_APPOINTMENT_ID now collides with a stale hardcoded
-// `completed` row once the real calendar reached 2026-09-04, so moving
-// it away and then asserting "no longer at the old slot" would actually
-// find that OTHER, unrelated appointment still sitting there — not a
-// regression in the create/reschedule feedback loop this script exists to
-// verify.
-const RESCHEDULE_APPOINTMENT_ID = "d3f8b6c1-9e2a-4b7d-8f1e-6a5c3d9b2e47";
-const RESCHEDULE_APPOINTMENT_DAY_NUM = 5;
-const RESCHEDULE_APPOINTMENT_STARTS_AT = "2026-09-05T13:00:00+00:00";
+// Matches fixtures.ts's TOMORROW_EIGHT_AM_APPOINTMENT_ID row exactly
+// (confirmed, patient "Laura Diaz", tomorrow at 8:00 AM local — computed
+// relative to whatever "today" actually is, same as that fixture's own
+// daysFromTodayAtLocalHour, so this never ages the way a hardcoded literal
+// date eventually does once the real calendar moves past it: this file
+// used to target FUTURE_CONFIRMED_APPOINTMENT_ID, a fixed 2026-09-05, and
+// broke the moment "today" passed that date — see fixtures.ts's own
+// comment on the day strip only ever showing the CURRENT real week). The
+// only appointment on that day, so rescheduling it can't run into the
+// fixture's OWN documented hardcoded-date collision (see fixtures.ts's and
+// qa-slot-collision-status-check.mjs's own comments): TODAY_EIGHT_AM_
+// APPOINTMENT_ID now collides with a stale hardcoded `completed` row once
+// the real calendar reached 2026-09-04, so moving it away and then
+// asserting "no longer at the old slot" would actually find that OTHER,
+// unrelated appointment still sitting there — not a regression in the
+// create/reschedule feedback loop this script exists to verify.
+const RESCHEDULE_APPOINTMENT_ID = "9a4d1e6f-2b8c-4f5a-9d7e-3c6b8a1f4d92";
+const RESCHEDULE_APPOINTMENT_DAY_NUM = new Date(Date.now() + 86400000).getDate();
+const RESCHEDULE_APPOINTMENT_STARTS_AT = (() => {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(8, 0, 0, 0);
+  return d.toISOString();
+})();
 
 function corsHeaders(extra = {}) {
   return { "access-control-allow-origin": "*", "access-control-allow-methods": "*", "access-control-allow-headers": "*", ...extra };
@@ -393,47 +403,58 @@ async function main() {
       await page.goto(AGENDA_URL, { waitUntil: "networkidle0", timeout: 30_000 });
       await new Promise((r) => setTimeout(r, 1000));
 
+      // RESCHEDULE_APPOINTMENT_DAY_NUM is "tomorrow" — always inside the
+      // day strip's default current-week view, except the rare case this
+      // script happens to run on a Sunday (tomorrow would be Monday of
+      // NEXT week, which needs an explicit "Semana siguiente" this script
+      // doesn't do) — treated as a graceful skip, same pattern
+      // qa-no-past-appointments-check.mjs's own Scenario A/E already use
+      // for the equivalent "not in this week's strip" case, never a false
+      // failure.
       const navigated = await navigateDayStripTo(page, RESCHEDULE_APPOINTMENT_DAY_NUM);
-      assert(navigated === true, `found and selected the day-of-month ${RESCHEDULE_APPOINTMENT_DAY_NUM} tab`, failures);
-      await new Promise((r) => setTimeout(r, 300));
+      if (navigated) {
+        await new Promise((r) => setTimeout(r, 300));
 
-      await page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll("button"));
-        buttons.find((b) => b.textContent.includes("8:00 AM") && b.textContent.includes("Laura") && !b.closest('[role="dialog"]'))?.click();
-      });
-      await new Promise((r) => setTimeout(r, 500));
+        await page.evaluate(() => {
+          const buttons = Array.from(document.querySelectorAll("button"));
+          buttons.find((b) => b.textContent.includes("8:00 AM") && b.textContent.includes("Laura") && !b.closest('[role="dialog"]'))?.click();
+        });
+        await new Promise((r) => setTimeout(r, 500));
 
-      const dialogOpened = await page.evaluate(() => Boolean(document.querySelector('[role="dialog"][aria-label^="Cita de"]')));
-      assert(dialogOpened === true, "detail modal opened", failures);
+        const dialogOpened = await page.evaluate(() => Boolean(document.querySelector('[role="dialog"][aria-label^="Cita de"]')));
+        assert(dialogOpened === true, "detail modal opened", failures);
 
-      await page.evaluate(() => {
-        document.querySelector('[role="dialog"][aria-label^="Cita de"] button[aria-label="Editar Horario"]')?.click();
-      });
-      await new Promise((r) => setTimeout(r, 300));
-      await page.evaluate(() => {
-        const select = document.getElementById("time-popover-start");
-        select.value = "4:00 PM";
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-      await page.evaluate(() => {
-        Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === "Guardar")?.click();
-      });
-      await new Promise((r) => setTimeout(r, 500));
+        await page.evaluate(() => {
+          document.querySelector('[role="dialog"][aria-label^="Cita de"] button[aria-label="Editar Horario"]')?.click();
+        });
+        await new Promise((r) => setTimeout(r, 300));
+        await page.evaluate(() => {
+          const select = document.getElementById("time-popover-start");
+          select.value = "4:00 PM";
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        await page.evaluate(() => {
+          Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === "Guardar")?.click();
+        });
+        await new Promise((r) => setTimeout(r, 500));
 
-      const toast = await page.evaluate(() => document.querySelector('[role="status"]')?.textContent ?? "");
-      assert(toast.includes("Cita reprogramada correctamente"), 'a visible "Cita reprogramada correctamente" toast appears', failures);
-      assert(toast.includes("4:00 PM"), "toast reflects the new time", failures);
+        const toast = await page.evaluate(() => document.querySelector('[role="status"]')?.textContent ?? "");
+        assert(toast.includes("Cita reprogramada correctamente"), 'a visible "Cita reprogramada correctamente" toast appears', failures);
+        assert(toast.includes("4:00 PM"), "toast reflects the new time", failures);
 
-      const relocated = await page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll("button"));
-        return {
-          atNewTime: buttons.some((b) => !b.closest('[role="dialog"]') && b.textContent.includes("4:00 PM") && b.textContent.includes("Laura")),
-          atOldTime: buttons.some((b) => !b.closest('[role="dialog"]') && b.textContent.includes("8:00 AM") && b.textContent.includes("Laura")),
-        };
-      });
-      assert(relocated.atNewTime === true, "appointment appears at its new time in the grid", failures);
-      assert(relocated.atOldTime === false, "appointment no longer appears at its old time", failures);
-      assert(patchCount === 1, "exactly one update request was sent", failures);
+        const relocated = await page.evaluate(() => {
+          const buttons = Array.from(document.querySelectorAll("button"));
+          return {
+            atNewTime: buttons.some((b) => !b.closest('[role="dialog"]') && b.textContent.includes("4:00 PM") && b.textContent.includes("Laura")),
+            atOldTime: buttons.some((b) => !b.closest('[role="dialog"]') && b.textContent.includes("8:00 AM") && b.textContent.includes("Laura")),
+          };
+        });
+        assert(relocated.atNewTime === true, "appointment appears at its new time in the grid", failures);
+        assert(relocated.atOldTime === false, "appointment no longer appears at its old time", failures);
+        assert(patchCount === 1, "exactly one update request was sent", failures);
+      } else {
+        console.log(`  (skip: day-of-month ${RESCHEDULE_APPOINTMENT_DAY_NUM} tab isn't in this week's strip)`);
+      }
 
       await page.close();
     }

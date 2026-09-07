@@ -27,7 +27,7 @@
 //    the very first load.
 
 import puppeteer from "puppeteer-core";
-import { allow401, assert, attachConsoleMonitor, ensureDevServer, findChrome, installFakeClock, navigateDayStripTo, stopDevServer } from "./qa-lib.mjs";
+import { allow401, assert, attachConsoleMonitor, ensureDevServer, findChrome, installFakeClock, stopDevServer } from "./qa-lib.mjs";
 
 const URL_ASSISTANT = "http://localhost:3000/dev-qa/agenda-preview?role=assistant";
 const URL_DEFAULT = "http://localhost:3000/dev-qa/agenda-preview";
@@ -60,9 +60,9 @@ async function main() {
       await page.goto(URL_ASSISTANT, { waitUntil: "networkidle0", timeout: 30_000 });
       await new Promise((r) => setTimeout(r, 1000));
 
-      // Fixture's in_progress rows are all on Sep 1 (see fixtures.ts).
-      await navigateDayStripTo(page, 1);
-      await new Promise((r) => setTimeout(r, 400));
+      // TODAY_TWELVE_THIRTY_IN_PROGRESS_ID (see fixtures.ts) lives on
+      // "today" — always inside the default week view, no day-strip
+      // navigation needed.
 
       // Open the fixture's in_progress Cita — for Assistant this is the one
       // case a primary CTA could otherwise appear (Continuar atención) if

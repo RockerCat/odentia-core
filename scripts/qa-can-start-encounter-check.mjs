@@ -164,12 +164,11 @@ async function main() {
     console.log('Scenario: in_progress Cita always offers "Continuar atención"');
     {
       const page = await newMonitoredPage(browser, failures);
-      // Fixture's in_progress rows are all on Sep 1 (see fixtures.ts) —
-      // outside the current week strip's default view isn't an issue since
-      // the board only ever shows the current real week; Sep 1 falls
-      // inside it (see prior tasks' captured weekOffsetIso).
-      await navigateDayStripTo(page, 1);
-      await openDetailModalForSlotContaining(page, "12:30 PM"); // 17:30 UTC == 12:30 PM local
+      // TODAY_TWELVE_THIRTY_IN_PROGRESS_ID (see fixtures.ts) lives on
+      // "today" — always inside the default week view, no day-strip
+      // navigation needed (see that fixture's own comment on why this
+      // replaced a hardcoded-past-date row that aged out of view).
+      await openDetailModalForSlotContaining(page, "12:30 PM");
       const state = await primaryCtaState(page);
       assert(state.dialogOpen === true, "in_progress appointment's detail modal opened", failures);
       assert(state.hasContinuar === true, "Continuar atención is offered for an in_progress Cita", failures);
@@ -182,8 +181,9 @@ async function main() {
     console.log("Scenario: a terminal (completed) Cita offers neither Iniciar nor Continuar");
     {
       const page = await newMonitoredPage(browser, failures);
-      await navigateDayStripTo(page, 1);
-      await openDetailModalForSlotContaining(page, "5:30 PM"); // 22:30 UTC completed row
+      // TODAY_FIVE_THIRTY_COMPLETED_ID (see fixtures.ts) — same "today,
+      // no day-strip navigation needed" fix as Scenario 5 above.
+      await openDetailModalForSlotContaining(page, "5:30 PM");
       const state = await primaryCtaState(page);
       assert(state.dialogOpen === true, "terminal appointment's detail modal opened", failures);
       assert(state.hasIniciar === false && state.hasContinuar === false, "neither Iniciar nor Continuar atención is offered for a terminal Cita", failures);
