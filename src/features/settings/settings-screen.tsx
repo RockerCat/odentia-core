@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { BellIcon, CalendarIcon, MapPinIcon } from "@/components/shell/icons";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import type { TeamMember } from "@/features/clinic/data";
 import type { Treatment } from "@/features/treatments/data";
 import { TratamientosSection } from "@/features/treatments/treatments-section";
-import { AusenciasAdminSection } from "./ausencias-admin-section";
+import { DisponibilidadAdminSection } from "./disponibilidad-admin-section";
 import {
   AGENDA_INTERVAL_OPTIONS,
   APPOINTMENT_DURATION_OPTIONS,
@@ -24,18 +25,22 @@ import {
 // scope). Does not duplicate clinic identity/team/subscription/billing,
 // which already live in their own screens (Clínica, Mi Suscripción).
 //
-// Tratamientos (below, full width) is the one REAL section on this
-// otherwise-mock screen — see TratamientosSection's own comment for why
-// clinicId/canManageTreatments come from src/app/configuracion/page.tsx's
-// real resolveClinicContext() rather than this screen's own useRole().
+// Tratamientos and Horario y ausencias (below, full width) are the real
+// sections on this otherwise-mock screen — see TratamientosSection's own
+// comment, and disponibilidad-admin-section.tsx, for why clinicId/
+// initialProfessionals come from src/app/configuracion/page.tsx's real
+// resolveClinicContext()/fetchTeamMembers() rather than this screen's own
+// useRole().
 export function SettingsScreen({
   clinicId = null,
   initialTreatments = [],
   canManageTreatments = false,
+  professionals = [],
 }: {
   clinicId?: string | null;
   initialTreatments?: Treatment[];
   canManageTreatments?: boolean;
+  professionals?: TeamMember[];
 }) {
   const [appointmentDuration, setAppointmentDuration] = useState<AppointmentDurationMinutes>(
     SETTINGS_DEFAULTS.appointmentDuration,
@@ -72,10 +77,10 @@ export function SettingsScreen({
         <RegionalSection timeFormat={timeFormat} onTimeFormatChange={setTimeFormat} />
       </div>
 
-      {/* Second row, full width — Ausencias applies to any dentist in the
-          clinic, not just one of the three settings above, so it doesn't
-          share the 3-column row (see task scope). */}
-      <AusenciasAdminSection />
+      {/* Second row, full width — Horario/Ausencias applies to any
+          odontólogo in the clinic, not just one of the three settings
+          above, so it doesn't share the 3-column row (see task scope). */}
+      {clinicId && <DisponibilidadAdminSection clinicId={clinicId} professionals={professionals} />}
 
       {/* Third row, full width — same reasoning as Ausencias: a variable-
           length treatment list doesn't fit the fixed 3-column row above. */}

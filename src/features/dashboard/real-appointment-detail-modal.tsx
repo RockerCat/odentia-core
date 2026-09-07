@@ -28,6 +28,7 @@ import {
   markNoShow,
   markPatientArrived,
   reactivateAppointment,
+  sendToWaitingRoom,
   updateAppointment,
   type AppointmentPatch,
 } from "./appointments-actions";
@@ -130,6 +131,7 @@ export function RealAppointmentDetailModal({
   const [actionError, setActionError] = useState<string | null>(null);
   const [reactivating, setReactivating] = useState(false);
   const [markingArrived, setMarkingArrived] = useState(false);
+  const [sendingToWaitingRoom, setSendingToWaitingRoom] = useState(false);
   const [savingStatus, setSavingStatus] = useState(false);
   const [startingEncounter, setStartingEncounter] = useState(false);
   // Purely cosmetic pending flag for "Ver paciente" — onViewPatient is
@@ -239,9 +241,20 @@ export function RealAppointmentDetailModal({
   const isCancelled = appointment.status === "cancelled";
   const isTerminal = isTerminalStatus(appointment.status);
   const isUnresolved = displayStatus === "unresolved";
-  const canMarkArrived = appointment.status === "confirmed" && !appointment.patientArrivedAt;
+  // "Paciente llegó"/"Enviar a sala de espera" are front-desk actions —
+  // Clinic Admin and Assistant (CLAUDE.md's Roles: both manage the
+  // schedule/appointments), never a plain Dentist ("no necesita acciones
+  // administrativas adicionales" — a Dentist still SEES these statuses via
+  // the badge above, and starts/continues attention from either one, same
+  // as any other non-terminal status — see showStartEncounter below).
+  // Enforced server-side too (see the arrival-transitions migration's
+  // trigger) — this gate is UX only, not the security boundary.
+  const isFrontDeskRole = role === "clinic_admin" || role === "assistant";
+  const canMarkArrived = appointment.status === "scheduled" || appointment.status === "confirmed";
+  const canSendToWaitingRoom = appointment.status === "patient_arrived";
   const showReactivate = isCancelled;
-  const showMarkArrived = !isCancelled && isAssistant && canMarkArrived;
+  const showMarkArrived = !isCancelled && isFrontDeskRole && canMarkArrived;
+  const showSendToWaitingRoom = !isCancelled && isFrontDeskRole && canSendToWaitingRoom;
   // Starting/continuing a clinical encounter is a clinical action — never
   // for Assistant (see CLAUDE.md's Roles: Assistant supports operations,
   // it doesn't attend patients), and never for a dentist/clinic_admin
@@ -253,8 +266,15 @@ export function RealAppointmentDetailModal({
   // centralized in canStartClinicalEncounter — the same helper the real
   // /agenda/atencion/[appointmentId] route's server-side guard reuses, so
   // a direct/bookmarked URL opened too early is rejected the same way
-  // this button would already be hidden.
-  const showStartEncounter = !isAssistant && canAttendPatients && canStartClinicalEncounter(appointment, now);
+  // this button would already be hidden. Only offered as the PRIMARY CTA
+  // once the front-desk arrival flow (if any) is done for this Cita — a
+  // Clinic Admin who is also the attending dentist still sees it the
+  // moment she's not also mid-arrival-flow (see primaryCtaLabel/
+  // handlePrimaryCta's own ordering below); nothing stops her from
+  // skipping the arrival flow entirely and starting straight from
+  // scheduled/confirmed, same as before this feature existed.
+  const showStartEncounter =
+    !isAssistant && !showMarkArrived && !showSendToWaitingRoom && canAttendPatients && canStartClinicalEncounter(appointment, now);
   // The other valid resolution for a "Sin cerrar" Cita that never started
   // attention at all: the Patient genuinely never showed. Unlike starting/
   // continuing an encounter, this is an operational appointment-management
@@ -266,7 +286,7 @@ export function RealAppointmentDetailModal({
   // atención" instead, never "No asistió", and is a clinical action
   // Assistant still can't touch).
   const showMarkNoShow = !isTerminal && !isInProgress && isUnresolved;
-  const showPrimaryCta = showReactivate || showMarkArrived || showStartEncounter;
+  const showPrimaryCta = showReactivate || showMarkArrived || showSendToWaitingRoom || showStartEncounter;
   const showCancelCta = !(isAssistant && isInProgress);
   const footerButtonCount = (showCancelCta ? 1 : 0) + (showMarkNoShow ? 1 : 0) + 1 + (showPrimaryCta ? 1 : 0);
   const footerGridClass =
@@ -286,13 +306,17 @@ export function RealAppointmentDetailModal({
       ? markingArrived
         ? "Registrando…"
         : "Paciente llegó"
-      : startingEncounter
-        ? startedFresh
-          ? "Iniciando atención…"
-          : "Continuar atención"
-        : isInProgress
-          ? "Continuar atención"
-          : "Iniciar atención";
+      : showSendToWaitingRoom
+        ? sendingToWaitingRoom
+          ? "Enviando…"
+          : "Enviar a sala de espera"
+        : startingEncounter
+          ? startedFresh
+            ? "Iniciando atención…"
+            : "Continuar atención"
+          : isInProgress
+            ? "Continuar atención"
+            : "Iniciar atención";
 
   const handlePrimaryCta = async () => {
     setActionError(null);
@@ -312,14 +336,28 @@ export function RealAppointmentDetailModal({
       try {
         const result = await markPatientArrived(appointment.id);
         if (result.status === "ok") {
-          const arrivedAt = new Date().toISOString();
-          onUpdated({ ...appointment, patientArrivedAt: arrivedAt });
-          setInfoMessage(`Paciente en sala de espera. Profesional: ${professionalName} · Hora: ${formatTimeLabel(appointment.startsAt)}.`);
+          onUpdated({ ...appointment, status: "patient_arrived" });
+          showToast("Paciente marcado como llegado");
         } else {
           setActionError(result.message);
         }
       } finally {
         setMarkingArrived(false);
+      }
+      return;
+    }
+    if (showSendToWaitingRoom) {
+      setSendingToWaitingRoom(true);
+      try {
+        const result = await sendToWaitingRoom(appointment.id);
+        if (result.status === "ok") {
+          onUpdated({ ...appointment, status: "waiting_room" });
+          showToast("Paciente enviado a sala de espera");
+        } else {
+          setActionError(result.message);
+        }
+      } finally {
+        setSendingToWaitingRoom(false);
       }
       return;
     }
@@ -425,13 +463,6 @@ export function RealAppointmentDetailModal({
                   </div>
                 )}
               </div>
-
-              {appointment.patientArrivedAt && (
-                <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-2.5 py-1 text-[11px] font-medium text-success">
-                  <span className="size-1.5 rounded-full bg-success" aria-hidden="true" />
-                  En sala de espera
-                </span>
-              )}
             </div>
           </div>
           <button
@@ -556,7 +587,7 @@ export function RealAppointmentDetailModal({
               <button
                 type="button"
                 onClick={handlePrimaryCta}
-                disabled={reactivating || markingArrived || startingEncounter}
+                disabled={reactivating || markingArrived || sendingToWaitingRoom || startingEncounter}
                 className="flex flex-col items-center gap-1 rounded-lg bg-primary px-2 py-2.5 text-center text-[11px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
               >
                 <PlayCircleIcon className="size-[18px]" />

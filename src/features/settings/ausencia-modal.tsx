@@ -1,20 +1,40 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { CloseIcon } from "@/components/shell/icons";
-import { FIELD_CLASS, simulateSave } from "@/features/dashboard/appointment-detail-modal";
-import type { Absence } from "./dentist-mock-data";
-import { ToggleSwitch } from "./toggle-switch";
+import { useEffect, useState, type FormEvent } from "react";
+import { AlertTriangleIcon, CloseIcon } from "@/components/shell/icons";
+import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { createClient } from "@/lib/supabase/client";
+import {
+  createAbsence,
+  fetchConflictingAppointments,
+  updateAbsence,
+  type Absence,
+  type ConflictingAppointment,
+} from "./absences-data";
 
-// Compact create/edit modal for an Ausencia — same shape as room-modal.tsx/
-// team-member-modal.tsx (bottom sheet on mobile, centered card on desktop).
-// No validation against existing appointments yet (see task scope).
+// Real create/edit modal for an Ausencia — same shape/chrome as before
+// (bottom sheet on mobile, centered card on desktop), now backed by
+// professional_absences instead of simulateSave's fake local delay.
+// Date-only (no allDay/startTime/endTime split anymore — see
+// professional_absences' own migration comment on why): "Fecha inicial"/
+// "Fecha final" are the only date inputs, matching the real table's
+// minimal model exactly.
+//
+// Shows an honest warning (never blocks saving, never touches the
+// conflicting appointments) when the chosen range already overlaps real,
+// non-terminal appointments for this professional — "no borrar/mover citas
+// automáticamente" (task scope): the absence still saves exactly as
+// entered either way.
 export function AusenciaModal({
+  clinicId,
+  professionalProfileId,
   editing,
   onClose,
   onCreate,
   onUpdate,
 }: {
+  clinicId: string;
+  professionalProfileId: string;
   editing: Absence | null;
   onClose: () => void;
   onCreate: (absence: Absence) => void;
@@ -23,29 +43,53 @@ export function AusenciaModal({
   const [reason, setReason] = useState(editing?.reason ?? "");
   const [startDate, setStartDate] = useState(editing?.startDate ?? "");
   const [endDate, setEndDate] = useState(editing?.endDate ?? editing?.startDate ?? "");
-  const [allDay, setAllDay] = useState(editing?.allDay ?? true);
-  const [startTime, setStartTime] = useState(editing?.startTime ?? "09:00");
-  const [endTime, setEndTime] = useState(editing?.endTime ?? "17:00");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [conflicts, setConflicts] = useState<ConflictingAppointment[]>([]);
+  const [checkingConflicts, setCheckingConflicts] = useState(false);
 
-  const canSave = Boolean(reason.trim()) && Boolean(startDate) && Boolean(endDate) && !saving;
+  const validRange = Boolean(startDate) && Boolean(endDate) && endDate >= startDate;
+
+  useEffect(() => {
+    if (!validRange) return;
+    let cancelled = false;
+    (async () => {
+      setCheckingConflicts(true);
+      const supabase = createClient();
+      const rows = await fetchConflictingAppointments(supabase, clinicId, professionalProfileId, startDate, endDate);
+      if (!cancelled) {
+        setConflicts(rows);
+        setCheckingConflicts(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, professionalProfileId, startDate, endDate, validRange]);
+
+  // While the range is invalid (e.g. mid-edit), never show a stale
+  // conflicts list from a previous valid range — derived at render instead
+  // of resetting `conflicts` imperatively in the effect above.
+  const visibleConflicts = validRange ? conflicts : [];
+
+  const canSave = validRange && !saving;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!canSave) return;
     setSaving(true);
-    const absence = await simulateSave<Absence>({
-      id: editing?.id ?? `new-absence-${Date.now()}`,
-      reason: reason.trim(),
-      startDate,
-      endDate,
-      allDay,
-      startTime: allDay ? undefined : startTime,
-      endTime: allDay ? undefined : endTime,
-    });
-    if (editing) onUpdate(absence);
-    else onCreate(absence);
+    setError(null);
+    const supabase = createClient();
+    const outcome = editing
+      ? await updateAbsence(supabase, editing.id, { reason, startDate, endDate })
+      : await createAbsence(supabase, { clinicId, professionalProfileId, reason, startDate, endDate });
     setSaving(false);
+    if (outcome.status === "error") {
+      setError(outcome.message);
+      return;
+    }
+    if (editing) onUpdate(outcome.absence);
+    else onCreate(outcome.absence);
     onClose();
   };
 
@@ -74,27 +118,14 @@ export function AusenciaModal({
 
         <div className="flex flex-col gap-4 px-5 py-4">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-label-foreground">Motivo</span>
-            <input
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className={FIELD_CLASS}
-              placeholder="Ej. Vacaciones"
-              required
-              autoFocus
-            />
+            <span className="text-label-foreground">Motivo (opcional)</span>
+            <input value={reason} onChange={(e) => setReason(e.target.value)} className={FIELD_CLASS} placeholder="Ej. Vacaciones" autoFocus />
           </label>
 
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-label-foreground">Fecha inicial</span>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className={FIELD_CLASS}
-                required
-              />
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={FIELD_CLASS} required />
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-label-foreground">Fecha final</span>
@@ -109,36 +140,20 @@ export function AusenciaModal({
             </label>
           </div>
 
-          <label className="flex items-center justify-between gap-3 text-sm">
-            <span className="font-medium text-foreground">Todo el día</span>
-            <ToggleSwitch label="Todo el día" checked={allDay} onChange={() => setAllDay((prev) => !prev)} />
-          </label>
-
-          {!allDay && (
-            <div className="grid grid-cols-2 gap-3">
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-label-foreground">Hora inicio</span>
-                <input
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                  className={FIELD_CLASS}
-                  required
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-label-foreground">Hora fin</span>
-                <input
-                  type="time"
-                  value={endTime}
-                  min={startTime || undefined}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  className={FIELD_CLASS}
-                  required
-                />
-              </label>
+          {!checkingConflicts && visibleConflicts.length > 0 && (
+            <div className="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-warning">
+              <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
+              <div>
+                <p className="font-medium">
+                  {visibleConflicts.length === 1 ? "Hay 1 cita existente" : `Hay ${visibleConflicts.length} citas existentes`} en este rango de
+                  fechas.
+                </p>
+                <p className="mt-0.5">No se modificarán ni cancelarán automáticamente — revísalas manualmente si es necesario.</p>
+              </div>
             </div>
           )}
+
+          {error && <p className="text-xs text-danger">{error}</p>}
         </div>
 
         <div className="flex shrink-0 justify-end gap-2 border-t border-border px-5 py-3">

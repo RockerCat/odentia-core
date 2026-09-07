@@ -1,56 +1,121 @@
 "use client";
 
-import { useState } from "react";
-import { BellIcon, FlagIcon, PlusIcon } from "@/components/shell/icons";
-import { formatClockLabel } from "@/lib/format";
+import { useEffect, useState } from "react";
+import { BellIcon, CalendarIcon, FlagIcon, PlusIcon } from "@/components/shell/icons";
+import { createClient } from "@/lib/supabase/client";
+import { deleteAbsence, fetchAbsences, type Absence } from "./absences-data";
 import { AusenciaModal } from "./ausencia-modal";
-import {
-  ABSENCES_MOCK,
-  DENTIST_NOTIFICATION_DEFAULTS,
-  DENTIST_NOTIFICATION_ITEMS,
-  type Absence,
-  type DentistNotificationKey,
-} from "./dentist-mock-data";
+import { DENTIST_NOTIFICATION_DEFAULTS, DENTIST_NOTIFICATION_ITEMS, type DentistNotificationKey } from "./dentist-mock-data";
+import { HorarioEditor } from "./horario-editor";
 import { ToggleSwitch } from "./toggle-switch";
 
 // Odontólogo > Configuración — distinct from the Clinic Admin's
-// settings-screen.tsx (see task scope): only Ausencias (temporary
-// exceptions to the dentist's regular availability, which continues to be
-// managed from their profile — see task scope) and personal notification
-// preferences. No Agenda display settings, intervals, appointment
-// duration, or regional preferences here — those are clinic-wide and
-// already live in the Clinic Admin's screen. UI/UX only, local mock
-// state, nothing persisted, no backend.
-export function DentistSettingsScreen() {
-  const [absences, setAbsences] = useState<Absence[]>(ABSENCES_MOCK);
+// settings-screen.tsx: only her own Ausencias/Horario and personal
+// notification preferences. No Agenda display settings, intervals,
+// appointment duration, or regional preferences here — those are
+// clinic-wide and already live in the Clinic Admin's screen.
+//
+// Ausencias/Horario are now real (professional_absences/
+// professional_availability, see their own migrations) — always scoped to
+// HER OWN professional_profile_id (no selector: she isn't picking among
+// professionals, she IS the professional), enforced both by never passing
+// another id down and by can_manage_professional_schedule's own RLS.
+// Notificaciones stays mock/local (out of this task's scope — see task's
+// own NO list: "no tocar notificaciones").
+export function DentistSettingsScreen({
+  clinicId,
+  professionalProfileId,
+}: {
+  clinicId: string | null;
+  professionalProfileId: string | null;
+}) {
+  const [absences, setAbsences] = useState<Absence[]>([]);
+  // professionalProfileId is resolved server-side once and doesn't change
+  // for the lifetime of this screen — starting the loading flag from it
+  // directly avoids an effect having to reset it back to false on mount.
+  const [loadingAbsences, setLoadingAbsences] = useState(() => professionalProfileId !== null);
+  const [absencesError, setAbsencesError] = useState(false);
   const [modal, setModal] = useState<"closed" | "create" | Absence>("closed");
   const [notifications, setNotifications] = useState(DENTIST_NOTIFICATION_DEFAULTS);
 
+  useEffect(() => {
+    if (!professionalProfileId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const supabase = createClient();
+        const rows = await fetchAbsences(supabase, professionalProfileId);
+        if (!cancelled) setAbsences(rows);
+      } catch {
+        if (!cancelled) setAbsencesError(true);
+      } finally {
+        if (!cancelled) setLoadingAbsences(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [professionalProfileId]);
+
   const toggleNotification = (key: DentistNotificationKey) => {
     setNotifications((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleDelete = async (id: string) => {
+    const supabase = createClient();
+    const outcome = await deleteAbsence(supabase, id);
+    if (outcome.status === "ok") setAbsences((prev) => prev.filter((a) => a.id !== id));
   };
 
   return (
     <div className="flex flex-col gap-6">
       <p className="-mt-4 text-sm text-muted-foreground">Preferencias personales de tu agenda y notificaciones.</p>
 
-      {/* Single column on mobile/tablet; desktop lays the two sections out
-          50/50 (see task scope), same lg: breakpoint/grid approach as Mi
-          Suscripción and the Clinic Admin's Configuración. */}
       <div className="flex flex-col gap-6 lg:grid lg:grid-cols-2">
         <AusenciasSection
           absences={absences}
-          onCreate={(absence) => setAbsences((prev) => [...prev, absence])}
-          onUpdate={(absence) =>
-            setAbsences((prev) => prev.map((a) => (a.id === absence.id ? absence : a)))
-          }
-          onDelete={(id) => setAbsences((prev) => prev.filter((a) => a.id !== id))}
-          modal={modal}
+          loading={loadingAbsences}
+          loadError={absencesError}
+          onDelete={handleDelete}
           onOpenModal={setModal}
+          canManage={Boolean(clinicId && professionalProfileId)}
         />
 
         <NotificacionesSection notifications={notifications} onToggle={toggleNotification} />
       </div>
+
+      {/* Full width, same reasoning as the Clinic Admin screen's own
+          Ausencias/Tratamientos rows: a variable-length weekly schedule
+          doesn't fit the fixed 2-column row above. */}
+      <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
+        <div className="flex items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <CalendarIcon className="size-4" />
+          </span>
+          <div>
+            <h2 className="text-base font-semibold">Horario de atención</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">Tu disponibilidad semanal recurrente.</p>
+          </div>
+        </div>
+        {clinicId && professionalProfileId ? (
+          <HorarioEditor clinicId={clinicId} professionalProfileId={professionalProfileId} canEdit />
+        ) : (
+          <p className="mt-3 text-sm text-muted-foreground">
+            No pudimos cargar tu perfil profesional. Intenta de nuevo en unos minutos.
+          </p>
+        )}
+      </div>
+
+      {modal !== "closed" && clinicId && professionalProfileId && (
+        <AusenciaModal
+          clinicId={clinicId}
+          professionalProfileId={professionalProfileId}
+          editing={modal === "create" ? null : modal}
+          onClose={() => setModal("closed")}
+          onCreate={(absence) => setAbsences((prev) => [...prev, absence].sort((a, b) => a.startDate.localeCompare(b.startDate)))}
+          onUpdate={(absence) => setAbsences((prev) => prev.map((a) => (a.id === absence.id ? absence : a)))}
+        />
+      )}
     </div>
   );
 }
@@ -68,28 +133,20 @@ function formatDateRangeLabel(startISO: string, endISO: string): string {
   return `${startD} ${MONTH_LABELS[startM - 1]} – ${endD} ${MONTH_LABELS[endM - 1]} ${endY}`;
 }
 
-function formatTimeRangeLabel(startTime: string, endTime: string): string {
-  const [startH, startMin] = startTime.split(":").map(Number);
-  const [endH, endMin] = endTime.split(":").map(Number);
-  const start = formatClockLabel(new Date(2000, 0, 1, startH, startMin));
-  const end = formatClockLabel(new Date(2000, 0, 1, endH, endMin));
-  return `${start} – ${end}`;
-}
-
 function AusenciasSection({
   absences,
-  onCreate,
-  onUpdate,
+  loading,
+  loadError,
   onDelete,
-  modal,
   onOpenModal,
+  canManage,
 }: {
   absences: Absence[];
-  onCreate: (absence: Absence) => void;
-  onUpdate: (absence: Absence) => void;
+  loading: boolean;
+  loadError: boolean;
   onDelete: (id: string) => void;
-  modal: "closed" | "create" | Absence;
   onOpenModal: (modal: "closed" | "create" | Absence) => void;
+  canManage: boolean;
 }) {
   return (
     <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
@@ -100,22 +157,26 @@ function AusenciasSection({
           </span>
           <div>
             <h2 className="text-base font-semibold">Ausencias programadas</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Excepciones temporales a tu disponibilidad habitual.
-            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Excepciones temporales a tu disponibilidad habitual.</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => onOpenModal("create")}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80 hover:bg-foreground/5"
-        >
-          <PlusIcon className="size-3.5" />
-          Nueva ausencia
-        </button>
+        {canManage && (
+          <button
+            type="button"
+            onClick={() => onOpenModal("create")}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80 hover:bg-foreground/5"
+          >
+            <PlusIcon className="size-3.5" />
+            Nueva ausencia
+          </button>
+        )}
       </div>
 
-      {absences.length === 0 ? (
+      {loading ? (
+        <p className="mt-4 text-sm text-muted-foreground">Cargando ausencias…</p>
+      ) : loadError ? (
+        <p className="mt-4 text-xs text-danger">No pudimos cargar tus ausencias. Intenta de nuevo más tarde.</p>
+      ) : absences.length === 0 ? (
         <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
           No tienes ausencias programadas.
         </p>
@@ -124,47 +185,30 @@ function AusenciasSection({
           {absences.map((absence) => (
             <li key={absence.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="truncate text-sm font-medium text-foreground">{absence.reason}</p>
-                  <span className="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-semibold text-primary-foreground">
-                    Próxima
-                  </span>
+                <p className="truncate text-sm font-medium text-foreground">{absence.reason || "Ausencia"}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{formatDateRangeLabel(absence.startDate, absence.endDate)}</p>
+              </div>
+              {canManage && (
+                <div className="flex shrink-0 items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => onOpenModal(absence)}
+                    className="text-xs font-medium text-primary hover:text-primary/80"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDelete(absence.id)}
+                    className="text-xs font-medium text-danger/80 hover:text-danger"
+                  >
+                    Eliminar
+                  </button>
                 </div>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {formatDateRangeLabel(absence.startDate, absence.endDate)} ·{" "}
-                  {absence.allDay
-                    ? "Todo el día"
-                    : formatTimeRangeLabel(absence.startTime ?? "00:00", absence.endTime ?? "00:00")}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => onOpenModal(absence)}
-                  className="text-xs font-medium text-primary hover:text-primary/80"
-                >
-                  Editar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onDelete(absence.id)}
-                  className="text-xs font-medium text-danger/80 hover:text-danger"
-                >
-                  Eliminar
-                </button>
-              </div>
+              )}
             </li>
           ))}
         </ul>
-      )}
-
-      {modal !== "closed" && (
-        <AusenciaModal
-          editing={modal === "create" ? null : modal}
-          onClose={() => onOpenModal("closed")}
-          onCreate={onCreate}
-          onUpdate={onUpdate}
-        />
       )}
     </div>
   );

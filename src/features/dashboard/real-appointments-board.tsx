@@ -516,6 +516,15 @@ export function RealAppointmentsBoard({
                         </button>
                       );
                     }
+                    // Slot cell already colors itself via getStatusStyle
+                    // (REAL_STATUS_STYLES has its own entries for
+                    // patient_arrived/waiting_room — see real-status.ts),
+                    // so the arrival flow needs no new color of its own
+                    // here. The tooltip line/corner dot below are the same
+                    // extra "has arrived" signal the old patient_arrived_at
+                    // flag drove, just keyed off the real status now that
+                    // patient_arrived/waiting_room actually mean that.
+                    const hasArrived = appointment.status === "patient_arrived" || appointment.status === "waiting_room";
                     return (
                       <Tooltip
                         key={slot}
@@ -523,7 +532,7 @@ export function RealAppointmentsBoard({
                           <>
                             <span className="block font-semibold">{appointment.patientName}</span>
                             {appointment.reason && <span className="block text-background/75">{appointment.reason}</span>}
-                            {appointment.patientArrivedAt && <span className="block text-background/75">Paciente llegó</span>}
+                            {hasArrived && <span className="block text-background/75">{REAL_STATUS_LABELS[appointment.status]}</span>}
                           </>
                         }
                       >
@@ -534,7 +543,7 @@ export function RealAppointmentsBoard({
                             appointment.status === "cancelled" ? "opacity-70" : ""
                           } ${appointment.id === highlightedAppointmentId ? "ring-2 ring-primary/50 ring-offset-1 ring-offset-background" : ""}`}
                         >
-                          {appointment.patientArrivedAt && (
+                          {hasArrived && (
                             <span aria-hidden="true" className="absolute -top-1 -right-1 size-3 rounded-full border-2 border-background bg-success" />
                           )}
                           <span className="text-[9px] font-medium opacity-80">{slot}</span>
