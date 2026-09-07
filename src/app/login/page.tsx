@@ -120,6 +120,10 @@ export default function LoginPage() {
             />
           </label>
 
+          <Link href="/forgot-password" className="self-end text-xs font-medium text-muted-foreground hover:text-foreground">
+            ¿Olvidaste tu contraseña?
+          </Link>
+
           {error && <p className="text-xs text-danger">{error}</p>}
 
           <button
