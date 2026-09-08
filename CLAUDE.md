@@ -170,6 +170,20 @@ client state. "Finalizar atención" always persists the encounter
 (`public.patient_clinical_encounters`, linked 1:1 to its Cita via a unique
 `appointment_id`) before marking the Cita `completed`, never the reverse.
 
+The front-desk arrival flow ("Paciente llegó"/"Enviar a sala de espera")
+must never be a hard PREREQUISITE for "Iniciar/Continuar atención" — it's
+optional operational tracking, not a gate. `showStartEncounter` in
+`RealAppointmentDetailModal` must depend only on role/time-window
+(`canAttendPatients` + `canStartClinicalEncounter`); `showMarkArrived`/
+`showSendToWaitingRoom` are the ones that defer to it (each gated on `!
+showStartEncounter`), never the other way around — a fixed regression
+(found by `qa-can-start-encounter-check.mjs`) had this backwards, which
+meant a `clinic_admin`/`assistant` could never see "Iniciar atención" at
+all until clicking through both arrival steps first, no matter how far
+past `startsAt` the Cita already was. That silently broke CLAUDE.md's own
+Primary Use Case (a solo Clinic-Admin-Dentist with no front desk) — don't
+reintroduce this dependency direction.
+
 `Solicitud de Cita` (see Appointment Lifecycle below) is a SEPARATE entity
 from `Cita` and must stay one: `public.appointment_requests`, never a status
 value on `appointments`. Its surfaces are the Patient Portal's

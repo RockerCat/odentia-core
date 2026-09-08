@@ -81,6 +81,34 @@ async function main() {
       await page.setRequestInterception(true);
       page.on("request", (req) => {
         const url = req.url();
+        // updateAppointment() re-reads the row first (clinic_id/
+        // professional_profile_id/starts_at/duration_minutes/status) for
+        // ANY status-changing patch, not just one that touches the slot —
+        // added after this test was first written, and this fixture has
+        // no real Supabase session, so that GET would otherwise fail
+        // (empty result under RLS) before ever reaching the PATCH below,
+        // exercising the FAILURE path this file's own Scenario 2 tests
+        // instead of the success path this scenario means to. Stand in
+        // for it too — same "let the client's own state machine run its
+        // real course" reasoning as the PATCH mock right below. `status:
+        // "confirmed"` (non-terminal) is the only field the app actually
+        // branches on here — a status-only patch on a non-terminal row
+        // skips the overlap/availability re-check entirely, so the rest
+        // of the row's contents are never read.
+        if (req.method() === "GET" && url.includes("/rest/v1/appointments") && url.includes("select=")) {
+          req.respond({
+            status: 200,
+            headers: { "content-type": "application/vnd.pgrst.object+json", "access-control-allow-origin": "*" },
+            body: JSON.stringify({
+              clinic_id: "00000000-0000-4000-8000-000000000001",
+              professional_profile_id: "225d222d-2481-4d05-9750-bfdd30b6a5db",
+              starts_at: new Date().toISOString(),
+              duration_minutes: 30,
+              status: "confirmed",
+            }),
+          });
+          return;
+        }
         if (req.method() === "PATCH" && url.includes("/rest/v1/appointments")) {
           // Stand in for a successful updateAppointment PATCH (PostgREST's
           // own real response shape for an update with no .select()) —
@@ -178,6 +206,29 @@ async function main() {
       await page.setRequestInterception(true);
       page.on("request", (req) => {
         const url = req.url();
+        // Same pre-check GET as Scenario 1 — mocked as a SUCCESS here too,
+        // deliberately: this scenario means to prove the PATCH itself
+        // failing (500) is what restores "Iniciar atención" and shows the
+        // error, not an earlier, different failure. Without this, the
+        // unmocked pre-check GET fails first under this fixture's lack of
+        // a real session, and the mocked 500 below is never actually
+        // exercised — the assertions below would still happen to pass
+        // (same GENERIC_ERROR message either way), but for the wrong
+        // reason.
+        if (req.method() === "GET" && url.includes("/rest/v1/appointments") && url.includes("select=")) {
+          req.respond({
+            status: 200,
+            headers: { "content-type": "application/vnd.pgrst.object+json", "access-control-allow-origin": "*" },
+            body: JSON.stringify({
+              clinic_id: "00000000-0000-4000-8000-000000000001",
+              professional_profile_id: "225d222d-2481-4d05-9750-bfdd30b6a5db",
+              starts_at: new Date().toISOString(),
+              duration_minutes: 30,
+              status: "confirmed",
+            }),
+          });
+          return;
+        }
         if (req.method() === "PATCH" && url.includes("/rest/v1/appointments")) {
           req.respond({
             status: 500,

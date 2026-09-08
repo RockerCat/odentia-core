@@ -140,6 +140,30 @@ async function main() {
           });
           return;
         }
+        // updateAppointment() re-reads the row (clinic_id/professional_
+        // profile_id/starts_at/duration_minutes/status) before ANY
+        // status-changing PATCH, including this "mark completed" one —
+        // added after this scenario was first written. Unmocked, that GET
+        // fails under this fixture's lack of a real session before the
+        // PATCH mock right above is ever reached, and the confirm dialog
+        // never even gets to its "Finalizando…" state. `status:
+        // "in_progress"` (non-terminal) is the only field the app branches
+        // on for a status-only patch — it skips the overlap/availability
+        // re-check entirely, so the rest of the row is never read.
+        if (method === "GET" && url.includes("/rest/v1/appointments") && url.includes("select=")) {
+          req.respond({
+            status: 200,
+            headers: corsHeaders({ "content-type": "application/vnd.pgrst.object+json" }),
+            body: JSON.stringify({
+              clinic_id: "00000000-0000-4000-8000-000000000001",
+              professional_profile_id: "225d222d-2481-4d05-9750-bfdd30b6a5db",
+              starts_at: new Date().toISOString(),
+              duration_minutes: 30,
+              status: "in_progress",
+            }),
+          });
+          return;
+        }
         if (method === "PATCH" && url.includes("/rest/v1/appointments")) {
           req.respond({ status: 204, headers: corsHeaders(), body: "" });
           return;

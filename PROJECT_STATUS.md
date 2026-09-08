@@ -159,20 +159,18 @@ treat a failure found here as a bug to fix, not evidence the feature doesn't exi
 - [ ] Full arrival flow with a real session: Paciente llegó → Sala de espera →
       Iniciar atención → Finalizar atención, confirm the Cita and the resulting
       Atención end up correct.
-- [ ] `ClinicalNotesModal` ("Gestionar notas", reached from Historia Clínica →
-      Resumen → Notas clínicas importantes) can show a note's author as "Sin
-      asignar" for a real Patient session — it resolves authors via
-      `fetchTeamMembers()` directly (staff-only RLS) rather than the
-      `resolve-updated-by.ts` fallback every other tab already uses. Known, minor,
-      cosmetic — the note content itself is never affected. Fix during QA if it
-      surfaces, not a release blocker on its own.
+- [x] `ClinicalNotesModal` showing "Sin asignar" for a real Patient session —
+      **fixed during the pre-release QA Master** (was a duplicated author
+      lookup that never used the Patient-aware fallback every other tab
+      already had). No longer a QA item; verified by re-running
+      `qa-clinical-notes-check.mjs` (still green — staff behavior unchanged)
+      plus `tsc`/`eslint`.
 - [ ] Node runtime: local/CI currently run on Node 20, which `@supabase/supabase-js`
       already logs as deprecated (`Node.js 20 and below are deprecated`). Not
       currently breaking anything — revisit the Node 22 upgrade before or shortly
       after release, whichever is lower-risk operationally.
-- [ ] **Gate before declaring release-ready:** `supabase migration list --linked`
-      must show `local` and `remote` in sync for every migration — confirm this
-      fresh, don't assume it still holds from an earlier session.
+- [x] **Migrations gate:** `supabase migration list --linked` re-confirmed during
+      the pre-release QA Master — 47/47 in sync, `local` = `remote`.
 
 ---
 
@@ -337,6 +335,22 @@ touched; if code and this section ever disagree, the code wins (see CLAUDE.md).
   to this professional." `clinic_id` is the only mandatory isolation boundary.
 - Known gap (tracked, not blocking): "¿Necesita próxima cita?"'s Sí/No toggle in
   `RealClinicalEncounterScreen` is UI-only, never persisted.
+- **Fixed during the pre-release QA Master (P1):** `showStartEncounter` in
+  `RealAppointmentDetailModal` used to be gated on `!showMarkArrived &&
+  !showSendToWaitingRoom` — since `showMarkArrived` is true for ANY non-
+  cancelled scheduled/confirmed Cita viewed by a front-desk role
+  (`clinic_admin`/`assistant`), "Iniciar atención" could never appear at all
+  for that role until "Paciente llegó" AND "Enviar a sala de espera" were
+  BOTH clicked first, no matter how far past `startsAt` the Cita already
+  was — directly contradicting this component's own comment ("nothing
+  stops her from skipping the arrival flow entirely") and materially
+  degrading CLAUDE.md's own Primary Use Case (a solo Clinic-Admin-Dentist
+  with no separate front desk). Caught by `qa-can-start-encounter-check.mjs`.
+  Fixed by inverting the dependency: `showStartEncounter` now depends only
+  on role/time-window (`canAttendPatients` + `canStartClinicalEncounter`),
+  and `showMarkArrived`/`showSendToWaitingRoom` are each additionally gated
+  on `!showStartEncounter` instead — the arrival flow stays the primary CTA
+  only while starting isn't allowed yet, never after.
 
 ## Rooms / Treatments (real)
 
@@ -456,10 +470,12 @@ implementation.
   `get_my_appointment_professionals`), since `clinic_memberships`/
   `professional_profiles`/`profiles` stay staff-only for SELECT.
   `resolve-updated-by.ts` falls back to it only when the staff-only
-  `fetchTeamMembers()` comes back empty. **Known gap:** `ClinicalNotesModal`
-  itself still calls `fetchTeamMembers()` directly (not through that shared
-  fallback) — a note's author can show "Sin asignar" for a real Patient session.
-  See QA ONLY above.
+  `fetchTeamMembers()` comes back empty. **Fixed during the pre-release QA
+  Master:** `ClinicalNotesModal` had its own duplicated, `fetchTeamMembers()`-
+  only author lookup instead of going through that shared fallback — a
+  note's author showed "Sin asignar" for a real Patient session even when a
+  real author existed. Now calls `resolveUpdatedByProfessional()` like every
+  other tab.
 - **Deliberately excluded, not degraded**: no editing, no request-a-change flow,
   no e-signature, no PDF download, no new confidentiality tier invented for
   "Notas clínicas importantes" (that table has no internal/staff-only

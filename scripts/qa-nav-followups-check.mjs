@@ -235,7 +235,7 @@ async function main() {
           req.continue();
           return;
         }
-        if (method === "OPTIONS" && url.includes("/rest/v1/appointments")) {
+        if (method === "OPTIONS" && url.includes("/rest/v1/")) {
           req.respond({ status: 204, headers: corsHeaders() });
           return;
         }
@@ -248,6 +248,19 @@ async function main() {
           return;
         }
         if (method === "GET" && url.includes("/rest/v1/appointments")) {
+          req.respond({ status: 200, headers: corsHeaders({ "content-type": "application/json" }), body: "[]" });
+          return;
+        }
+        // createAppointment() (via "Agendar próxima cita" → the same
+        // RealNewAppointmentModal Nueva cita uses) also pre-checks
+        // configured availability/absences — two more real GET round-trips
+        // this fixture's own lack of a session would otherwise send
+        // unmocked to the actual remote Supabase project, racing this
+        // scenario's fixed post-click wait against real internet latency
+        // (same root cause already fixed in qa-appointment-feedback-
+        // check.mjs's own identical branches). Mocked empty/unrestricted
+        // so both resolve instantly.
+        if (method === "GET" && (url.includes("/rest/v1/professional_availability") || url.includes("/rest/v1/professional_absences"))) {
           req.respond({ status: 200, headers: corsHeaders({ "content-type": "application/json" }), body: "[]" });
           return;
         }

@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import { CloseIcon, PencilIcon, PlusIcon } from "@/components/shell/icons";
 import { useToast } from "@/components/toast";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
-import { fetchTeamMembers } from "@/features/clinic/data";
 import { createClient } from "@/lib/supabase/client";
 import { archivePatientClinicalNote, createPatientClinicalNote, updatePatientClinicalNote } from "./clinical-notes-actions";
 import type { ClinicalNoteRecord } from "./clinical-notes-data";
+import { resolveUpdatedByProfessional } from "./resolve-updated-by";
 
 const DATE_FORMATTER = new Intl.DateTimeFormat("es-CO", {
   day: "numeric",
@@ -56,10 +56,18 @@ export function ClinicalNotesModal({
   const [archiveError, setArchiveError] = useState<string | null>(null);
 
   // Resolves each note's created_by/updated_by (profiles.id) to a real
-  // name — same fetchTeamMembers-based batching already used by
-  // Antecedentes/Odontograma/Atenciones/Documentos (see resolve-updated-by.ts's
-  // own comment), one clinic-team fetch for every distinct professional
-  // across the whole list.
+  // name — via resolveUpdatedByProfessional (see resolve-updated-by.ts),
+  // the SAME shared helper Antecedentes/Odontograma/Atenciones/Documentos
+  // already use, not a second, duplicated fetchTeamMembers-only lookup.
+  // That distinction matters here specifically: fetchTeamMembers() is
+  // staff-only (clinic_memberships/professional_profiles/profiles RLS),
+  // so a duplicated inline call — as this used to be — always came back
+  // empty for a real Patient Portal session (Mi Historia Clínica reuses
+  // this exact modal read-only), showing "Sin asignar" for every note's
+  // author even when a real one exists. resolveUpdatedByProfessional
+  // already falls back to the Patient's own narrow
+  // get_my_clinical_record_authors() RPC in that case — this was simply
+  // never wired through it.
   const [nameByProfileId, setNameByProfileId] = useState<Map<string, string>>(new Map());
   useEffect(() => {
     let cancelled = false;
@@ -75,13 +83,14 @@ export function ClinicalNotesModal({
       }
       try {
         const supabase = createClient();
-        const members = await fetchTeamMembers(supabase, clinicId);
-        const map = new Map<string, string>();
-        for (const id of profileIds) {
-          const member = members.find((m) => m.profileId === id);
-          if (member) map.set(id, `${member.firstName} ${member.lastName}`.trim());
+        const entries = await Promise.all(
+          profileIds.map(async (id) => [id, await resolveUpdatedByProfessional(supabase, clinicId, id)] as const),
+        );
+        if (!cancelled) {
+          const map = new Map<string, string>();
+          for (const [id, resolved] of entries) if (resolved) map.set(id, resolved.name);
+          setNameByProfileId(map);
         }
-        if (!cancelled) setNameByProfileId(map);
       } catch {
         if (!cancelled) setNameByProfileId(new Map());
       }

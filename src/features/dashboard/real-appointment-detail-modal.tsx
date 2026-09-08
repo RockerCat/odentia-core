@@ -253,8 +253,6 @@ export function RealAppointmentDetailModal({
   const canMarkArrived = appointment.status === "scheduled" || appointment.status === "confirmed";
   const canSendToWaitingRoom = appointment.status === "patient_arrived";
   const showReactivate = isCancelled;
-  const showMarkArrived = !isCancelled && isFrontDeskRole && canMarkArrived;
-  const showSendToWaitingRoom = !isCancelled && isFrontDeskRole && canSendToWaitingRoom;
   // Starting/continuing a clinical encounter is a clinical action — never
   // for Assistant (see CLAUDE.md's Roles: Assistant supports operations,
   // it doesn't attend patients), and never for a dentist/clinic_admin
@@ -266,15 +264,26 @@ export function RealAppointmentDetailModal({
   // centralized in canStartClinicalEncounter — the same helper the real
   // /agenda/atencion/[appointmentId] route's server-side guard reuses, so
   // a direct/bookmarked URL opened too early is rejected the same way
-  // this button would already be hidden. Only offered as the PRIMARY CTA
-  // once the front-desk arrival flow (if any) is done for this Cita — a
-  // Clinic Admin who is also the attending dentist still sees it the
-  // moment she's not also mid-arrival-flow (see primaryCtaLabel/
-  // handlePrimaryCta's own ordering below); nothing stops her from
+  // this button would already be hidden. Deliberately NOT gated on
+  // showMarkArrived/showSendToWaitingRoom (see those two below instead) —
+  // nothing stops a Clinic Admin who is also the attending dentist from
   // skipping the arrival flow entirely and starting straight from
-  // scheduled/confirmed, same as before this feature existed.
-  const showStartEncounter =
-    !isAssistant && !showMarkArrived && !showSendToWaitingRoom && canAttendPatients && canStartClinicalEncounter(appointment, now);
+  // scheduled/confirmed, same as before that feature existed. A previous
+  // version of this file had that backwards (showStartEncounter excluded
+  // whenever showMarkArrived/showSendToWaitingRoom were true), which for
+  // any front-desk role — clinic_admin above all, CLAUDE.md's own Primary
+  // Use Case — meant "Iniciar atención" could never appear at all until
+  // "Paciente llegó" and "Enviar a sala de espera" were both clicked
+  // first, no matter how far past startsAt the Cita already was; caught
+  // by qa-can-start-encounter-check.mjs.
+  const showStartEncounter = !isAssistant && canAttendPatients && canStartClinicalEncounter(appointment, now);
+  // Only the PRIMARY CTA while starting isn't available yet — the moment
+  // canStartClinicalEncounter's own window opens, "Iniciar/Continuar
+  // atención" takes over as primary (see showStartEncounter above); the
+  // arrival flow itself is never blocked by this, only which action gets
+  // top billing in the footer.
+  const showMarkArrived = !isCancelled && isFrontDeskRole && canMarkArrived && !showStartEncounter;
+  const showSendToWaitingRoom = !isCancelled && isFrontDeskRole && canSendToWaitingRoom && !showStartEncounter;
   // The other valid resolution for a "Sin cerrar" Cita that never started
   // attention at all: the Patient genuinely never showed. Unlike starting/
   // continuing an encounter, this is an operational appointment-management

@@ -163,7 +163,7 @@ async function main() {
       page.on("request", (req) => {
         const url = req.url();
         const method = req.method();
-        if (method === "OPTIONS" && url.includes("/rest/v1/appointments")) {
+        if (method === "OPTIONS" && url.includes("/rest/v1/")) {
           req.respond({ status: 204, headers: corsHeaders() });
           return;
         }
@@ -185,6 +185,24 @@ async function main() {
           return;
         }
         if (method === "GET" && url.includes("/rest/v1/appointments")) {
+          req.respond({ status: 200, headers: corsHeaders({ "content-type": "application/json" }), body: "[]" });
+          return;
+        }
+        // createAppointment() also pre-checks configured availability/
+        // absences (added after this scenario was first written) — two
+        // more real GET round-trips this fixture's own lack of a session
+        // would otherwise send unmocked to the actual remote Supabase
+        // project. Both checks fail OPEN on any error already (see
+        // appointments-actions.ts), so leaving them unmocked was never a
+        // correctness problem — but two real, sequential network
+        // round-trips ahead of the (already 300ms-delayed) mocked POST
+        // routinely blew past this scenario's own fixed post-click wait,
+        // making the assertions below race real internet latency instead
+        // of the deliberate, controlled delay they mean to observe.
+        // Mocked empty here (Case A: no rows configured — unrestricted,
+        // same as this fixture's professionals having none in the first
+        // place) so both checks resolve instantly and deterministically.
+        if (method === "GET" && (url.includes("/rest/v1/professional_availability") || url.includes("/rest/v1/professional_absences"))) {
           req.respond({ status: 200, headers: corsHeaders({ "content-type": "application/json" }), body: "[]" });
           return;
         }
@@ -244,7 +262,7 @@ async function main() {
       page.on("request", (req) => {
         const url = req.url();
         const method = req.method();
-        if (method === "OPTIONS" && url.includes("/rest/v1/appointments")) {
+        if (method === "OPTIONS" && url.includes("/rest/v1/")) {
           req.respond({ status: 204, headers: corsHeaders() });
           return;
         }
@@ -257,6 +275,14 @@ async function main() {
           return;
         }
         if (method === "GET" && url.includes("/rest/v1/appointments")) {
+          req.respond({ status: 200, headers: corsHeaders({ "content-type": "application/json" }), body: "[]" });
+          return;
+        }
+        // Same reasoning as Scenario 1's own identical branch: mocked
+        // empty (Case A, unrestricted) so these two real pre-check
+        // round-trips resolve instantly instead of racing this scenario's
+        // fixed post-click wait against real internet latency.
+        if (method === "GET" && (url.includes("/rest/v1/professional_availability") || url.includes("/rest/v1/professional_absences"))) {
           req.respond({ status: 200, headers: corsHeaders({ "content-type": "application/json" }), body: "[]" });
           return;
         }
@@ -304,7 +330,7 @@ async function main() {
       page.on("request", (req) => {
         const url = req.url();
         const method = req.method();
-        if (method === "OPTIONS" && url.includes("/rest/v1/appointments")) {
+        if (method === "OPTIONS" && url.includes("/rest/v1/")) {
           req.respond({ status: 204, headers: corsHeaders() });
           return;
         }
@@ -324,6 +350,13 @@ async function main() {
           return;
         }
         if (method === "GET" && url.includes("/rest/v1/appointments")) {
+          req.respond({ status: 200, headers: corsHeaders({ "content-type": "application/json" }), body: "[]" });
+          return;
+        }
+        // Same reasoning as this file's other scenarios — mocked empty/
+        // unrestricted so these two real pre-check round-trips can never
+        // shift this scenario's own timing.
+        if (method === "GET" && (url.includes("/rest/v1/professional_availability") || url.includes("/rest/v1/professional_absences"))) {
           req.respond({ status: 200, headers: corsHeaders({ "content-type": "application/json" }), body: "[]" });
           return;
         }
@@ -371,7 +404,7 @@ async function main() {
       page.on("request", (req) => {
         const url = req.url();
         const method = req.method();
-        if (method === "OPTIONS" && url.includes("/rest/v1/appointments")) {
+        if (method === "OPTIONS" && url.includes("/rest/v1/")) {
           req.respond({ status: 204, headers: corsHeaders() });
           return;
         }
@@ -389,6 +422,15 @@ async function main() {
             });
             return;
           }
+          req.respond({ status: 200, headers: corsHeaders({ "content-type": "application/json" }), body: "[]" });
+          return;
+        }
+        // Rescheduling touches the slot, so updateAppointment() re-checks
+        // availability/absences too (same reasoning as Scenarios 1/2's own
+        // identical branch) — mocked empty/unrestricted so both resolve
+        // instantly instead of racing real internet latency against this
+        // scenario's fixed waits.
+        if (method === "GET" && (url.includes("/rest/v1/professional_availability") || url.includes("/rest/v1/professional_absences"))) {
           req.respond({ status: 200, headers: corsHeaders({ "content-type": "application/json" }), body: "[]" });
           return;
         }
@@ -470,7 +512,7 @@ async function main() {
       page.on("request", (req) => {
         const url = req.url();
         const method = req.method();
-        if (method === "OPTIONS" && url.includes("/rest/v1/appointments")) {
+        if (method === "OPTIONS" && url.includes("/rest/v1/")) {
           req.respond({ status: 204, headers: corsHeaders() });
           return;
         }
@@ -483,6 +525,14 @@ async function main() {
           return;
         }
         if (method === "GET" && url.includes("/rest/v1/appointments")) {
+          req.respond({ status: 200, headers: corsHeaders({ "content-type": "application/json" }), body: "[]" });
+          return;
+        }
+        // Same reasoning as Scenarios 1/2/4's own identical branch —
+        // RealNewAppointmentModal here is the exact same component/
+        // createAppointment() call, same two extra real pre-check
+        // round-trips to mock away.
+        if (method === "GET" && (url.includes("/rest/v1/professional_availability") || url.includes("/rest/v1/professional_absences"))) {
           req.respond({ status: 200, headers: corsHeaders({ "content-type": "application/json" }), body: "[]" });
           return;
         }
