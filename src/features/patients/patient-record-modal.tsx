@@ -10,6 +10,7 @@ import type { Patient } from "./data";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
 import { createClient } from "@/lib/supabase/client";
 import { fetchPatientMedicalHistory, type PatientMedicalHistory } from "./medical-history-data";
+import { PatientPortalAccessCard } from "./patient-portal-access-card";
 
 function waLink(phone: string, message?: string): string {
   const base = `https://wa.me/${phone.replace(/[^\d]/g, "")}`;
@@ -46,9 +47,10 @@ const PATIENT_SINCE_FORMATTER = new Intl.DateTimeFormat("es-CO", { month: "short
 // identity + contact (real, editable). Center: Alertas clínicas (real,
 // same patient_medical_histories row Historia Clínica reads/writes),
 // Resumen clínico + KPIs de citas (honest empty states — no appointments
-// table yet), Acceso del paciente (honest "not yet available" — no real
-// invitation/token RPC yet, never a fake QR pointing at a non-functional
-// URL). Right: Próxima cita (honest empty state).
+// table yet), Acceso del paciente (real — see patient-portal-access-card.tsx:
+// create_patient_access_invitation(), the same clinic_admin/assistant-only
+// gate as Equipo's own invitations). Right: Próxima cita (honest empty
+// state).
 export function PatientRecordModal({
   patient,
   clinicId,
@@ -326,16 +328,12 @@ export function PatientRecordModal({
                 </div>
               </div>
 
-              {/* Acceso del paciente — sin flujo real de invitación/token
-                  todavía (patient_access_invitations existe, pero sin RPC
-                  de emisión — ver CLAUDE.md task scope). Nunca un QR
-                  apuntando a una URL que no funciona de verdad. */}
-              <div className="rounded-xl border border-border p-4">
-                <p className="text-sm font-semibold">Acceso del paciente</p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  El acceso del paciente al portal todavía no está disponible.
-                </p>
-              </div>
+              {/* Acceso del paciente — real (see patient-portal-access-card.tsx).
+                  canGrantAccess reuses canEditPatientData: it's already
+                  exactly "role !== dentist", the same two roles
+                  (clinic_admin/assistant) create_patient_access_invitation()
+                  itself authorizes — no new prop, no new role decision. */}
+              <PatientPortalAccessCard patientId={patient.id} canGrantAccess={canEditPatientData} />
             </div>
 
             {/* Derecha — próxima cita. */}

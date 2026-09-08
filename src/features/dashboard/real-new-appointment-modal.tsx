@@ -6,7 +6,7 @@ import { useToast } from "@/components/toast";
 import { UserAvatar } from "@/components/user-avatar";
 import { CalendarIcon, ClockIcon, CloseIcon, FlagIcon, MapPinIcon, NoteIcon } from "@/components/shell/icons";
 import { FIELD_CLASS, PopoverFieldRow, TimePopoverContent } from "./appointment-detail-modal";
-import { isPastSlot } from "./real-format";
+import { isPastSlot, slotStartIso } from "./real-format";
 import { DEFAULT_APPOINTMENT_DURATION, TIME_SLOTS } from "./schedule-config";
 import { WeekDayPickerContent } from "./real-week-day-picker";
 import type { WeekDay } from "./real-week";
@@ -53,17 +53,6 @@ function initialsOf(name: string): string {
 function toPatientOption(patient: Patient): PatientOption {
   const name = `${patient.firstName} ${patient.lastName}`.trim();
   return { id: patient.id, name, initials: initialsOf(name), secondary: patient.phone ?? patient.documentId };
-}
-
-// "H:MM AM/PM" (see schedule-config.ts's own formatSlot) + a "YYYY-MM-DD" day
-// key → a real ISO instant.
-function combineDayAndTime(dayKey: string, time: string): string {
-  const match = /^(\d{1,2}):(\d{2}) (AM|PM)$/.exec(time);
-  const [yearStr, monthStr, dateStr] = dayKey.split("-");
-  let hour = match ? Number(match[1]) % 12 : 0;
-  const minute = match ? Number(match[2]) : 0;
-  if (match?.[3] === "PM") hour += 12;
-  return new Date(Number(yearStr), Number(monthStr) - 1, Number(dateStr), hour, minute).toISOString();
 }
 
 export function RealNewAppointmentModal({
@@ -150,7 +139,7 @@ export function RealNewAppointmentModal({
       patientName: selectedPatient.name,
       patientPhone: patient?.phone ?? null,
       professionalProfileId: professionalId,
-      startsAt: combineDayAndTime(dayKey, time),
+      startsAt: slotStartIso(dayKey, time),
       durationMinutes,
       reason: reason || null,
       room: room || null,

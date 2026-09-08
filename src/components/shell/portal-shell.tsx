@@ -1,17 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { UserAvatar } from "@/components/user-avatar";
-import { RoleProvider, useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
+import { RoleProvider } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { RoleSwitcher } from "@/dev/role-switcher"; // DEV TOOL — see src/dev/role.ts
-import { useAuthenticatedIdentity } from "@/features/dashboard/use-authenticated-identity";
-import { CURRENT_PATIENT } from "@/lib/current-user";
+import { usePatientContext } from "@/features/session/use-patient-context";
 import { BuildingIcon, CalendarIcon, ChevronDownIcon, LogOutIcon, NoteIcon, ToothIcon, UserIcon } from "./icons";
 import { NavLinkContent } from "./nav-link-status";
 import { PageContainer } from "./page-container";
 import { useRouteGuard } from "./use-route-guard";
+import { useShellLogout } from "./use-shell-logout";
 
 // The Patient's own portal shell — deliberately NOT AppShell. A Patient
 // never sees the clinic dashboard's nav (Marketplace, Reportes, Clínica,
@@ -24,24 +23,31 @@ import { useRouteGuard } from "./use-route-guard";
 // point) and no "Mi perfil" here — that stays exclusively in the avatar
 // menu above, same as Salir.
 //
-// The clinic item's label is the clinic's actual name on purpose — this
-// mock Patient belongs to exactly one clinic. If/when a Patient can belong
-// to several, this becomes "Mi clínica" with a picker instead — not built
-// yet, see my-clinic-screen.tsx.
+// useRouteGuard(["patient"]) is unchanged from before — same layered "dev-
+// convenience + hydration-safe nav gate on top of the real server-side
+// gate" role every other shell already plays (see AppShell's own identical
+// use), now correctly recognizing a real Patient because
+// bridgePatientContextIntoMockSession (see src/app/login/page.tsx) writes
+// "patient" into the same mock session at login. The REAL authorization
+// boundary is src/lib/supabase/proxy.ts's own /portal/* gate
+// (resolvePatientContext) plus RLS — this hook (and usePatientContext
+// below) never assumes otherwise.
+//
+// Identity (name/avatar, clinic name/logo) is real — usePatientContext()
+// (src/features/session/use-patient-context.ts), same "purely for
+// display, proxy.ts already gated the route" contract as
+// useShellIdentity()/useCurrentUserContext() for the clinic-side Header.
+// While it's still resolving (a brief window right after proxy.ts's own
+// already-gated navigation), the header shows a neutral loading state —
+// never the old mock CURRENT_PATIENT as a fallback.
+//
 // Odentia's own logo never appears anywhere in the Patient portal (mobile
 // header or desktop sidebar) — the Patient is interacting with their
 // clinic, not the Odentia platform itself; Odentia stays the backoffice
-// behind the scenes (see CLAUDE.md). Same mock asset as the Clinic Admin's
-// own Clínica page/Agenda identity card; hardcoded per this iteration's
-// scope — no dynamic per-clinic branding/slug resolution yet.
-const CLINIC_LOGO_URL = "/branding/sonrisa_perfecta.png";
-
-const PORTAL_NAV_ITEMS = [
-  { label: "Mis citas", icon: CalendarIcon, href: "/portal/citas" },
-  { label: "Mi salud dental", icon: ToothIcon, href: "/portal/salud" },
-  { label: "Mi Historia Clínica", icon: NoteIcon, href: "/portal/historia" },
-  { label: CURRENT_PATIENT.clinicName, icon: BuildingIcon, href: "/portal/clinica" },
-];
+// behind the scenes (see CLAUDE.md). Falls back to the same neutral local
+// asset only when the clinic has no real logo_url of its own — never a
+// wrong/unrelated clinic's branding.
+const FALLBACK_CLINIC_LOGO_URL = "/branding/sonrisa_perfecta.png";
 
 type PortalShellProps = {
   activeNavLabel: string;
@@ -67,15 +73,35 @@ export function PortalShell({ activeNavLabel, heading, children }: PortalShellPr
 }
 
 function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
-  const router = useRouter();
-  const { logout } = useRole();
-  const identity = useAuthenticatedIdentity();
+  const context = usePatientContext();
+  const { signOut, signingOut } = useShellLogout();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const clinicName = context?.status === "ok" ? context.clinic.name : "";
+  const clinicLogoUrl = (context?.status === "ok" ? context.clinic.logoUrl : null) ?? FALLBACK_CLINIC_LOGO_URL;
+  const patientName =
+    context?.status === "ok" ? `${context.patient.firstName} ${context.patient.lastName}`.trim() : "";
+  // Neutral, honest loading label — usePatientContext() is still resolving
+  // for the brief window right after proxy.ts's own already-gated
+  // navigation; never the old mock CURRENT_PATIENT name as a filler.
+  const displayName = patientName || "Cargando…";
+  const initials =
+    context?.status === "ok"
+      ? (`${context.patient.firstName[0] ?? ""}${context.patient.lastName[0] ?? ""}`.toUpperCase() || "?")
+      : "";
+  const avatarUrl = context?.status === "ok" ? (context.profile.avatarUrl ?? undefined) : undefined;
+  const secondaryLabel = context?.status === "ok" ? `Paciente · ${context.clinic.name}` : "";
+
+  const portalNavItems = [
+    { label: "Mis citas", icon: CalendarIcon, href: "/portal/citas" },
+    { label: "Mi salud dental", icon: ToothIcon, href: "/portal/salud" },
+    { label: "Mi Historia Clínica", icon: NoteIcon, href: "/portal/historia" },
+    { label: clinicName || "Mi clínica", icon: BuildingIcon, href: "/portal/clinica" },
+  ];
 
   const handleLogout = () => {
     setMenuOpen(false);
-    logout();
-    router.push("/login");
+    void signOut();
   };
 
   useEffect(() => {
@@ -107,11 +133,12 @@ function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
         <button
           type="button"
           role="menuitem"
+          disabled={signingOut}
           onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-danger hover:bg-danger/5"
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-danger hover:bg-danger/5 disabled:opacity-60"
         >
           <LogOutIcon className="size-4 shrink-0" />
-          Salir
+          {signingOut ? "Cerrando sesión…" : "Salir"}
         </button>
       </div>
     </>
@@ -121,16 +148,16 @@ function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
     <div className="flex h-dvh overflow-hidden bg-surface text-foreground">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-background md:flex">
         <div className="flex items-center justify-center border-b border-border px-4 py-8">
-          {/* eslint-disable-next-line @next/next/no-img-element -- local mock asset, not worth Next/Image's optimization pipeline */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- remote/local clinic asset, not worth Next/Image's optimization pipeline */}
           <img
-            src={CLINIC_LOGO_URL}
-            alt={`Logo de ${CURRENT_PATIENT.clinicName}`}
+            src={clinicLogoUrl}
+            alt={clinicName ? `Logo de ${clinicName}` : "Logo de la clínica"}
             className="h-14 w-auto max-w-[180px] object-contain"
           />
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 px-3 py-6">
-          {PORTAL_NAV_ITEMS.map(({ label, icon: Icon, href }) => {
+          {portalNavItems.map(({ label, icon: Icon, href }) => {
             const active = label === activeNavLabel;
             return (
               <Link
@@ -164,10 +191,10 @@ function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
               aria-expanded={menuOpen}
               className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-foreground/5"
             >
-              <UserAvatar name={identity.name} initials={identity.initials} avatar_url={identity.avatar_url} />
+              <UserAvatar name={displayName} initials={initials} avatar_url={avatarUrl} />
               <span className="hidden text-left sm:block">
-                <span className="block text-sm leading-tight font-medium">{identity.name}</span>
-                <span className="block text-xs leading-tight text-muted-foreground">{identity.secondaryLabel}</span>
+                <span className="block text-sm leading-tight font-medium">{displayName}</span>
+                <span className="block text-xs leading-tight text-muted-foreground">{secondaryLabel}</span>
               </span>
               <ChevronDownIcon className="hidden size-4 shrink-0 text-muted-foreground sm:block" />
             </button>
@@ -178,13 +205,13 @@ function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
 
         {/* Mobile header — same user-menu pattern as shell/mobile-header.tsx,
             but with the clinic's own logo instead of Odentia's (see
-            CLINIC_LOGO_URL above) — the Patient is interacting with their
-            clinic, not the Odentia platform itself. */}
+            FALLBACK_CLINIC_LOGO_URL above) — the Patient is interacting
+            with their clinic, not the Odentia platform itself. */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface px-4 md:hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element -- local mock asset, not worth Next/Image's optimization pipeline */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- remote/local clinic asset, not worth Next/Image's optimization pipeline */}
           <img
-            src={CLINIC_LOGO_URL}
-            alt={`Logo de ${CURRENT_PATIENT.clinicName}`}
+            src={clinicLogoUrl}
+            alt={clinicName ? `Logo de ${clinicName}` : "Logo de la clínica"}
             className="h-9 w-auto shrink-0 object-contain"
           />
           <div className="relative">
@@ -197,9 +224,9 @@ function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
               className="flex items-center gap-2 rounded-full py-1 pr-1 pl-2 hover:bg-foreground/5"
             >
               <span className="hidden max-w-24 truncate text-sm font-medium min-[380px]:block">
-                {identity.name}
+                {displayName}
               </span>
-              <UserAvatar name={identity.name} initials={identity.initials} avatar_url={identity.avatar_url} sizeClassName="size-8" />
+              <UserAvatar name={displayName} initials={initials} avatar_url={avatarUrl} sizeClassName="size-8" />
             </button>
 
             {userMenu}
@@ -217,7 +244,7 @@ function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
           aria-label="Navegación principal"
           className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--mobile-tabbar-h)] items-stretch border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
         >
-          {PORTAL_NAV_ITEMS.map(({ label, icon: Icon, href }) => {
+          {portalNavItems.map(({ label, icon: Icon, href }) => {
             const active = label === activeNavLabel;
             return (
               <Link

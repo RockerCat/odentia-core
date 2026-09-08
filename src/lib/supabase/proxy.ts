@@ -1,19 +1,20 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { decideAuthenticatedRedirect } from "@/features/session/decide-authenticated-redirect";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
-import { restrictedReasonFor } from "@/features/session/restricted-reason";
-import type { ClinicContext } from "@/features/session/types";
+import { resolvePatientContext } from "@/features/session/resolve-patient-context";
+import { restrictedReasonFor, restrictedReasonForPatient } from "@/features/session/restricted-reason";
+import type { ClinicContext, PatientContext } from "@/features/session/types";
 
 // Called from src/proxy.ts (Next.js 16's request-interception convention,
 // née "middleware" — see https://nextjs.org/docs/messages/middleware-to-proxy).
 //
 // Refreshes the Supabase auth session/cookies on every request, and gates
-// the clinic team app's private routes (Agenda/Pacientes/Reportes/Clínica/
-// Configuración/Suscripción/Mi perfil profesional) against the REAL
-// Supabase session — see CLAUDE.md task scope, section 7. /admin
-// (Superadmin) and /portal (Patient) deliberately stay out of this real
-// gate: neither role has real auth wired up yet (see task scope, sections
-// 14/19) — they keep the existing mock gate in
+// both the clinic team app's private routes (Agenda/Pacientes/Reportes/
+// Clínica/Configuración/Suscripción/Mi perfil profesional) AND the Patient
+// Portal's own private routes against the REAL Supabase session. /admin
+// (Superadmin) deliberately stays out of this real gate: that role has no
+// real auth wired up yet — it keeps the existing mock gate in
 // components/shell/use-route-guard.ts unchanged.
 //
 // Deliberately NO NODE_ENV === "development" bypass here — unlike
@@ -34,23 +35,40 @@ const PRIVATE_CLINIC_PATHS = [
   "/mi-perfil-profesional",
 ];
 
+// Explicit leaf paths, not a blanket "/portal" prefix — deliberately
+// EXCLUDES /portal/invitacion/[token] (must stay reachable whether
+// authenticated or not, same as /invitacion/[token] for staff — someone
+// opening a patient invitation link may not have an Odentia account yet)
+// and bare /portal (a pure redirect() to /portal/citas, which re-enters
+// this same gate on the very next request either way — nothing to protect
+// there itself).
+const PRIVATE_PATIENT_PATHS = ["/portal/citas", "/portal/salud", "/portal/historia", "/portal/clinica", "/portal/perfil"];
+
 function isPrivateClinicPath(pathname: string): boolean {
   return PRIVATE_CLINIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
-function decideRedirect(pathname: string, context: ClinicContext): string | null {
-  if (pathname === "/login") {
-    if (context.status === "ok") return "/agenda";
-    if (context.status === "no-membership") return "/registro";
-    if (context.status === "unauthenticated") return null;
-    return `/acceso-restringido?motivo=${restrictedReasonFor(context.status)}`;
-  }
+function isPrivatePatientPath(pathname: string): boolean {
+  return PRIVATE_PATIENT_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
 
-  // Private clinic path.
+function decideClinicRedirect(context: ClinicContext): string | null {
   if (context.status === "ok") return null;
   if (context.status === "unauthenticated") return "/login";
   if (context.status === "no-membership") return "/registro";
   return `/acceso-restringido?motivo=${restrictedReasonFor(context.status)}`;
+}
+
+// Mirrors decideClinicRedirect above exactly, but a bare "not-linked" DOES
+// escalate to its own honest restricted screen here (unlike
+// decideAuthenticatedRedirect's /login-only fallthrough to /registro — see
+// that file's own comment) — someone actually trying to REACH the Portal
+// with no patient link at all must see "cuenta no vinculada", never a
+// silent bounce toward staff onboarding.
+function decidePatientRedirect(context: PatientContext): string | null {
+  if (context.status === "ok") return null;
+  if (context.status === "unauthenticated") return "/login";
+  return `/acceso-restringido?motivo=${restrictedReasonForPatient(context.status)}`;
 }
 
 export async function updateSession(request: NextRequest) {
@@ -81,20 +99,35 @@ export async function updateSession(request: NextRequest) {
   await supabase.auth.getClaims();
 
   const { pathname } = request.nextUrl;
-  const needsGate = pathname === "/login" || isPrivateClinicPath(pathname);
 
-  if (needsGate) {
-    const context = await resolveClinicContext(supabase);
-    const redirectTo = decideRedirect(pathname, context);
-    if (redirectTo) {
-      // Official Supabase SSR redirect pattern: build the redirect from a
-      // fresh response, then copy over whatever cookies getClaims() above
-      // refreshed on supabaseResponse — a bare NextResponse.redirect(...)
-      // on its own would silently drop them.
-      const redirectResponse = NextResponse.redirect(new URL(redirectTo, request.url));
-      supabaseResponse.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie.name, cookie.value));
-      return redirectResponse;
+  let redirectTo: string | null = null;
+
+  if (pathname === "/login") {
+    // Needs both contexts: an already-authenticated visitor could be
+    // either real staff or a real linked patient (or neither, or an
+    // ambiguous/blocked patient state) — see decideAuthenticatedRedirect's
+    // own priority order.
+    const [clinicContext, patientContext] = await Promise.all([
+      resolveClinicContext(supabase),
+      resolvePatientContext(supabase),
+    ]);
+    if (clinicContext.status !== "unauthenticated") {
+      redirectTo = decideAuthenticatedRedirect(clinicContext, patientContext);
     }
+  } else if (isPrivateClinicPath(pathname)) {
+    redirectTo = decideClinicRedirect(await resolveClinicContext(supabase));
+  } else if (isPrivatePatientPath(pathname)) {
+    redirectTo = decidePatientRedirect(await resolvePatientContext(supabase));
+  }
+
+  if (redirectTo) {
+    // Official Supabase SSR redirect pattern: build the redirect from a
+    // fresh response, then copy over whatever cookies getClaims() above
+    // refreshed on supabaseResponse — a bare NextResponse.redirect(...)
+    // on its own would silently drop them.
+    const redirectResponse = NextResponse.redirect(new URL(redirectTo, request.url));
+    supabaseResponse.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie.name, cookie.value));
+    return redirectResponse;
   }
 
   // IMPORTANT: return this exact response object (or copy its cookies onto

@@ -112,7 +112,7 @@ function isOverlapConstraintError(error: { code?: string } | null): boolean {
 // absence" — the DB layer doesn't distinguish the two the way the pre-check
 // functions below do, so a request that loses the pre-check's race window
 // gets this shared fallback message instead of the more specific one.
-const AVAILABILITY_CONSTRAINT_ERROR =
+export const AVAILABILITY_CONSTRAINT_ERROR =
   "Este horario no está disponible para el profesional (fuera de su horario, sin disponibilidad activa configurada, o en una ausencia programada).";
 
 function isAvailabilityConstraintError(error: { code?: string } | null): boolean {

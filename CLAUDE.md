@@ -104,26 +104,58 @@ Unless explicitly instructed otherwise:
 - Clean folder organization.
 - Avoid unnecessary global state.
 
-Real authentication (Supabase Auth) lives in `src/features/session/` —
-`resolveClinicContext()` is the single source of truth for the
-authenticated user's clinic/role/professional-profile context. Every real
-feature derives permissions from that, server-side, never from the legacy
-mock session below.
+Auth is fully real (Supabase Auth), not a partial conversion: login/logout,
+forgot/reset password, onboarding (`/registro`), and both staff and Patient
+invitations (real tokens, real acceptance flows) all run against real
+Supabase Auth + Postgres. Lives in `src/features/session/` —
+`resolveClinicContext()` (staff) and `resolvePatientContext()` (Patient)
+are the two single sources of truth for "who is this real user, and
+what's their clinic/role/professional-profile (or patient/clinic)
+context." Every real feature derives permissions from one of these,
+server-side, never from the legacy mock session below. There is no
+automated email/WhatsApp/SMS/push anywhere in this codebase — every
+invitation is a real, tokenized link an admin/assistant copies and shares
+manually (see Communications below); never claim or build toward an
+"enviado" state that isn't true.
 
-The real resolved role is also bridged into the legacy mock
-`src/features/auth/session.ts` / `RoleContext` store
-(`src/features/session/role-bridge.ts`), so screens not yet converted from
-Phase 1's mock data (see PROJECT_STATUS.md) keep working unmodified. Do
-not scatter session logic into feature folders. `src/dev/` (role switcher,
-mock dentist resolver) is a separate, disposable dev-only shim, still used
-by those unconverted screens — never a source of authorization for a real
-feature, and not yet safe to delete.
+The real resolved clinic role (never name/avatar) is also bridged into
+the legacy mock `src/features/auth/session.ts` / `RoleContext` store
+(`src/features/session/role-bridge.ts`), so the small set of screens
+still on Phase 1 mock data (Configuración's secondary preference
+sections, `/admin`, `/suscripcion` — see PROJECT_STATUS.md's "OUT OF
+SCOPE ACTUAL"/"PARCIAL" for the current, short list) keep working
+unmodified. Do not scatter session logic into feature folders. `src/dev/`
+(role switcher, mock dentist resolver) is a separate, disposable dev-only
+shim, still used by those remaining mock screens — never a source of
+authorization for a real feature, and not yet safe to delete. Any
+component that shows a real user's NAME/avatar must read
+`useShellIdentity()` (`src/components/shell/use-shell-identity.ts`), the
+real-overlay hook Header/`PatientsGreeting`/`Greeting` all use — never the
+raw mock `useAuthenticatedIdentity()` alone, since the bridge above never
+carries name/avatar into the mock session (a real bug once: `/agenda`'s
+own greeting showed a fixed mock name for every real user until this was
+fixed).
 
 There are two shells: `AppShell` (clinic roles — Superadmin, Clinic Admin,
 Dentist, Assistant) and `PortalShell` (Patient only, its own simpler nav —
 see Roles below). Both share one role-gating hook,
 `src/components/shell/use-route-guard.ts`; add new gated routes through it
 rather than duplicating auth-redirect logic per shell.
+
+`/portal/historia` (`PatientMedicalRecordScreen`) is a real, read-only
+view of the exact same expediente `/pacientes/[id]/historia-clinica`
+reads/writes — a new Portal-specific outer shell (own header, no "Volver a
+Pacientes"/"Descargar PDF"), but every tab body is the SAME real component
+staff uses (`ResumenTab`/`AntecedentesTab`/`OdontogramaTab`/
+`AtencionesTab`/`DocumentosTab`/`ClinicalAlerts` from
+`src/features/patients/`), always called with `canEdit`/
+`canEditClinicalData`/`canUpload = false` — the same shape Assistant
+already gets today, never a second read-only code path. This is the
+model for reusing a staff clinical component from the Portal: reuse the
+leaf presentational/data pieces, never the staff-only outer shell, and
+never widen a write affordance — every clinical write RPC already
+requires `is_active_clinical_professional()`, which a Patient can never
+pass regardless of what a prop shows.
 
 The real Agenda lives under `src/features/dashboard/real-*`
 (`RealAgendaScreen`/`RealAppointmentsBoard`/`RealAppointmentDetailModal`/
@@ -137,6 +169,29 @@ appointment id so a refresh reconstructs it from Postgres rather than
 client state. "Finalizar atención" always persists the encounter
 (`public.patient_clinical_encounters`, linked 1:1 to its Cita via a unique
 `appointment_id`) before marking the Cita `completed`, never the reverse.
+
+`Solicitud de Cita` (see Appointment Lifecycle below) is a SEPARATE entity
+from `Cita` and must stay one: `public.appointment_requests`, never a status
+value on `appointments`. Its surfaces are the Patient Portal's
+`RequestAppointmentScheduler` (`/portal/citas`, writing through
+`request_my_appointment()`) and the Agenda's own `RealAppointmentRequestsCard`
+— a card in the right-hand column, never a row on the board. Accepting is
+`accept_appointment_request()`, one SECURITY DEFINER transaction that creates
+the Cita (`scheduled`) and links it, or fails entirely and leaves the request
+`pending`; `reject_appointment_request()` never creates a Cita. Read and write
+scope on both sides comes from `can_access_appointment()` — the same helper
+that governs the resulting Cita — so a request can never be visible or
+actionable to someone who couldn't see the Cita it would become.
+
+Reportes (`/reportes`), Pacientes, Historia Clínica (staff), Agenda,
+Rooms/Treatments catalogs, Availability/Absences, and Equipo (invite/
+accept/activate/deactivate — never a member-role-editing RPC, that
+doesn't exist) are all real, not partial — see PROJECT_STATUS.md's "REAL
+/ COMPLETO PARA MVP" for the current, authoritative list. Configuración
+is a split screen: its Tratamientos/Horario/Ausencias sections are real;
+its agenda-defaults/notification/regional-preference sections are still
+local `useState` with no backend at all — never claim those persist
+anything.
 
 `src/components/toast.tsx` (`ToastProvider`/`useToast()`) is the one shared
 primitive for ephemeral success/error confirmations — mounted once in the
@@ -195,6 +250,16 @@ Manages the entire platform:
 - Marketplace
 - Global operations
 
+**Real auth for this role is currently out of scope.** `/admin` is fully
+mock UI (`src/features/admin/mock-data.ts`), with no `resolveClinicContext()`
+call and no route protection beyond the mock role switcher —
+`ClinicContext.membership.role` only ever resolves to `clinic_admin |
+dentist | assistant` for a real session, so `role-bridge.ts` can never
+produce a real `"superadmin"` mock role. `/admin` is therefore
+unreachable through any real login in production, only through the DEV
+role switcher in development. Do not build toward real Superadmin auth
+unless explicitly asked — it's not part of the current MVP scope.
+
 ### Clinic Admin
 
 The clinic's owner or administrator.
@@ -222,6 +287,15 @@ clinical documentation for any patient in the clinic, same as any active
 Dentist — see Dentist's own note below on why this is never restricted to
 "her own patients." The Assistant and the Patient can always read it,
 never write it.
+
+There is no separate "Admin Odontólogo" role in the schema — a Clinic
+Admin who also practices is still, structurally, a plain `clinic_admin`
+membership that additionally owns an active `professional_profiles` row.
+`create_my_professional_profile()` (real, `SECURITY DEFINER`, self-service,
+`clinic_admin`-only) is how she gets one; `update_my_professional_profile()`
+edits it afterwards. Never invent a distinct role/flag for this — it's
+purely "does this `clinic_admin` also have an active professional
+profile," derived the same way `canEditClinicalData()` already does.
 
 ### Dentist
 
@@ -271,15 +345,25 @@ The person receiving care — not a clinic team member.
 
 Can, for their own data only:
 
-- View their own appointments, and request a reschedule or cancellation
-  (never edit the appointment directly — changes are proposals the clinic
-  approves)
+- Request an appointment (a `Solicitud de Cita`, below) — never schedule one
+  directly; the clinic accepting the request is what creates the `Cita`
+- View their own appointments, and confirm their own attendance on one; request
+  a reschedule or cancellation (never edit the appointment directly — changes
+  are proposals the clinic approves)
 - View their own medical/dental record
 - View their own clinic's info
 
 Never sees other patients' data, clinic administration, or any clinic-team
 screen. Has its own portal experience, not a role variant of the clinic
 dashboard (see Architecture above).
+
+**Current implementation note:** every bullet above is real except
+"request a reschedule or cancellation" — that proposal-approval lifecycle
+has no backend yet (the old mock buttons for it were removed outright,
+never kept as fake non-persisting ones); requesting an appointment,
+confirming attendance, and viewing citas/historia/clínica/perfil are all
+real. Mi salud dental (a separate screen from "medical/dental record"
+above, which is Mi Historia Clínica) is still Phase 1 mock.
 
 ---
 
@@ -318,6 +402,19 @@ A Patient-initiated request, before the clinic has scheduled anything:
 
 Accepting a request turns it into a scheduled `Cita` (below), starting at
 `Programada`. Rejecting it ends the request — no `Cita` is created.
+
+Real as of this writing: `public.appointment_requests` (status `pending |
+accepted | rejected`, plus `accepted_appointment_id` linking the Cita an
+acceptance produced). A request holds a *preference*
+(`preferred_starts_at`, `professional_profile_id`) — it never reserves a
+slot, never runs the overlap/availability rules, and never appears on the
+Agenda board. Those rules run only at acceptance, against the real
+`appointments` INSERT, exactly as they do for any staff-created Cita. The
+clinic may change date/hora/profesional/consultorio/duración/tratamiento
+before accepting; `preferred_starts_at` is never overwritten, so what the
+patient asked for stays distinguishable from what was scheduled. At most one
+`pending` request per patient at a time (a partial unique index, not app
+logic).
 
 ### Cita (appointment)
 
@@ -360,9 +457,13 @@ Rules:
 patient_arrived | waiting_room | in_progress | completed | no_show |
 cancelled`) already matches this lifecycle — use it, and
 `patient_clinical_encounters.appointment_id`, for any new real
-appointment/encounter work. `patient_arrived`/`waiting_room`/`no_show` are
-declared but have no dedicated UI action yet. The still-mock screens (the
-Patient Portal above all) keep their own separate, flattened 6-value
+appointment/encounter work. A `Cita` created by accepting a `Solicitud`
+starts at `scheduled` (the Patient still confirms her own attendance
+afterwards), unlike the clinic's own "Nueva cita", which the front desk
+arranged directly and which therefore starts `confirmed`. The one screen still
+on Phase 1 mock data that reads appointments at all (the Portal's own Mi
+salud dental — Mis citas and Mi Historia Clínica are both real now) keeps
+its own separate, flattened 6-value
 `AppointmentStatus` (`confirmed | pending | in-progress | completed |
 cancelled | no-show`, hyphenated) — depending on context, `pending`/
 `confirmed` overload meanings from both lifecycles above there. Don't deepen
@@ -370,6 +471,37 @@ that conflation in new mock-side work; prefer an additive field scoped to
 where it's actually needed (e.g. the Patient portal's own
 `attendanceConfirmed`, separate from `status`) until that screen's own real
 conversion lands.
+
+---
+
+## Availability & Absences
+
+Permanent architectural decision, same standing as the rest of this
+Domain Model section. Real (`public.professional_availability`/
+`public.professional_absences`), enforced by a Postgres trigger on every
+`appointments` write, not just an app-level pre-check. Exact semantics —
+regression-prone, do not simplify or re-derive differently elsewhere:
+
+- **Zero availability rows** for a professional → legacy-unrestricted:
+  every day/time is bookable. This is deliberate backward compatibility
+  (a professional who never configures a schedule isn't suddenly locked
+  out), not an oversight to "fix."
+- **At least one row with `active = true`** → a Cita must fall entirely
+  within one of that professional's active blocks for that day of the
+  week; anything outside is rejected.
+- **Rows exist but every one is `active = false`** → distinct from "zero
+  rows": the professional deliberately configured, then fully
+  deactivated, her own schedule. Reads as "no availability at all," never
+  falls back to unrestricted.
+- **Absences** are independent of the three states above: any active
+  absence covering the Cita's date range rejects it regardless of
+  availability configuration.
+- The MVP absence model is **date-only/all-day** — no partial-day
+  absences, don't add one without an explicit ask.
+- Creating an absence never auto-cancels appointments that already exist
+  inside its date range — it only blocks new/rescheduled Citas from
+  landing there. A pre-existing conflict is resolved manually by staff,
+  never automatically.
 
 ---
 
@@ -408,6 +540,22 @@ Never expose:
 - private data
 
 Never bypass authentication or authorization.
+
+---
+
+# Communications
+
+No transactional email, WhatsApp, SMS, or push notifications are
+implemented anywhere in this codebase — not for staff invitations, not
+for patient invitations, not for appointment reminders. Every invitation
+(Equipo, Patient Portal access) is a real, persisted, tokenized link an
+admin/assistant copies and shares manually themselves; UI copy always
+says "creada"/"copiar enlace", never "enviada". `wa.me` links (e.g. a
+clinic's own contact number) are manual deep-links a person clicks —
+never an automated send, never a WhatsApp Business API integration. Do
+not build toward automated sending, and do not phrase UI copy as if
+something was sent automatically when it wasn't, unless explicitly asked
+to build that infrastructure.
 
 ---
 

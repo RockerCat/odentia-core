@@ -3,6 +3,7 @@ import { ClinicIdentityCard } from "@/features/dashboard/clinic-identity-card";
 import { MarketplaceCard } from "@/features/dashboard/marketplace-card";
 import { RealAgendaScreen } from "@/features/dashboard/real-agenda-screen";
 import { fetchAppointmentsForRange, fetchClinicalProfessionals } from "@/features/dashboard/appointments-data";
+import { fetchPendingAppointmentRequests } from "@/features/dashboard/appointment-requests-data";
 import { getWeekRangeIso } from "@/features/dashboard/real-week";
 import { canEditClinicalData } from "@/features/patients/clinical-permissions";
 import { fetchPatients } from "@/features/patients/data";
@@ -49,14 +50,19 @@ export default async function AgendaPage() {
   let patients: Awaited<ReturnType<typeof fetchPatients>> = [];
   let treatmentOptions: string[] = [];
   let roomOptions: string[] = [];
+  // Solicitudes de Cita — scoped by RLS to exactly what this caller may
+  // act on (clinic-wide for Clinic Admin/Assistant, own-professional only
+  // for a Dentist), never filtered client-side.
+  let appointmentRequests: Awaited<ReturnType<typeof fetchPendingAppointmentRequests>> = [];
   try {
     const { startIso, endIsoExclusive } = getWeekRangeIso(0);
-    [professionals, appointments, patients, treatmentOptions, roomOptions] = await Promise.all([
+    [professionals, appointments, patients, treatmentOptions, roomOptions, appointmentRequests] = await Promise.all([
       fetchClinicalProfessionals(supabase, clinicId),
       fetchAppointmentsForRange(supabase, clinicId, startIso, endIsoExclusive),
       fetchPatients(supabase, clinicId),
       fetchActiveTreatmentNames(supabase, clinicId),
       fetchActiveRoomNames(supabase, clinicId),
+      fetchPendingAppointmentRequests(supabase, clinicId),
     ]);
   } catch (error) {
     console.error("[/agenda] load failed", error);
@@ -86,6 +92,7 @@ export default async function AgendaPage() {
           initialProfessionals={professionals}
           initialAppointments={appointments}
           initialPatients={patients}
+          initialAppointmentRequests={appointmentRequests}
           treatmentOptions={treatmentOptions}
           roomOptions={roomOptions}
           canEditPatientData={canEditPatientData}

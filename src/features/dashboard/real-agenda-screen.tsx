@@ -5,10 +5,12 @@ import type { MembershipRole } from "@/features/session/types";
 import type { Patient } from "@/features/patients/data";
 import { createClient } from "@/lib/supabase/client";
 import { fetchAppointmentsForRange, type Appointment, type ClinicalProfessional } from "./appointments-data";
+import type { AppointmentRequest } from "./appointment-requests-data";
+import { RealAppointmentRequestsCard } from "./real-appointment-requests-card";
 import { RealAppointmentsBoard } from "./real-appointments-board";
 import { RealSummaryCards } from "./real-summary-cards";
 import { getWeekDaysForOffset, getWeekLabelForOffset, getWeekRangeIso, todayDateKey } from "./real-week";
-import { dateKeyOf } from "./real-format";
+import { dateKeyOf, toBoardProfessional } from "./real-format";
 
 // Real /agenda screen — the single client-side owner of appointment DATA
 // for this page. Fixes a real correctness gap the approved demo's own
@@ -26,6 +28,7 @@ export function RealAgendaScreen({
   initialProfessionals,
   initialAppointments,
   initialPatients,
+  initialAppointmentRequests,
   treatmentOptions,
   roomOptions,
   canEditPatientData,
@@ -39,6 +42,7 @@ export function RealAgendaScreen({
   initialProfessionals: ClinicalProfessional[];
   initialAppointments: Appointment[];
   initialPatients: Patient[];
+  initialAppointmentRequests: AppointmentRequest[];
   treatmentOptions: string[];
   roomOptions: string[];
   canEditPatientData: boolean;
@@ -172,6 +176,19 @@ export function RealAgendaScreen({
           roomOptions={roomOptions}
           canAttendPatients={canAttendPatients}
           onAppointmentUpdated={applyUpdate}
+        />
+        {/* Solicitudes de Cita — a SEPARATE lifecycle from the board's
+            Citas (see CLAUDE.md's Appointment Lifecycle), so it gets its
+            own card rather than a row on the board. Accepting one creates
+            a real Cita, which lands in this screen's shared appointment
+            state through the same applyCreate the board's own "Nueva cita"
+            uses — so it shows up on the board immediately, no refetch. */}
+        <RealAppointmentRequestsCard
+          requests={initialAppointmentRequests}
+          professionals={initialProfessionals.map(toBoardProfessional)}
+          treatmentOptions={treatmentOptions}
+          roomOptions={roomOptions}
+          onAppointmentCreated={applyCreate}
         />
         {marketplaceCard}
       </div>

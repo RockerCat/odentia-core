@@ -1,6 +1,6 @@
 import { clearSession, writeSession } from "@/features/auth/session";
 import type { Role } from "@/dev/role"; // DEV TOOL — see src/dev/role.ts
-import type { ClinicContext, MembershipRole } from "./types";
+import type { ClinicContext, MembershipRole, PatientContext } from "./types";
 
 // Bridges a resolved REAL clinic context into the existing mock session
 // (src/features/auth/session.ts) that RoleProvider/useAuthenticatedIdentity
@@ -28,6 +28,21 @@ export function bridgeClinicContextIntoMockSession(context: Extract<ClinicContex
   // use-authenticated-identity.ts regardless of this flag.
   const soloDentistClinic = role === "clinic-admin" && context.professionalProfile !== null;
   writeSession({ role, soloDentistClinic });
+}
+
+// Same bridge, for a real Patient — the Portal's own ~6 screens still read
+// the mock session ONLY through useRouteGuard(["patient"]) (see
+// components/shell/use-route-guard.ts, shared with AppShell's own gate);
+// no Portal screen reads useRole() for identity/data (see
+// portal-shell.tsx's own real usePatientContext() for that), so this is
+// deliberately narrower than bridgeClinicContextIntoMockSession above —
+// just enough for that one shared gate to keep recognizing a real Patient
+// as "role: patient", nothing else rides along.
+// Kept as a (currently unused) parameter for API symmetry with
+// bridgeClinicContextIntoMockSession above — nothing per-patient rides
+// along the mock session yet, only the role itself.
+export function bridgePatientContextIntoMockSession(_context: Extract<PatientContext, { status: "ok" }>): void {
+  writeSession({ role: "patient" });
 }
 
 export function clearBridgedMockSession(): void {

@@ -4,11 +4,13 @@ import type { RestrictedReason } from "@/features/session/restricted-reason";
 import { RestrictedAccessSignOut } from "@/features/session/restricted-access-sign-out";
 
 // Reached only via a redirect from src/lib/supabase/proxy.ts or
-// src/app/login/page.tsx (?motivo=...) — a real Supabase session whose
-// clinic_membership isn't active, or whose clinic is suspended, or (V1, no
-// selector UI yet — see CLAUDE.md task scope, section 5) has more than one
-// active membership. Never billing/subscription — that's a separate,
-// future concern (see task scope, section 13).
+// src/app/login/page.tsx (?motivo=...) — either a real staff Supabase
+// session whose clinic_membership isn't active, or whose clinic is
+// suspended, or (V1, no selector UI yet) has more than one active
+// membership; or a real Patient session with no patient_user_links row at
+// all, or more than one (same "no selector yet" reasoning), or whose
+// linked clinic is suspended. Never billing/subscription — that's a
+// separate, future concern.
 const COPY: Record<RestrictedReason, { title: string; body: string }> = {
   suspendida: {
     title: "Tu clínica está suspendida",
@@ -21,6 +23,14 @@ const COPY: Record<RestrictedReason, { title: string; body: string }> = {
   multiple: {
     title: "Perteneces a más de una clínica",
     body: "Por ahora Odentia solo admite una clínica activa por cuenta desde aquí. Estamos trabajando en el selector de clínicas — contáctanos si necesitas acceso antes.",
+  },
+  "paciente-no-vinculado": {
+    title: "Tu cuenta no está vinculada a un paciente",
+    body: "Todavía no encontramos un registro de paciente vinculado a esta cuenta. Pide a tu clínica el enlace de acceso para vincular tu cuenta.",
+  },
+  "paciente-multiple": {
+    title: "Tu cuenta está vinculada a más de un paciente",
+    body: "Por ahora el Portal solo admite un paciente activo por cuenta desde aquí. Estamos trabajando en el selector — contáctanos si necesitas acceso antes.",
   },
 };
 

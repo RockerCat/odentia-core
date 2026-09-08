@@ -56,6 +56,7 @@ export default async function AgendaPreviewPage({
         initialProfessionals={fixtureProfessionals}
         initialAppointments={fixtureAppointments}
         initialPatients={fixturePatients}
+        initialAppointmentRequests={[]}
         treatmentOptions={[
           "Blanqueamiento dental",
           "Chequeo general",

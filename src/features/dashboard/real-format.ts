@@ -54,6 +54,16 @@ function slotDateTime(dayKey: string, slot: string): Date {
   return new Date(Number(yearStr), Number(monthStr) - 1, Number(dateStr), hour, minute);
 }
 
+// The same day-key + slot-label pair, resolved to a real ISO instant —
+// what every real booking surface actually writes to `starts_at`
+// (RealNewAppointmentModal's "Crear cita", the Portal's own "Solicitar
+// cita"). Shared here rather than re-derived per screen, so the instant a
+// slot means is defined in exactly one place alongside isPastSlot's own
+// comparison.
+export function slotStartIso(dayKey: string, slot: string): string {
+  return slotDateTime(dayKey, slot).toISOString();
+}
+
 // Real date + real time comparison (not just the calendar day) — a slot
 // earlier today is past even though "today" itself isn't.
 export function isPastSlot(dayKey: string, slot: string): boolean {

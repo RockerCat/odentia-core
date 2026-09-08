@@ -5,20 +5,26 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Logo } from "@/components/shell/logo";
 import { createClient } from "@/lib/supabase/client";
-import { bridgeClinicContextIntoMockSession } from "@/features/session/role-bridge";
+import { decideAuthenticatedRedirect } from "@/features/session/decide-authenticated-redirect";
+import { bridgeClinicContextIntoMockSession, bridgePatientContextIntoMockSession } from "@/features/session/role-bridge";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
-import { restrictedReasonFor } from "@/features/session/restricted-reason";
+import { resolvePatientContext } from "@/features/session/resolve-patient-context";
 import { signInWithPassword } from "@/features/session/sign-in";
 
 // Real Supabase Auth login (see src/features/session/sign-in.ts). Right
-// after signing in, resolves the user's clinic context (see
-// resolve-clinic-context.ts) both to route them correctly — /agenda, or
-// /registro if they never finished onboarding, or a safe restricted screen
-// for a suspended/inactive/multi-clinic account — and to bridge their real
-// membership role into the mock session the rest of the app still reads
-// (see role-bridge.ts) until every feature screen moves off mock data.
-// src/lib/supabase/proxy.ts also redirects away from here server-side if
-// there's already a valid real session.
+// after signing in, resolves BOTH the user's clinic context (see
+// resolve-clinic-context.ts) and their Patient Portal context (see
+// resolve-patient-context.ts) to route them correctly — /agenda for real
+// staff, /portal/citas for a real linked patient, /registro if neither
+// exists yet, or a safe restricted screen for a suspended/inactive/
+// ambiguous account (see decide-authenticated-redirect.ts for the exact
+// priority) — and to bridge a real staff membership's role into the mock
+// session the rest of the clinic-side app still reads (see role-bridge.ts)
+// until every feature screen moves off mock data; the Patient Portal has
+// no equivalent mock bridge to maintain (see portal-shell.tsx — nothing
+// there reads the mock role for a real Patient). src/lib/supabase/proxy.ts
+// also redirects away from here server-side if there's already a valid
+// real session.
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -41,28 +47,14 @@ export default function LoginPage() {
 
     try {
       const supabase = createClient();
-      const context = await resolveClinicContext(supabase);
+      const [clinicContext, patientContext] = await Promise.all([
+        resolveClinicContext(supabase),
+        resolvePatientContext(supabase),
+      ]);
 
-      if (context.status === "ok") {
-        bridgeClinicContextIntoMockSession(context);
-        router.push("/agenda");
-        return;
-      }
-      if (context.status === "no-membership") {
-        router.push("/registro");
-        return;
-      }
-      if (
-        context.status === "membership-inactive" ||
-        context.status === "clinic-suspended" ||
-        context.status === "multiple-memberships"
-      ) {
-        router.push(`/acceso-restringido?motivo=${restrictedReasonFor(context.status)}`);
-        return;
-      }
-
-      setSubmitting(false);
-      setError("No pudimos iniciar sesión. Intenta de nuevo en unos minutos.");
+      if (clinicContext.status === "ok") bridgeClinicContextIntoMockSession(clinicContext);
+      else if (patientContext.status === "ok") bridgePatientContextIntoMockSession(patientContext);
+      router.push(decideAuthenticatedRedirect(clinicContext, patientContext));
     } catch {
       setSubmitting(false);
       setError("No pudimos iniciar sesión. Intenta de nuevo en unos minutos.");
