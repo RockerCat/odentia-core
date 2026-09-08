@@ -1,6 +1,7 @@
 import { type EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { resolveSafeNext } from "./resolve-safe-next";
 
 // Official Supabase + Next.js App Router pattern for completing an email
 // confirmation server-side (Route Handlers, unlike Server Components, are
@@ -24,10 +25,12 @@ export async function GET(request: NextRequest) {
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
   const code = searchParams.get("code");
-  const rawNext = searchParams.get("next");
-  // Only ever a same-origin relative path — never follow an attacker- or
-  // email-client-supplied absolute URL out of this app.
-  const next = rawNext && rawNext.startsWith("/") ? rawNext : "/registro";
+  // resolveSafeNext accepts both an already-relative path AND a
+  // same-origin absolute URL — the Confirm Signup template embeds
+  // `.RedirectTo` (GoTrue's own echo of signUpAccount()'s emailRedirectTo)
+  // directly as `next=`, see that function's own comment. Never follows an
+  // attacker- or email-client-supplied absolute URL to a different origin.
+  const next = resolveSafeNext(searchParams.get("next"), origin);
 
   const supabase = await createClient();
 
