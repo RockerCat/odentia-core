@@ -71,6 +71,33 @@ function decidePatientRedirect(context: PatientContext): string | null {
   return `/acceso-restringido?motivo=${restrictedReasonForPatient(context.status)}`;
 }
 
+// Supabase's default hosted email template ({{ .ConfirmationURL }})
+// doesn't thread emailRedirectTo through for a PKCE-flow signup (see
+// signUpAccount(), src/features/onboarding/api.ts) — without Custom SMTP
+// we can't hand-edit that template yet, so the confirmation link lands the
+// browser on Site URL itself with the PKCE `code` appended (`/?code=...`)
+// instead of `/auth/confirm`, where the real exchangeCodeForSession()
+// exchange actually lives. This is the minimal, safe fallback: hand the
+// SAME code on to the real handler, server-side, before the landing page
+// ever renders — never a second exchange implementation, never rewriting
+// /auth/confirm/route.ts itself (it already handles a bare `code` +
+// `next` exactly like this).
+//
+// `next` is deliberately NEVER read from the incoming request — there is
+// nothing legitimate to read it from here (Supabase's own redirect to `/`
+// only ever carries `code`, nothing else) — always the real signup's own
+// default, `/registro`, a literal hardcoded destination. Open-redirect-
+// proof by construction, not by validation: there is no external input
+// this function could forward even if it wanted to.
+//
+// A pure function (no request/response objects) so this exact decision is
+// unit-testable without mocking NextRequest/Supabase — see
+// decide-root-code-redirect.test.ts.
+export function decideRootCodeRedirect(code: string | null): string | null {
+  if (!code) return null;
+  return `/auth/confirm?code=${encodeURIComponent(code)}&next=/registro`;
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -118,6 +145,12 @@ export async function updateSession(request: NextRequest) {
     redirectTo = decideClinicRedirect(await resolveClinicContext(supabase));
   } else if (isPrivatePatientPath(pathname)) {
     redirectTo = decidePatientRedirect(await resolvePatientContext(supabase));
+  } else if (pathname === "/") {
+    // Only ever activates when Supabase's own redirect actually carried a
+    // `code` — a plain visit to "/" (no query params) falls through this
+    // branch with redirectTo still null, same as before this existed, so
+    // the landing page renders completely unmodified either way.
+    redirectTo = decideRootCodeRedirect(request.nextUrl.searchParams.get("code"));
   }
 
   if (redirectTo) {
