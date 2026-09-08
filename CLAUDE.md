@@ -118,6 +118,16 @@ invitation is a real, tokenized link an admin/assistant copies and shares
 manually (see Communications below); never claim or build toward an
 "enviado" state that isn't true.
 
+`proxy.ts` also recovers a stray PKCE `code` landing on `/` — Supabase's
+default confirm-signup email template doesn't propagate `redirect_to` for
+a PKCE-flow signup — by forwarding it server-side to `/auth/confirm` with
+a hardcoded, never-externally-supplied `next=/registro`; never a second
+PKCE exchange implementation. This resumes a plain signup correctly, but
+NOT an Equipo/Patient invitation signup hitting the same bug (it has no
+way to recover the invitation's own destination) — see PROJECT_STATUS.md's
+QA ONLY/PRE-RELEASE for that open item before assuming invitation signup
+works end to end with a fresh account.
+
 The real resolved clinic role (never name/avatar) is also bridged into
 the legacy mock `src/features/auth/session.ts` / `RoleContext` store
 (`src/features/session/role-bridge.ts`), so the small set of screens

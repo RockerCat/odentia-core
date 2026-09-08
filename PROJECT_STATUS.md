@@ -41,7 +41,10 @@ Detailed per-vertical implementation notes are further below.
   (`/registro`, 3-step wizard), route protection (`src/lib/supabase/proxy.ts`, no
   dev bypass). Staff and Patient invitations are both real (real tokens, real
   acceptance flows) — shared manually as a copyable link; **no automated email**
-  exists yet for either.
+  exists yet for either. `proxy.ts` also recovers a stray PKCE `code` landing on
+  `/` (Supabase's default confirm-signup template drops `redirect_to`) for plain
+  signup — **does not yet fix the same bug for invitation signup**, see
+  Autenticación below and QA ONLY/PRE-RELEASE.
 - **Onboarding** — real 3-step wizard creating a real Supabase Auth user, `clinics`
   row (with sede principal + map/geocoding + logo), and the founding `clinic_admin`
   membership.
@@ -165,12 +168,33 @@ treat a failure found here as a bug to fix, not evidence the feature doesn't exi
       already had). No longer a QA item; verified by re-running
       `qa-clinical-notes-check.mjs` (still green — staff behavior unchanged)
       plus `tsc`/`eslint`.
-- [ ] Node runtime: local/CI currently run on Node 20, which `@supabase/supabase-js`
-      already logs as deprecated (`Node.js 20 and below are deprecated`). Not
-      currently breaking anything — revisit the Node 22 upgrade before or shortly
-      after release, whichever is lower-risk operationally.
+- [x] **Node runtime:** fixed during the pre-release QA Master — `package.json`
+      now pins `"engines": { "node": ">=22.12.0" }` (the highest floor among
+      declared deps: `@supabase/*` need `>=22.0.0`, `puppeteer-core`/
+      `@puppeteer/browsers` need `>=22.12.0`) and `.nvmrc` pins `22` for local
+      `nvm use`. Validated for real under Node 22.23.2 (installed via `nvm`):
+      `npm ci`, `tsc --noEmit`, `eslint`, and `npm run build` all clean. Vercel's
+      own Project Settings → Node.js Version should still be confirmed to match
+      (out-of-repo, can't be verified from here).
 - [x] **Migrations gate:** `supabase migration list --linked` re-confirmed during
       the pre-release QA Master — 47/47 in sync, `local` = `remote`.
+- [ ] **P1 — Equipo/Patient invitation signup landing on `/registro` instead of
+      back on the invitation.** Found during a second pre-release QA Master
+      audit pass. If an invited user's confirmation email hits the known PKCE
+      template bug (see Autenticación's "PKCE `/?code=` fallback" above), she
+      lands on the onboarding wizard instead of `/invitacion/[token]` or
+      `/portal/invitacion/[token]` — worse for a Patient (sees "create your
+      clinic" UI). Not fixed — needs Custom SMTP + an edited email template, or
+      an explicitly authorized decision on persisting the invitation token
+      client-side (see that same note for why this wasn't built unilaterally).
+      **Workaround for manual QA in the meantime:** have the invited
+      Dentist/Assistant/Patient log in with an already-confirmed account BEFORE
+      opening the invitation link, skipping the fresh-signup path that triggers
+      the bug.
+- [ ] Forgot/reset password: confirm whether `resetPasswordForEmail()`'s own
+      email template suffers the same `redirect_to` drop as the confirm-signup
+      template — different template, not reproduced/tested with a real password
+      reset yet.
 
 ---
 
@@ -190,6 +214,31 @@ touched; if code and this section ever disagree, the code wins (see CLAUDE.md).
 - Forgot/reset password: real `resetPasswordForEmail()`/`updateUser()` flow
   (`/forgot-password`, `/reset-password`), never reveals whether a submitted email
   has an account.
+- **PKCE `/?code=` fallback** (`decideRootCodeRedirect`, `src/lib/supabase/proxy.ts`)
+  — Supabase's default hosted "Confirm signup" email template
+  (`{{ .ConfirmationURL }}`) doesn't propagate `redirect_to` for a PKCE-flow
+  signup (this app forces PKCE via `@supabase/ssr`) — reproduced with a real
+  signup: the confirmation link lands on Site URL itself with the code appended
+  (`/?code=...`) instead of `/auth/confirm`. `proxy.ts` now recognizes a `/`
+  request carrying a `code` and forwards it server-side to
+  `/auth/confirm?code=<code>&next=/registro` — never a second PKCE exchange
+  implementation (`/auth/confirm/route.ts` untouched), `next` always the
+  hardcoded literal `/registro`, never read from the request (open-redirect-proof
+  by construction, not by validation). Covered by
+  `decide-root-code-redirect.test.ts`.
+  **Known limitation, not fixed:** `/invitacion/[token]` and
+  `/portal/invitacion/[token]` reuse the same `signUpAccount()` and hit the
+  identical bug, but this fallback can't recover their intended destination —
+  the invitation token only exists in that URL, and there's no session/
+  localStorage/cookie state to reconstruct it from (audited, confirmed absent).
+  An affected invited user lands on `/registro`'s onboarding wizard instead of
+  back on their invitation; for a Patient this is materially wrong (she'd see
+  "create your clinic" UI instead of accepting portal access). Fixing this needs
+  either Custom SMTP + an edited confirm-signup template (explicit
+  `{{ .TokenHash }}`/`{{ .RedirectTo }}` instead of `{{ .ConfirmationURL }}`), or
+  an explicitly authorized decision to persist the invitation token client-side
+  across the redirect — do not build either without being asked. See QA
+  ONLY/PRE-RELEASE.
 - **Compatibility bridge**: the real resolved clinic role (never name/avatar) is
   written into the legacy mock `src/features/auth/session.ts` / `RoleContext`
   store (`src/features/session/role-bridge.ts`) so the remaining still-mock
