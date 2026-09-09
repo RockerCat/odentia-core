@@ -118,15 +118,22 @@ invitation is a real, tokenized link an admin/assistant copies and shares
 manually (see Communications below); never claim or build toward an
 "enviado" state that isn't true.
 
-`proxy.ts` also recovers a stray PKCE `code` landing on `/` — Supabase's
-default confirm-signup email template doesn't propagate `redirect_to` for
-a PKCE-flow signup — by forwarding it server-side to `/auth/confirm` with
-a hardcoded, never-externally-supplied `next=/registro`; never a second
-PKCE exchange implementation. This resumes a plain signup correctly, but
-NOT an Equipo/Patient invitation signup hitting the same bug (it has no
-way to recover the invitation's own destination) — see PROJECT_STATUS.md's
-QA ONLY/PRE-RELEASE for that open item before assuming invitation signup
-works end to end with a fresh account.
+`proxy.ts` also recovers a stray PKCE `code` landing on `/` — a
+defense-in-depth safety net for when a confirm-signup email's
+`redirect_to` doesn't propagate — by forwarding it server-side to
+`/auth/confirm` with a hardcoded, never-externally-supplied
+`next=/registro`; never a second PKCE exchange implementation. Confirm
+Signup/Reset Password/Equipo-invitation/Patient-invitation emails are all
+Real-E2E-verified in production to preserve their own real destination
+through email confirmation — see PROJECT_STATUS.md's "REAL E2E
+STABILIZATION" checkpoint.
+
+`proxy.ts`'s clinic-path gate also distinguishes a genuinely new,
+unlinked account from an authenticated, linked Patient: a Patient with no
+staff clinic membership hitting a staff-only route (direct URL, hard
+refresh, bookmark) is redirected to `/portal`, never `/registro`'s
+onboarding wizard — `/registro` stays reserved for someone who is
+actually neither staff nor a linked Patient.
 
 The real resolved clinic role (never name/avatar) is also bridged into
 the legacy mock `src/features/auth/session.ts` / `RoleContext` store
@@ -661,6 +668,22 @@ When starting a new task:
 3. Implement only what is needed for the current milestone.
 
 4. Do not anticipate future phases unless explicitly requested.
+
+---
+
+# Functional Freeze (current phase)
+
+Odentia Core is in Functional Freeze during full manual QA — see
+PROJECT_STATUS.md's "REAL E2E STABILIZATION" checkpoint for what's been
+verified and what's left.
+
+Do not add new MVP functionality unless explicitly requested.
+
+Fix bugs/regressions found during QA surgically, with focused regression
+coverage — same discipline as every fix already made to reach this
+checkpoint.
+
+Avoid broad refactors or unrelated cleanup while this freeze is in effect.
 
 ---
 

@@ -2,13 +2,13 @@
 
 # Odentia Core
 
-**Last Updated:** 2026-09-08
+**Last Updated:** 2026-09-09
 
 ---
 
 # Estado actual
 
-**FEATURE COMPLETE — MVP scope.**
+**MVP FEATURE COMPLETE + REAL E2E STABILIZED — FUNCTIONAL FREEZE / MANUAL QA.**
 
 Every feature vertical in the MVP scope (see "REAL / COMPLETO PARA MVP" below) runs
 on real, tenant-isolated Supabase data — Auth, Postgres, RLS, Storage — with an
@@ -17,18 +17,131 @@ Phase 1 mock data are the ones explicitly out of scope for this MVP (see "OUT OF
 SCOPE ACTUAL" below): Mi Suscripción, Superadmin/`/admin`, and the Patient Portal's
 own Mi salud dental.
 
-**Feature Complete ≠ Production Ready.** This milestone means every vertical is
-implemented and internally verified by reading the code/migrations/RLS directly —
-not that every flow has been exercised end-to-end with real, independent accounts
-(a second real staff account accepting an invitation, a real Patient session, two
-Dentists in the same clinic, etc.). That's exactly what happens next: QA /
-stabilization / release readiness — see "QA ONLY / PRE-RELEASE" below for the
-consolidated checklist, and treat it as the actual next phase, not a footnote.
+**New checkpoint (this update): Real E2E Stabilization is done.** All 7 critical
+production journeys were exercised for real against `https://odentia.co` — real
+Supabase Auth, real Resend emails, real production DB writes, real RLS, real
+production navigation — never `/dev-qa/*` routes or mocked services as PASS
+evidence. Five real P0/P1 bugs were found this way (two of which no unit or
+fixture test could ever have caught) and are fixed and verified live in
+production, plus one real, non-security gap (F001). See "REAL E2E STABILIZATION"
+below for the full journey matrix, fixes, and verification results.
+
+**Feature Complete ≠ Production Ready — this distinction still stands.** Real E2E
+Stabilization means the CRITICAL production journeys are proven end-to-end with
+real, independent accounts; it does not mean every possible flow/edge case has
+been exercised (see "REMAINING MANUAL QA" below — a second Patient account for
+isolation, a second Dentist, signed-document access, etc.). That's exactly what
+happens next: **Functional Freeze — full manual QA, systematically by role**
+(Clinic Admin → Dentist → Assistant → Patient).
 
 Historical framing, kept for continuity: **Phase 1** (below) was the mock,
 navigable-only prototype. **Phase 2** was converting it to real Supabase data, one
-vertical at a time, never redesigning the approved UI. Phase 2 is done. What's next
-is QA/stabilization — not more building — before this is production-ready.
+vertical at a time, never redesigning the approved UI. **Phase 3** was Real E2E
+Stabilization — proving the critical journeys work end to end in production, not
+just in code. Phase 3 is done. **Phase 4 (current)** is full manual QA by role —
+see "Success Criteria" below.
+
+---
+
+# REAL E2E STABILIZATION — Functional Freeze Checkpoint (2026-09-09)
+
+Production target: `https://odentia.co`. Every journey below drove the real
+deployed app with real browser automation — never `/dev-qa/*`, never a mocked
+Supabase client — with real Resend emails checked and pasted back by a human for
+every confirmation/reset/invitation link (browser automation has no inbox
+access). All 7 PASS.
+
+| Journey | Result |
+|---|---|
+| A — Fresh Clinic Admin (signup → real email → onboarding → `/agenda`, hard refresh, new tab, empty-clinic state) | ✅ PASS |
+| B — Forgot / Reset Password (real email → real password change → real re-login) | ✅ PASS |
+| C — Dentist Invitation (real invite → real signup → real email preserving context → accept → deactivate/reactivate → reuse rejected) | ✅ PASS |
+| D — Assistant Invitation (same real path, role=assistant, zero own professional_profile, correctly scoped permissions) | ✅ PASS |
+| E — Patient Portal Invitation (real patient → real invite → real signup → real email preserving context → Portal loads) | ✅ PASS |
+| F — Appointment Request → Staff Acceptance (real request, real acceptance RPC, exactly 1 appointment, double-accept rejected) | ✅ PASS |
+| G — Clinical Lifecycle Smoke (real appointment → Iniciar atención → Finalizar atención → completed, encounter finalized before the Cita closes, immutability confirmed) | ✅ PASS |
+
+## Production stabilization fixes found through Real E2E (all fixed, deployed, reverified live)
+
+- **Blank `/agenda` on a fresh hard navigation after login** — `useRouteGuard`'s
+  session/role reads raced React's own SSR-hydration-matching render, firing a
+  premature redirect for an already-authenticated user. `src/components/shell/
+  use-route-guard.ts` now gates the redirect decision on actual hydration.
+  Regression: `use-route-guard.test.ts`.
+- **Authenticated-context self-healing** — the mock session bridge was only ever
+  written from `/login`'s own form submit; a user who reached a gated page
+  without ever submitting that form (e.g. straight from onboarding) never got
+  bridged and saw a permanently blank shell, with no amount of refreshing fixing
+  it. `useRouteGuard` now re-resolves and bridges the real context itself before
+  concluding "not authenticated". `src/features/session/role-bridge.ts`
+  (`bridgeAuthenticatedContext`), `src/app/login/page.tsx`. Regression:
+  `role-bridge.test.ts`.
+- **Recovery redirect fallback** — real Reset Password emails landed on
+  `/registro`'s "already onboarded" dead end instead of `/reset-password` (the
+  Redirect-URL-allow-list collapse below, with the wrong fallback destination
+  for the recovery flow specifically). `src/app/auth/confirm/
+  resolve-safe-next.ts`/`route.ts` now take an explicit per-flow fallback.
+  Regression: `resolve-safe-next.test.ts` (+2).
+- **Team invitation RPC ambiguous-column failure** — `accept_clinic_invitation`
+  failed unconditionally with Postgres error 42702 ("column reference clinic_id
+  is ambiguous") — **100% of team invitation acceptances were broken** before
+  this fix. Migration `20260909020000_fix_accept_clinic_invitation_ambiguous_clinic_id.sql`.
+- **Patient access invitation RPC ambiguous-column failures** —
+  `create_patient_access_invitation` failed the same way, twice over
+  (`patient_id`, then `expires_at` — the second only surfaced on the very next
+  real attempt after the first partial fix). Migrations `20260909030000` +
+  `20260909031500`. A dedicated audit of every `RETURNS TABLE` function across
+  all of `supabase/migrations/` confirmed these two functions were the only
+  instances of this bug class in the whole schema.
+- **F001 — Patient accessing staff routes** — an authenticated, linked Patient
+  hitting a staff-only route (`/agenda` etc.) was redirected to `/registro`'s
+  onboarding wizard instead of `/portal` — never a security issue (no clinic
+  data was ever exposed to her), just the wrong destination.
+  `src/lib/supabase/proxy.ts`'s `decideClinicRedirect` now takes an
+  `isLinkedPatient` flag; every other status branch (`ok`, `unauthenticated`,
+  `membership-inactive`, `clinic-suspended`, `multiple-memberships`) is
+  provably unaffected. Regression: `decide-clinic-redirect.test.ts`. **CLOSED
+  in production, commit `104843a`** — verified live with a real linked Patient
+  (`/agenda` → `/portal` → resolves to `/portal/citas`, its own pre-existing
+  behavior) and a real Clinic Admin (staff access, including a hard refresh,
+  unchanged).
+
+Also root-caused along the way, not a code fix: the Supabase **Redirect URLs**
+allow-list was missing the `www.` subdomain the app actually serves from
+(`https://www.odentia.co/**`) — every confirmation/recovery/invitation email's
+`redirect_to` was silently collapsing to the bare Site URL until this was added
+in the dashboard. Once corrected, Confirm Signup/Reset Password/Equipo/Patient
+invitation emails all preserve their real destination end to end.
+
+## Final verification
+
+- **179/179 tests PASS**
+- TypeScript clean (`tsc --noEmit`)
+- ESLint clean (real application code)
+- Production build clean (`npm run build`)
+- 50/50 migrations in sync (`supabase migration list --linked`)
+- F001 production commit: `104843a`
+- Production behavior reverified live with real Clinic Admin, Dentist,
+  Assistant, and Patient accounts after every fix
+
+## Functional Freeze Policy (current phase)
+
+Odentia Core is now in **Functional Freeze** for the duration of manual QA:
+
+- Do not add new MVP functionality unless explicitly requested.
+- Bugs/regressions found during QA are fixed surgically, with focused
+  regression coverage — same discipline as every fix above.
+- Avoid broad refactors or unrelated cleanup while the freeze is in effect.
+
+## Next phase: Full Manual QA, systematically by role
+
+1. Clinic Admin
+2. Dentist
+3. Assistant
+4. Patient
+
+See "REMAINING MANUAL QA" below for what Real E2E Stabilization did NOT
+independently re-verify and still needs a human pass.
 
 ---
 
@@ -39,12 +152,14 @@ Detailed per-vertical implementation notes are further below.
 
 - **Auth** — real Supabase Auth: login/logout, forgot/reset password, onboarding
   (`/registro`, 3-step wizard), route protection (`src/lib/supabase/proxy.ts`, no
-  dev bypass). Staff and Patient invitations are both real (real tokens, real
-  acceptance flows) — shared manually as a copyable link; **no automated email**
-  exists yet for either. `proxy.ts` also recovers a stray PKCE `code` landing on
-  `/` (Supabase's default confirm-signup template drops `redirect_to`) for plain
-  signup — **does not yet fix the same bug for invitation signup**, see
-  Autenticación below and QA ONLY/PRE-RELEASE.
+  dev bypass, and a real Patient with no staff membership is routed to `/portal`,
+  never `/registro`'s onboarding wizard — see F001 under "REAL E2E
+  STABILIZATION"). Staff and Patient invitations are both real (real tokens,
+  real acceptance flows) — shared manually as a copyable link; **no automated
+  invitation email** exists yet for either, but the confirmation email itself
+  (Custom SMTP via Resend) is real and Real-E2E-verified end to end for all
+  three signup contexts (`/registro`, Equipo, Patient Portal) — see "REAL E2E
+  STABILIZATION" above and Autenticación below.
 - **Onboarding** — real 3-step wizard creating a real Supabase Auth user, `clinics`
   row (with sede principal + map/geocoding + logo), and the founding `clinic_admin`
   membership.
@@ -128,40 +243,51 @@ built for this MVP:
 
 ---
 
-# QA ONLY / PRE-RELEASE
+# REMAINING MANUAL QA (next phase — see Functional Freeze above)
 
-Implemented and verified by reading the code/migrations/RLS directly. **Not** yet
-exercised end-to-end with independent real accounts — this is exactly what the
-next phase (Prompt Master de QA) is for. None of these are P0/P1 feature gaps;
-treat a failure found here as a bug to fix, not evidence the feature doesn't exist.
+Real E2E Stabilization (see above) exercised the 7 critical journeys directly
+against production with real, independent accounts. The items below are what it
+did **not** independently re-verify — genuine gaps for the upcoming systematic
+manual QA pass, not known bugs. None of these are P0/P1 feature gaps; treat a
+failure found here as a bug to fix, not evidence the feature doesn't exist.
 
-- [ ] Equipo: invite → accept with a second real account (Dentist or Assistant).
 - [ ] Clinic Admin with no `professional_profile` → self-creates one via
-      `/mi-perfil-profesional` or `/clinica` in a real browser session.
+      `/mi-perfil-profesional` or `/clinica` in a real browser session (the
+      Real E2E admin deliberately chose the pure-admin onboarding path, never
+      exercising this).
 - [ ] Reportes with more than one real professional in the same clinic (filter by
-      professional).
-- [ ] Patient Portal with a real, independent Patient login (not just reading the
-      code path).
-- [ ] Staff generates a Patient Portal invitation → patient accepts via a real
-      account → "Acceso al Portal activo" shows back on the staff side.
-- [ ] Solicitud de Cita: create (Patient) → accept (staff) → confirm exactly 1
-      `appointments` row is created and the request is linked.
-- [ ] Solicitud de Cita: reject → confirm no `appointments` row is ever created.
-- [ ] Solicitud de Cita: double-accept / double-reject race — confirm the second
-      call is rejected, never a duplicate Cita.
-- [ ] Patient/clinic isolation: a Patient linked to clinic A can never read/act on
-      anything in clinic B; a Patient can never read another patient's data.
+      professional) — only one Dentist existed in the Real E2E clinic.
+- [ ] Patient/clinic isolation with a SECOND real patient account: a Patient
+      linked to clinic A can never read/act on anything in clinic B; a Patient
+      can never read another patient's data. (Real E2E used one patient account,
+      which only proves she sees her OWN data — not that a second patient's is
+      unreachable.)
 - [ ] Cross-dentist permissions: a Dentist can never see/act on another Dentist's
-      own-scoped Citas or Solicitudes in the same clinic.
+      own-scoped Citas or Solicitudes in the same clinic (only one Dentist
+      existed in the Real E2E clinic).
 - [ ] Clinical documents: a real Patient session can open a signed URL for her own
-      document, and only her own.
-- [ ] Patient confirms attendance (`scheduled` → `confirmed`) from a real Portal
-      session.
+      document, and only her own (no test document existed in the Real E2E run).
 - [ ] Availability/absences with a second real Dentist configured differently from
       the first — confirm neither's rules leak into the other's slots.
 - [ ] Full arrival flow with a real session: Paciente llegó → Sala de espera →
       Iniciar atención → Finalizar atención, confirm the Cita and the resulting
-      Atención end up correct.
+      Atención end up correct. (Real E2E's Journey G smoke-tested Iniciar →
+      Finalizar directly, skipping the optional arrival sub-steps — see
+      CLAUDE.md's own note that arrival is never a prerequisite.)
+
+## Already resolved (kept for history — do not re-open)
+
+- [x] Equipo/Patient invitation acceptance with a real second account —
+      **PASS**, Real E2E Stabilization, Journeys C/D/E.
+- [x] Patient Portal with a real, independent Patient login — **PASS**,
+      Real E2E Stabilization, Journey E.
+- [x] Solicitud de Cita: create (Patient) → accept (staff) → confirm exactly 1
+      `appointments` row is created and the request is linked; double-accept
+      rejected, never a duplicate Cita — **PASS**, Real E2E Stabilization,
+      Journey F, confirmed via direct authenticated REST queries against the
+      real DB, not just the UI.
+- [x] Patient confirms attendance / full request lifecycle from a real Portal
+      session — **PASS**, Real E2E Stabilization, Journey F.
 - [x] `ClinicalNotesModal` showing "Sin asignar" for a real Patient session —
       **fixed during the pre-release QA Master** (was a duplicated author
       lookup that never used the Patient-aware fallback every other tab
@@ -176,25 +302,22 @@ treat a failure found here as a bug to fix, not evidence the feature doesn't exi
       `npm ci`, `tsc --noEmit`, `eslint`, and `npm run build` all clean. Vercel's
       own Project Settings → Node.js Version should still be confirmed to match
       (out-of-repo, can't be verified from here).
-- [x] **Migrations gate:** `supabase migration list --linked` re-confirmed during
-      the pre-release QA Master — 47/47 in sync, `local` = `remote`.
-- [ ] **P1 — Equipo/Patient invitation signup landing on `/registro` instead of
-      back on the invitation.** Found during a second pre-release QA Master
-      audit pass. If an invited user's confirmation email hits the known PKCE
-      template bug (see Autenticación's "PKCE `/?code=` fallback" above), she
-      lands on the onboarding wizard instead of `/invitacion/[token]` or
-      `/portal/invitacion/[token]` — worse for a Patient (sees "create your
-      clinic" UI). Not fixed — needs Custom SMTP + an edited email template, or
-      an explicitly authorized decision on persisting the invitation token
-      client-side (see that same note for why this wasn't built unilaterally).
-      **Workaround for manual QA in the meantime:** have the invited
-      Dentist/Assistant/Patient log in with an already-confirmed account BEFORE
-      opening the invitation link, skipping the fresh-signup path that triggers
-      the bug.
-- [ ] Forgot/reset password: confirm whether `resetPasswordForEmail()`'s own
-      email template suffers the same `redirect_to` drop as the confirm-signup
-      template — different template, not reproduced/tested with a real password
-      reset yet.
+- [x] **Migrations gate:** `supabase migration list --linked` re-confirmed
+      during Real E2E Stabilization — 50/50 in sync, `local` = `remote`.
+- [x] **Equipo/Patient invitation signup landing on `/registro` instead of back
+      on the invitation.** Was P1. **Fixed:** root cause was the Supabase
+      Redirect URLs allow-list missing the `www.` subdomain the app actually
+      serves from — once added, real invitation links (Journeys C/D/E)
+      preserve their destination through the real confirmation email,
+      verified live. See "REAL E2E STABILIZATION" above.
+- [x] Forgot/reset password: confirmed `resetPasswordForEmail()`'s own email
+      template DID suffer the same `redirect_to` collapse as confirm-signup,
+      and is now fixed (recovery falls back to `/reset-password`, never
+      `/registro`'s onboarding wizard). See "REAL E2E STABILIZATION" above
+      (Journey B).
+- [x] **F001 — Patient accessing a staff route redirected to `/registro`
+      instead of `/portal`.** Fixed and closed in production, commit
+      `104843a`. See "REAL E2E STABILIZATION" above.
 
 ---
 
@@ -215,30 +338,33 @@ touched; if code and this section ever disagree, the code wins (see CLAUDE.md).
   (`/forgot-password`, `/reset-password`), never reveals whether a submitted email
   has an account.
 - **PKCE `/?code=` fallback** (`decideRootCodeRedirect`, `src/lib/supabase/proxy.ts`)
-  — Supabase's default hosted "Confirm signup" email template
-  (`{{ .ConfirmationURL }}`) doesn't propagate `redirect_to` for a PKCE-flow
-  signup (this app forces PKCE via `@supabase/ssr`) — reproduced with a real
-  signup: the confirmation link lands on Site URL itself with the code appended
-  (`/?code=...`) instead of `/auth/confirm`. `proxy.ts` now recognizes a `/`
-  request carrying a `code` and forwards it server-side to
-  `/auth/confirm?code=<code>&next=/registro` — never a second PKCE exchange
-  implementation (`/auth/confirm/route.ts` untouched), `next` always the
-  hardcoded literal `/registro`, never read from the request (open-redirect-proof
-  by construction, not by validation). Covered by
+  — a defense-in-depth safety net for a stray PKCE `code` landing bare on `/`;
+  forwards it server-side to `/auth/confirm?code=<code>&next=/registro`, never
+  a second PKCE exchange implementation, `next` always the hardcoded literal
+  `/registro` (open-redirect-proof by construction). Covered by
   `decide-root-code-redirect.test.ts`.
-  **Known limitation, not fixed:** `/invitacion/[token]` and
-  `/portal/invitacion/[token]` reuse the same `signUpAccount()` and hit the
-  identical bug, but this fallback can't recover their intended destination —
-  the invitation token only exists in that URL, and there's no session/
-  localStorage/cookie state to reconstruct it from (audited, confirmed absent).
-  An affected invited user lands on `/registro`'s onboarding wizard instead of
-  back on their invitation; for a Patient this is materially wrong (she'd see
-  "create your clinic" UI instead of accepting portal access). Fixing this needs
-  either Custom SMTP + an edited confirm-signup template (explicit
-  `{{ .TokenHash }}`/`{{ .RedirectTo }}` instead of `{{ .ConfirmationURL }}`), or
-  an explicitly authorized decision to persist the invitation token client-side
-  across the redirect — do not build either without being asked. See QA
-  ONLY/PRE-RELEASE.
+- **Confirm Signup / Reset Password templates use `{{ .TokenHash }}`/
+  `{{ .RedirectTo }}` explicitly** (Custom SMTP via Resend is configured).
+  `emailRedirectTo` (`signUpAccount()`/`requestPasswordReset()`) sends the real
+  destination directly rather than a query string the app built;
+  `resolveSafeNext()` (`src/app/auth/confirm/resolve-safe-next.ts`) turns
+  whatever `.RedirectTo` resolves to back into a safe relative path, with a
+  per-flow fallback (`/registro` for signup, `/reset-password` for recovery —
+  landing a recovery link on `/registro`'s "already onboarded" screen was a
+  real bug, fixed). Covered by `resolve-safe-next.test.ts`.
+  **Fixed during Real E2E Stabilization:** the actual root cause of every
+  confirmation/recovery/invitation email losing its destination was the
+  Supabase Redirect URLs allow-list missing the `www.` subdomain the app
+  actually serves from (`https://www.odentia.co/**`) — once added in the
+  dashboard, `/registro`, `/invitacion/[token]`, and `/portal/invitacion/[token]`
+  all preserve their real destination through a real confirmation email,
+  verified live with real accounts. See "REAL E2E STABILIZATION" above.
+- **F001 fix** — `proxy.ts`'s clinic-path gate (`decideClinicRedirect`)
+  distinguishes a genuinely new, unlinked account from an authenticated,
+  linked Patient: a Patient with no staff clinic membership hitting a
+  staff-only route is redirected to `/portal`, never `/registro`'s onboarding
+  wizard. Covered by `decide-clinic-redirect.test.ts`. Closed in production,
+  commit `104843a`.
 - **Compatibility bridge**: the real resolved clinic role (never name/avatar) is
   written into the legacy mock `src/features/auth/session.ts` / `RoleContext`
   store (`src/features/session/role-bridge.ts`) so the remaining still-mock
@@ -652,11 +778,18 @@ polished, mock data felt realistic, the prototype was deployed and demonstrable.
 Every MVP-scope feature vertical runs on real, tenant-isolated Supabase data with
 an honest empty state everywhere real data doesn't exist yet.
 
-## Phase 3 — QA / Stabilization / Release Readiness (current)
+## Phase 3 — Real E2E Stabilization (met)
 
-Complete when every item in "QA ONLY / PRE-RELEASE" above has been exercised with
-real, independent accounts and any bugs found are fixed — not when new features
-are added.
+All 7 critical production journeys (A–G) exercised end to end against real
+production infrastructure with real, independent accounts; every bug found this
+way is fixed and verified live. See "REAL E2E STABILIZATION" above.
+
+## Phase 4 — Functional Freeze / Full Manual QA (current)
+
+Complete when every item in "REMAINING MANUAL QA" above has been exercised with
+real, independent accounts (including a second account per role where isolation
+matters) and any bugs found are fixed — not when new features are added. See
+"Functional Freeze Policy" above for the rules in effect during this phase.
 
 ---
 
@@ -694,8 +827,9 @@ above (which lists near-term MVP-boundary items already reasoned about):
 
 # Next Phase
 
-QA / stabilization / release readiness (see "QA ONLY / PRE-RELEASE" above) is the
-actual next phase — not more feature building. After that:
+Full manual QA by role (Clinic Admin → Dentist → Assistant → Patient — see
+"Functional Freeze Policy" above) is the actual next phase — not more feature
+building. Only after that:
 
 - `/portal/salud` (Mi salud dental) real-data conversion.
 - Patient-initiated reprogramación/cancelación proposal lifecycle.
