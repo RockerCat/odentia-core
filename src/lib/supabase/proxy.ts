@@ -52,10 +52,23 @@ function isPrivatePatientPath(pathname: string): boolean {
   return PRIVATE_PATIENT_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
-function decideClinicRedirect(context: ClinicContext): string | null {
+// F001 fix: "no-membership" used to mean one thing only — a genuinely new
+// account that still needs onboarding — and always sent them to
+// /registro. But a real, authenticated PATIENT hitting a staff-only route
+// (direct URL, hard refresh, bookmark) *also* has no clinic membership —
+// she was never meant to have one — so she was landing on /registro's own
+// onboarding wizard, about to create a brand-new clinic, instead of being
+// sent back to her own Portal. Not a security hole (she never sees clinic
+// data), just the wrong destination. `isLinkedPatient` disambiguates the
+// two: only ever computed by the caller when status is actually
+// "no-membership" (see updateSession below), so a real staff member's
+// request never pays for an extra resolvePatientContext() lookup it
+// doesn't need. A genuinely unlinked, non-staff account (isLinkedPatient
+// stays false) keeps landing on /registro exactly as before.
+export function decideClinicRedirect(context: ClinicContext, isLinkedPatient: boolean): string | null {
   if (context.status === "ok") return null;
   if (context.status === "unauthenticated") return "/login";
-  if (context.status === "no-membership") return "/registro";
+  if (context.status === "no-membership") return isLinkedPatient ? "/portal" : "/registro";
   return `/acceso-restringido?motivo=${restrictedReasonFor(context.status)}`;
 }
 
@@ -142,7 +155,12 @@ export async function updateSession(request: NextRequest) {
       redirectTo = decideAuthenticatedRedirect(clinicContext, patientContext);
     }
   } else if (isPrivateClinicPath(pathname)) {
-    redirectTo = decideClinicRedirect(await resolveClinicContext(supabase));
+    const clinicContext = await resolveClinicContext(supabase);
+    // Only resolved when it can actually change the outcome — see
+    // decideClinicRedirect's own comment.
+    const isLinkedPatient =
+      clinicContext.status === "no-membership" && (await resolvePatientContext(supabase)).status === "ok";
+    redirectTo = decideClinicRedirect(clinicContext, isLinkedPatient);
   } else if (isPrivatePatientPath(pathname)) {
     redirectTo = decidePatientRedirect(await resolvePatientContext(supabase));
   } else if (pathname === "/") {
