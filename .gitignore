@@ -38,3 +38,6 @@ coverage
 # Typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# E2E smoke QA scratch (browser profile, screenshots, one-off scripts)
+.e2e-scratch/
