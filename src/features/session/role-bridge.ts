@@ -48,3 +48,13 @@ export function bridgePatientContextIntoMockSession(_context: Extract<PatientCon
 export function clearBridgedMockSession(): void {
   clearSession();
 }
+
+// Shared by /login's own form submit AND use-route-guard.ts's self-heal
+// (see that file's own comment on why a self-heal exists at all) so the
+// "which bridge applies" selection never drifts between the two call
+// sites. Clinic wins over Patient when (in theory) both could resolve —
+// matches decideAuthenticatedRedirect's own priority for the same pair.
+export function bridgeAuthenticatedContext(clinicContext: ClinicContext, patientContext: PatientContext): void {
+  if (clinicContext.status === "ok") bridgeClinicContextIntoMockSession(clinicContext);
+  else if (patientContext.status === "ok") bridgePatientContextIntoMockSession(patientContext);
+}

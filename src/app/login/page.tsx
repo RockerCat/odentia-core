@@ -6,7 +6,7 @@ import { useState, type FormEvent } from "react";
 import { Logo } from "@/components/shell/logo";
 import { createClient } from "@/lib/supabase/client";
 import { decideAuthenticatedRedirect } from "@/features/session/decide-authenticated-redirect";
-import { bridgeClinicContextIntoMockSession, bridgePatientContextIntoMockSession } from "@/features/session/role-bridge";
+import { bridgeAuthenticatedContext } from "@/features/session/role-bridge";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
 import { resolvePatientContext } from "@/features/session/resolve-patient-context";
 import { signInWithPassword } from "@/features/session/sign-in";
@@ -52,8 +52,7 @@ export default function LoginPage() {
         resolvePatientContext(supabase),
       ]);
 
-      if (clinicContext.status === "ok") bridgeClinicContextIntoMockSession(clinicContext);
-      else if (patientContext.status === "ok") bridgePatientContextIntoMockSession(patientContext);
+      bridgeAuthenticatedContext(clinicContext, patientContext);
       router.push(decideAuthenticatedRedirect(clinicContext, patientContext));
     } catch {
       setSubmitting(false);

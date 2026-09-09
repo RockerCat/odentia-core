@@ -1,9 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { DEFAULT_ROLE, homeRouteForRole, type Role } from "@/dev/role"; // DEV TOOL — see src/dev/role.ts
 import { readSession, subscribeToSession } from "@/features/auth/session";
+import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
+import { resolvePatientContext } from "@/features/session/resolve-patient-context";
+import { bridgeAuthenticatedContext } from "@/features/session/role-bridge";
+import { createClient } from "@/lib/supabase/client";
 
 const noSessionOnServer = () => false;
 const getServerRole = (): Role => DEFAULT_ROLE;
@@ -104,10 +108,63 @@ export function useRouteGuard(allowedRoles?: Role[]): boolean {
 
   const authorized = sessionOk && roleOk;
 
+  // Real bug, found running an actual signup→onboarding→/agenda pass
+  // against production: the mock session bridge (bridgeAuthenticatedContext,
+  // src/features/session/role-bridge.ts) is ONLY ever written from
+  // /login's own form submit — but a genuinely authenticated user who
+  // never submits that form (landing on /agenda straight from onboarding,
+  // whose own real session was established via /auth/confirm; a bookmark;
+  // browser back/forward) has NO mock session at all, not just a stale
+  // one. Trying /login itself doesn't help either: src/lib/supabase/
+  // proxy.ts redirects away from it server-side before the form ever
+  // renders, since a valid real Supabase session already exists — so the
+  // bridge-writing code never runs, and hasSession stays permanently
+  // false. Confirmed live: a real post-onboarding session showed a real
+  // Supabase auth cookie but `localStorage["odentia:session"] === null`,
+  // and no amount of refreshing fixed it (this is NOT the transient
+  // one-tick hydration flash `hydrated` above already handles — it's a
+  // real, permanent absence of data).
+  //
+  // Self-heal: once hydrated, if there's still no mock session, re-resolve
+  // the real context exactly the same way /login itself does and bridge
+  // it right here before ever concluding "redirect to /login". hasSession
+  // above is subscribed to subscribeToSession, so writeSession (inside
+  // bridgeAuthenticatedContext) triggers a normal re-render with the
+  // corrected value once this resolves. `checkedRealSession` only exists
+  // to keep the REDIRECT decision from firing while this one-time check
+  // is still in flight (a real network round trip, unlike the synchronous
+  // hydration correction above) — it's only ever set from inside the async
+  // callback, never synchronously in the effect body, since sessionOk
+  // already being true means there was nothing to self-heal and
+  // `effectiveHydrated` below doesn't need it in that case anyway.
+  const [checkedRealSession, setCheckedRealSession] = useState(false);
   useEffect(() => {
-    const redirectTo = decideRouteGuardRedirect({ hydrated, sessionOk, roleOk, role });
+    if (!hydrated || sessionOk) return;
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const [clinicContext, patientContext] = await Promise.all([
+        resolveClinicContext(supabase),
+        resolvePatientContext(supabase),
+      ]);
+      if (cancelled) return;
+      bridgeAuthenticatedContext(clinicContext, patientContext);
+      setCheckedRealSession(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, sessionOk]);
+
+  // Only actually needs checkedRealSession while sessionOk is false — once
+  // it's true (whether from the start, or freshly bridged above) there's
+  // nothing left to wait for.
+  const effectiveHydrated = hydrated && (sessionOk || checkedRealSession);
+
+  useEffect(() => {
+    const redirectTo = decideRouteGuardRedirect({ hydrated: effectiveHydrated, sessionOk, roleOk, role });
     if (redirectTo) router.replace(redirectTo);
-  }, [hydrated, sessionOk, roleOk, role, router]);
+  }, [effectiveHydrated, sessionOk, roleOk, role, router]);
 
   return authorized;
 }
