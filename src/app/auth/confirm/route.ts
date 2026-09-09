@@ -26,11 +26,16 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get("type") as EmailOtpType | null;
   const code = searchParams.get("code");
   // resolveSafeNext accepts both an already-relative path AND a
-  // same-origin absolute URL — the Confirm Signup template embeds
-  // `.RedirectTo` (GoTrue's own echo of signUpAccount()'s emailRedirectTo)
-  // directly as `next=`, see that function's own comment. Never follows an
-  // attacker- or email-client-supplied absolute URL to a different origin.
-  const next = resolveSafeNext(searchParams.get("next"), origin);
+  // same-origin absolute URL — the Confirm Signup/Reset Password templates
+  // embed `.RedirectTo` (GoTrue's own echo of signUpAccount()'s/
+  // requestPasswordReset()'s own emailRedirectTo) directly as `next=`, see
+  // those functions' own comments. Never follows an attacker- or
+  // email-client-supplied absolute URL to a different origin. The
+  // fallback (when nothing usable survives) differs by flow: a recovery
+  // link with no recoverable destination belongs on /reset-password, never
+  // /registro — landing an already-onboarded admin on /registro's own
+  // "already onboarded" screen is a dead end with no password form on it.
+  const next = resolveSafeNext(searchParams.get("next"), origin, type === "recovery" ? "/reset-password" : "/registro");
 
   const supabase = await createClient();
 

@@ -52,4 +52,14 @@ describe("resolveSafeNext", () => {
   it("falls back to /registro for a literal relative \"/\" — never redirects to the landing page as a \"confirmation destination\"", () => {
     expect(resolveSafeNext("/", ORIGIN)).toBe("/registro");
   });
+
+  it("REGRESSION: honors an explicit fallback for the Recovery flow — a real password-reset E2E run hit the exact bare-origin allow-list failure and landed on /registro's own \"already onboarded\" screen (a dead end, no password form) instead of /reset-password", () => {
+    expect(resolveSafeNext("https://odentia.co", ORIGIN, "/reset-password")).toBe("/reset-password");
+    expect(resolveSafeNext(null, ORIGIN, "/reset-password")).toBe("/reset-password");
+  });
+
+  it("an explicit fallback doesn't change behavior when a real destination survives", () => {
+    expect(resolveSafeNext("/reset-password", ORIGIN, "/reset-password")).toBe("/reset-password");
+    expect(resolveSafeNext("https://odentia.co/invitacion/abc123", ORIGIN, "/reset-password")).toBe("/invitacion/abc123");
+  });
 });

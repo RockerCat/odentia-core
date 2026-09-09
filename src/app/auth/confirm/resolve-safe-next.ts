@@ -20,9 +20,18 @@
 //     all) when it didn't — the second case collapses to "/" below and is
 //     treated exactly like "no next at all", never a broken/invalid
 //     redirect.
-export function resolveSafeNext(rawNext: string | null, origin: string): string {
+//
+// `fallback` (default "/registro", signup's own destination) — found
+// running a real password-reset E2E pass against production: a real
+// Recovery email's `.RedirectTo` collapsed to bare `{{ .SiteURL }}` the
+// exact same way Confirm Signup's does (same Redirect URLs allow-list
+// issue), and landing on the hardcoded "/registro" default put an
+// already-onboarded admin on "Tu clínica ya está configurada" instead of
+// the password form — a real dead end, not just a wrong destination.
+// route.ts now passes "/reset-password" here for `type === "recovery"`.
+export function resolveSafeNext(rawNext: string | null, origin: string, fallback: string = "/registro"): string {
   const candidate = extractSameOriginPath(rawNext, origin);
-  return candidate && candidate !== "/" ? candidate : "/registro";
+  return candidate && candidate !== "/" ? candidate : fallback;
 }
 
 function extractSameOriginPath(rawNext: string | null, origin: string): string | null {
