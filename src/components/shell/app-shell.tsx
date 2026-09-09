@@ -7,6 +7,7 @@ import { BottomTabBar } from "./bottom-tab-bar";
 import { Header } from "./header";
 import { MobileHeader } from "./mobile-header";
 import { PageContainer } from "./page-container";
+import { ShellContentErrorBoundary } from "./shell-content-error-boundary";
 import { Sidebar } from "./sidebar";
 import { useRouteGuard } from "./use-route-guard";
 
@@ -45,7 +46,7 @@ export function AppShell({ activeNavLabel, heading, allowedRoles, children }: Ap
           <main className="flex-1 overflow-y-auto pt-[var(--mobile-header-h)] pb-[var(--mobile-tabbar-h)] md:pt-0 md:pb-0">
             <PageContainer>
               <h1 className="mb-6 text-[19px] font-semibold text-foreground">{heading}</h1>
-              {children}
+              <ShellContentErrorBoundary>{children}</ShellContentErrorBoundary>
             </PageContainer>
           </main>
 
