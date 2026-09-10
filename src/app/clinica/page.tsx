@@ -12,6 +12,7 @@ import {
 import { ClinicSettingsScreen } from "@/features/clinic/clinic-settings-screen";
 import { logStepFailed } from "@/features/clinic/debug";
 import { fetchRooms, type Room } from "@/features/rooms/data";
+import { getActiveReferenceValues, type ReferenceValue } from "@/features/rips/catalog-data";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
 import { createClient } from "@/lib/supabase/server";
 
@@ -61,6 +62,7 @@ export default async function ClinicaPage() {
   let members: TeamMember[] = [];
   let rooms: Room[] = [];
   let specialties: Specialty[] = [];
+  let documentTypes: ReferenceValue[] = [];
   let clinicFailed = false;
 
   if (clinicId) {
@@ -106,6 +108,14 @@ export default async function ClinicaPage() {
       // list there just means fewer options, not a broken page.
       logStepFailed("fetchActiveSpecialties", error);
     }
+
+    try {
+      documentTypes = await getActiveReferenceValues("TipoDocumento");
+    } catch (error) {
+      // RIPS #3 — only feeds Mi perfil profesional's own document-type
+      // picker, same "empty list, not a broken page" handling as above.
+      logStepFailed("getActiveReferenceValues(TipoDocumento)", error);
+    }
   }
 
   // "Mi perfil profesional" is always about the authenticated user's own
@@ -130,6 +140,7 @@ export default async function ClinicaPage() {
           selfMember={selfMember}
           rooms={rooms}
           specialties={specialties}
+          documentTypes={documentTypes}
         />
       )}
     </AppShell>

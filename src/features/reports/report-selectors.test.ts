@@ -150,10 +150,22 @@ describe("computeTreatmentRanking", () => {
 });
 
 describe("computePatientsStats", () => {
+  // RIPS #3 identity fields — irrelevant to these KPI derivation tests,
+  // all left null.
+  const NO_RIPS_IDENTITY = {
+    documentType: null,
+    documentNumber: null,
+    sexCode: null,
+    userTypeCode: null,
+    countryOfResidenceCode: null,
+    municipalityOfResidenceCode: null,
+    residenceZoneCode: null,
+    countryOfOriginCode: null,
+  } as const;
   const patients: Patient[] = [
-    { id: "pat-1", firstName: "A", lastName: "A", documentId: null, phone: null, email: null, birthDate: null, active: true, createdAt: "2026-01-01" },
-    { id: "pat-2", firstName: "B", lastName: "B", documentId: null, phone: null, email: null, birthDate: null, active: true, createdAt: "2026-01-01" },
-    { id: "pat-3", firstName: "C", lastName: "C", documentId: null, phone: null, email: null, birthDate: null, active: false, createdAt: "2026-01-01" },
+    { id: "pat-1", firstName: "A", lastName: "A", documentId: null, phone: null, email: null, birthDate: null, active: true, createdAt: "2026-01-01", ...NO_RIPS_IDENTITY },
+    { id: "pat-2", firstName: "B", lastName: "B", documentId: null, phone: null, email: null, birthDate: null, active: true, createdAt: "2026-01-01", ...NO_RIPS_IDENTITY },
+    { id: "pat-3", firstName: "C", lastName: "C", documentId: null, phone: null, email: null, birthDate: null, active: false, createdAt: "2026-01-01", ...NO_RIPS_IDENTITY },
   ];
   const now = new Date("2026-06-15T12:00:00.000Z");
 

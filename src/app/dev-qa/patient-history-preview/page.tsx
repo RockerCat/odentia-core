@@ -56,6 +56,14 @@ export default function PatientHistoryPreviewPage() {
         birthDate: null,
         active: true,
         createdAt: new Date().toISOString(),
+        documentType: null,
+        documentNumber: "111",
+        sexCode: null,
+        userTypeCode: null,
+        countryOfResidenceCode: null,
+        municipalityOfResidenceCode: null,
+        residenceZoneCode: null,
+        countryOfOriginCode: null,
       }}
       appointments={FIXTURE_APPOINTMENTS}
       professionalNameById={{ [FIXTURE_PROF_ID]: "Alex Test 1" }}

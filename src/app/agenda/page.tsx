@@ -6,7 +6,8 @@ import { fetchAppointmentsForRange, fetchClinicalProfessionals } from "@/feature
 import { fetchPendingAppointmentRequests } from "@/features/dashboard/appointment-requests-data";
 import { getWeekRangeIso } from "@/features/dashboard/real-week";
 import { canEditClinicalData } from "@/features/patients/clinical-permissions";
-import { fetchPatients } from "@/features/patients/data";
+import { EMPTY_PATIENT_IDENTITY_CATALOGS, fetchPatients, type PatientIdentityCatalogs } from "@/features/patients/data";
+import { fetchPatientIdentityCatalogs } from "@/features/patients/identity-catalogs";
 import { fetchActiveTreatmentNames } from "@/features/treatments/data";
 import { fetchActiveRoomNames } from "@/features/rooms/data";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
@@ -69,6 +70,16 @@ export default async function AgendaPage() {
     loadFailed = true;
   }
 
+  // RIPS #3 — feeds PatientRecordModal's identity fields in this screen's
+  // own "Ver paciente" flow (see real-appointments-board.tsx); optional
+  // for the page as a whole, same handling as everything else above.
+  let identityCatalogs: PatientIdentityCatalogs = EMPTY_PATIENT_IDENTITY_CATALOGS;
+  try {
+    identityCatalogs = await fetchPatientIdentityCatalogs();
+  } catch (error) {
+    console.error("[/agenda] fetchPatientIdentityCatalogs failed", error);
+  }
+
   const canEditPatientData = context.membership.role !== "dentist";
   // "Iniciar/Continuar atención" writes a real clinical encounter at
   // "Finalizar atención" (insert_patient_clinical_encounter), which requires
@@ -97,6 +108,7 @@ export default async function AgendaPage() {
           roomOptions={roomOptions}
           canEditPatientData={canEditPatientData}
           canAttendPatients={canAttendPatients}
+          identityCatalogs={identityCatalogs}
           // key= here isn't for a list — RealAgendaScreen places these as
           // static siblings, not a .map() — but React 19.2.8's dev-mode key
           // validation flags a Client Component's static children array

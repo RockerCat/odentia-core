@@ -4,10 +4,12 @@ import { useState } from "react";
 import { AlertTriangleIcon, CalendarIcon, PlusIcon, SearchIcon, UsersIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
-import type { Patient } from "./data";
+import type { Patient, PatientIdentityCatalogs } from "./data";
 import { NewPatientModal } from "./new-patient-modal";
 import type { PatientKpis } from "./patient-kpis";
 import { PatientRecordModal } from "./patient-record-modal";
+
+export type { PatientIdentityCatalogs } from "./data";
 
 type PatientStatusFilter = "" | "active" | "inactive";
 
@@ -41,11 +43,13 @@ export function PatientsScreen({
   clinicId,
   canCreatePatient,
   kpis,
+  identityCatalogs,
 }: {
   initialPatients: Patient[];
   clinicId: string | null;
   canCreatePatient: boolean;
   kpis: PatientKpis | null;
+  identityCatalogs: PatientIdentityCatalogs;
 }) {
   const [patients, setPatients] = useState<Patient[]>(initialPatients);
   const [search, setSearch] = useState("");
@@ -192,6 +196,7 @@ export function PatientsScreen({
           patient={selectedPatient}
           clinicId={clinicId}
           canEditPatientData={canCreatePatient}
+          identityCatalogs={identityCatalogs}
           onClose={() => setSelectedPatientId(null)}
           onUpdated={handlePatientUpdated}
         />
@@ -200,6 +205,7 @@ export function PatientsScreen({
       {showNewPatient && clinicId && (
         <NewPatientModal
           clinicId={clinicId}
+          documentTypes={identityCatalogs.TipoDocumento}
           onClose={() => setShowNewPatient(false)}
           onCreate={(created) => setPatients((prev) => [created, ...prev])}
         />

@@ -15,6 +15,11 @@ export type UpdateProfessionalProfileInput = {
   licenseNumber: string;
   defaultAppointmentDurationMinutes: number | null;
   bio: string;
+  // RIPS #3 — same official TipoDocumento catalog as patient identity
+  // (rips_reference_values, catalog_key = 'TipoDocumento'). Both empty or
+  // both filled, enforced by the RPC (see its migration).
+  documentType: string | null;
+  documentNumber: string;
 };
 
 export type UpdateProfessionalProfileOutcome =
@@ -31,6 +36,8 @@ export async function updateMyProfessionalProfile(
     p_license_number: input.licenseNumber,
     p_default_appointment_duration_minutes: input.defaultAppointmentDurationMinutes,
     p_bio: input.bio,
+    p_document_type: input.documentType,
+    p_document_number: input.documentNumber,
   });
 
   if (error) {
@@ -46,6 +53,12 @@ export async function updateMyProfessionalProfile(
     if (error.message.includes("duration")) {
       return { status: "error", message: "La duración de cita debe ser un número de minutos positivo." };
     }
+    if (error.message.includes("document_type and document_number")) {
+      return { status: "error", message: "Completa tipo y número de documento, o deja ambos vacíos." };
+    }
+    if (error.message.includes("TipoDocumento")) {
+      return { status: "error", message: "Selecciona un tipo de documento válido." };
+    }
     return { status: "error", message: "No pudimos guardar los cambios. Intenta de nuevo." };
   }
 
@@ -60,6 +73,8 @@ export async function updateMyProfessionalProfile(
       specialtyName: row.primary_specialty_id ? (specialtyNameById.get(row.primary_specialty_id) ?? null) : null,
       defaultAppointmentDurationMinutes: row.default_appointment_duration_minutes,
       bio: row.bio,
+      documentType: row.document_type,
+      documentNumber: row.document_number,
     },
   };
 }
@@ -87,6 +102,8 @@ export async function createMyProfessionalProfile(
     p_license_number: input.licenseNumber,
     p_default_appointment_duration_minutes: input.defaultAppointmentDurationMinutes,
     p_bio: input.bio,
+    p_document_type: input.documentType,
+    p_document_number: input.documentNumber,
   });
 
   if (error) {
@@ -105,6 +122,12 @@ export async function createMyProfessionalProfile(
     if (error.message.includes("duration")) {
       return { status: "error", message: "La duración de cita debe ser un número de minutos positivo." };
     }
+    if (error.message.includes("document_type and document_number")) {
+      return { status: "error", message: "Completa tipo y número de documento, o deja ambos vacíos." };
+    }
+    if (error.message.includes("TipoDocumento")) {
+      return { status: "error", message: "Selecciona un tipo de documento válido." };
+    }
     return { status: "error", message: "No pudimos crear tu perfil profesional. Intenta de nuevo." };
   }
 
@@ -119,6 +142,8 @@ export async function createMyProfessionalProfile(
       specialtyName: row.primary_specialty_id ? (specialtyNameById.get(row.primary_specialty_id) ?? null) : null,
       defaultAppointmentDurationMinutes: row.default_appointment_duration_minutes,
       bio: row.bio,
+      documentType: row.document_type,
+      documentNumber: row.document_number,
     },
   };
 }

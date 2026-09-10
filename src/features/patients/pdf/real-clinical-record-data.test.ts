@@ -20,6 +20,14 @@ const PATIENT: Patient = {
   birthDate: null,
   active: true,
   createdAt: "2026-01-01T00:00:00.000Z",
+  documentType: null,
+  documentNumber: "111",
+  sexCode: null,
+  userTypeCode: null,
+  countryOfResidenceCode: null,
+  municipalityOfResidenceCode: null,
+  residenceZoneCode: null,
+  countryOfOriginCode: null,
 };
 
 function note(overrides: Partial<ClinicalNoteRecord> & Pick<ClinicalNoteRecord, "id" | "content" | "updatedAt">): ClinicalNoteRecord {

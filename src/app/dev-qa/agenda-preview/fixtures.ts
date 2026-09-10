@@ -39,7 +39,25 @@ export const fixtureProfessionals: ClinicalProfessional[] = [
 ];
 
 export const fixturePatients: Patient[] = [
-  { id: PAT_1, firstName: "Laura", lastName: "Diaz", documentId: "111", phone: "+573173672033", email: null, birthDate: null, active: true, createdAt: new Date().toISOString() },
+  {
+    id: PAT_1,
+    firstName: "Laura",
+    lastName: "Diaz",
+    documentId: "111",
+    phone: "+573173672033",
+    email: null,
+    birthDate: null,
+    active: true,
+    createdAt: new Date().toISOString(),
+    documentType: null,
+    documentNumber: "111",
+    sexCode: null,
+    userTypeCode: null,
+    countryOfResidenceCode: null,
+    municipalityOfResidenceCode: null,
+    residenceZoneCode: null,
+    countryOfOriginCode: null,
+  },
 ];
 
 function apt(overrides: Partial<Appointment> & Pick<Appointment, "id" | "status" | "startsAt">): Appointment {

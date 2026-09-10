@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { MembershipRole } from "@/features/session/types";
 import type { Patient } from "@/features/patients/data";
+import type { PatientIdentityCatalogs } from "@/features/patients/patients-screen";
 import { createClient } from "@/lib/supabase/client";
 import { fetchAppointmentsForRange, type Appointment, type ClinicalProfessional } from "./appointments-data";
 import type { AppointmentRequest } from "./appointment-requests-data";
@@ -33,6 +34,7 @@ export function RealAgendaScreen({
   roomOptions,
   canEditPatientData,
   canAttendPatients,
+  identityCatalogs,
   clinicIdentityCard,
   marketplaceCard,
 }: {
@@ -47,6 +49,7 @@ export function RealAgendaScreen({
   roomOptions: string[];
   canEditPatientData: boolean;
   canAttendPatients: boolean;
+  identityCatalogs: PatientIdentityCatalogs;
   clinicIdentityCard: ReactNode;
   marketplaceCard: ReactNode;
 }) {
@@ -162,6 +165,7 @@ export function RealAgendaScreen({
           roomOptions={roomOptions}
           canEditPatientData={canEditPatientData}
           canAttendPatients={canAttendPatients}
+          identityCatalogs={identityCatalogs}
         />
       </div>
 

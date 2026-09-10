@@ -14,6 +14,7 @@ import { PrimaryLocationSection } from "@/features/clinic/primary-location-secti
 import { setClinicMemberStatus } from "@/features/clinic/team-actions";
 import { createRoom, renameRoom, setRoomActive } from "@/features/rooms/actions";
 import type { Room } from "@/features/rooms/data";
+import type { ReferenceValue } from "@/features/rips/catalog-data";
 
 // Clínica — 100% real data or an honest empty state, no mock fallback
 // anywhere in this tree (see CLAUDE.md task scope: "cero fallbacks mock").
@@ -39,6 +40,7 @@ export function ClinicSettingsScreen({
   selfMember: initialSelfMember,
   rooms,
   specialties,
+  documentTypes,
 }: {
   clinic: ClinicDetail;
   location: PrimaryLocation | null;
@@ -46,6 +48,7 @@ export function ClinicSettingsScreen({
   selfMember: TeamMember | null;
   rooms: Room[];
   specialties: Specialty[];
+  documentTypes: ReferenceValue[];
 }) {
   // Lifted above Equipo/Mi perfil profesional (not local to either) so
   // both sections read the SAME real data — Equipo's own role/specialty
@@ -65,6 +68,7 @@ export function ClinicSettingsScreen({
       <MyProfessionalProfileSection
         selfMember={selfMember}
         specialties={specialties}
+        documentTypes={documentTypes}
         onSaved={(updated) =>
           setMembers((prev) =>
             prev.map((m) => (m.membershipId === selfMember?.membershipId ? { ...m, professionalProfile: updated } : m)),
@@ -93,9 +97,9 @@ export function ClinicSettingsScreen({
 // at-a-time model. Collapses to one column on tablet/mobile, data first
 // then logo, purely from DOM order + grid-cols-1. WhatsApp has no column
 // anywhere in the schema — kept as local-only state, never persisted (see
-// task scope, section 1). legal_name/tax_id/status are real clinics
-// columns with no editor in this approved screen — not wired here; see the
-// task report.
+// task scope, section 1). legal_name/status are real clinics columns with
+// no editor in this screen — not wired here. tax_id (NIT) DOES have an
+// editor now (RIPS #3 — Documento Técnico 1 T01 numDocumentoIdObligado).
 function InformacionGeneralSection({ clinic, location }: { clinic: ClinicDetail; location: PrimaryLocation | null }) {
   const [logoUrl, setLogoUrl] = useState<string | null>(clinic.logoUrl);
   // Which logo action is in flight, not just whether one is — "Cambiar
@@ -110,6 +114,7 @@ function InformacionGeneralSection({ clinic, location }: { clinic: ClinicDetail;
   const [clinicName, setClinicName] = useState(clinic.name);
   const [phone, setPhone] = useState(clinic.phone ?? "");
   const [email, setEmail] = useState(clinic.email ?? "");
+  const [taxId, setTaxId] = useState(clinic.taxId ?? "");
 
   // Only one field editable at a time (see task scope) — a single key here,
   // rather than each InfoField owning its own "isEditing" state.
@@ -117,7 +122,7 @@ function InformacionGeneralSection({ clinic, location }: { clinic: ClinicDetail;
   const [savingField, setSavingField] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
 
-  const saveClinicField = async (key: "name" | "phone" | "email", next: string, apply: () => void) => {
+  const saveClinicField = async (key: "name" | "phone" | "email" | "tax_id", next: string, apply: () => void) => {
     setSavingField(key);
     setFieldError(null);
     const outcome = await updateClinicInfo(clinic.id, { [key]: next });
@@ -213,6 +218,16 @@ function InformacionGeneralSection({ clinic, location }: { clinic: ClinicDetail;
             error={editingField === "email" ? fieldError : null}
             onStartEdit={() => setEditingField("email")}
             onSave={(next) => saveClinicField("email", next, () => setEmail(next))}
+            onCancel={() => setEditingField(null)}
+          />
+          <InfoField
+            label="NIT"
+            value={taxId}
+            isEditing={editingField === "tax_id"}
+            saving={savingField === "tax_id"}
+            error={editingField === "tax_id" ? fieldError : null}
+            onStartEdit={() => setEditingField("tax_id")}
+            onSave={(next) => saveClinicField("tax_id", next, () => setTaxId(next))}
             onCancel={() => setEditingField(null)}
           />
         </div>

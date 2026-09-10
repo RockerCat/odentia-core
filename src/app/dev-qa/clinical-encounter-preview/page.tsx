@@ -73,6 +73,14 @@ export default function ClinicalEncounterPreviewPage() {
           birthDate: null,
           active: true,
           createdAt: new Date().toISOString(),
+          documentType: null,
+          documentNumber: "111",
+          sexCode: null,
+          userTypeCode: null,
+          countryOfResidenceCode: null,
+          municipalityOfResidenceCode: null,
+          residenceZoneCode: null,
+          countryOfOriginCode: null,
         },
       ]}
       professionals={[

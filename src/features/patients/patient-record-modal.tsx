@@ -7,10 +7,24 @@ import { UserAvatar } from "@/components/user-avatar";
 import { updatePatient } from "./actions";
 import { ClinicalAlerts } from "./clinical-alerts";
 import type { Patient } from "./data";
+import type { PatientIdentityCatalogs } from "./patients-screen";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { findReferenceValueByCodeAction } from "@/features/rips/actions";
+import { ReferenceValueAutocomplete } from "@/features/rips/reference-value-autocomplete";
+import type { ReferenceValue } from "@/features/rips/catalog-data";
 import { createClient } from "@/lib/supabase/client";
 import { fetchPatientMedicalHistory, type PatientMedicalHistory } from "./medical-history-data";
 import { PatientPortalAccessCard } from "./patient-portal-access-card";
+
+// COLOMBIA_CODE: Documento Técnico 1 U07/U08 son obligatorios únicamente
+// cuando codPaisResidencia = "170" (ISO 3166-1 numérico de Colombia) — ver
+// la migración de patients y src/features/rips/completeness.ts.
+const COLOMBIA_CODE = "170";
+
+function labelFor(values: ReferenceValue[], code: string | null): string {
+  if (!code) return "No configurado";
+  return values.find((v) => v.code === code)?.label ?? code;
+}
 
 function waLink(phone: string, message?: string): string {
   const base = `https://wa.me/${phone.replace(/[^\d]/g, "")}`;
@@ -55,12 +69,14 @@ export function PatientRecordModal({
   patient,
   clinicId,
   canEditPatientData,
+  identityCatalogs,
   onClose,
   onUpdated,
 }: {
   patient: Patient;
   clinicId: string | null;
   canEditPatientData: boolean;
+  identityCatalogs: PatientIdentityCatalogs;
   onClose: () => void;
   onUpdated: (patient: Patient) => void;
 }) {
@@ -70,7 +86,15 @@ export function PatientRecordModal({
   const [lastNameDraft, setLastNameDraft] = useState(patient.lastName);
   const [phoneDraft, setPhoneDraft] = useState(patient.phone ?? "");
   const [emailDraft, setEmailDraft] = useState(patient.email ?? "");
-  const [documentDraft, setDocumentDraft] = useState(patient.documentId ?? "");
+  const [documentTypeDraft, setDocumentTypeDraft] = useState(patient.documentType ?? "");
+  const [documentNumberDraft, setDocumentNumberDraft] = useState(patient.documentNumber ?? "");
+  const [birthDateDraft, setBirthDateDraft] = useState(patient.birthDate ?? "");
+  const [sexCodeDraft, setSexCodeDraft] = useState(patient.sexCode ?? "");
+  const [userTypeCodeDraft, setUserTypeCodeDraft] = useState(patient.userTypeCode ?? "");
+  const [countryCodeDraft, setCountryCodeDraft] = useState(patient.countryOfResidenceCode ?? "");
+  const [municipalityCodeDraft, setMunicipalityCodeDraft] = useState(patient.municipalityOfResidenceCode ?? "");
+  const [municipalityLabelDraft, setMunicipalityLabelDraft] = useState("");
+  const [zoneCodeDraft, setZoneCodeDraft] = useState(patient.residenceZoneCode ?? "");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // Purely cosmetic pending flag for "Ver historia clínica" — router.push
@@ -105,6 +129,22 @@ export function PatientRecordModal({
     };
   }, [clinicId, patient.id]);
 
+  // Municipio isn't in identityCatalogs (1,124 rows — see the Performance
+  // section of this task) — resolve just this one saved code's label, if
+  // any, so the view/edit UI never shows a raw "05001" to the user.
+  useEffect(() => {
+    const code = patient.municipalityOfResidenceCode;
+    if (!code) return;
+    let cancelled = false;
+    (async () => {
+      const resolved = await findReferenceValueByCodeAction("Municipio", code);
+      if (!cancelled) setMunicipalityLabelDraft(resolved?.label ?? code);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [patient.municipalityOfResidenceCode]);
+
   const age = ageOf(patient);
 
   const startEditing = () => {
@@ -112,7 +152,14 @@ export function PatientRecordModal({
     setLastNameDraft(patient.lastName);
     setPhoneDraft(patient.phone ?? "");
     setEmailDraft(patient.email ?? "");
-    setDocumentDraft(patient.documentId ?? "");
+    setDocumentTypeDraft(patient.documentType ?? "");
+    setDocumentNumberDraft(patient.documentNumber ?? "");
+    setBirthDateDraft(patient.birthDate ?? "");
+    setSexCodeDraft(patient.sexCode ?? "");
+    setUserTypeCodeDraft(patient.userTypeCode ?? "");
+    setCountryCodeDraft(patient.countryOfResidenceCode ?? "");
+    setMunicipalityCodeDraft(patient.municipalityOfResidenceCode ?? "");
+    setZoneCodeDraft(patient.residenceZoneCode ?? "");
     setSaveError(null);
     setEditing(true);
   };
@@ -120,13 +167,21 @@ export function PatientRecordModal({
   const saveEditing = async () => {
     setSaving(true);
     setSaveError(null);
-    const outcome = await updatePatient(patient.id, {
+    const patch = {
       firstName: firstNameDraft.trim() || patient.firstName,
       lastName: lastNameDraft.trim() || patient.lastName,
       phone: phoneDraft.trim() || null,
       email: emailDraft.trim() || null,
-      documentId: documentDraft.trim() || null,
-    });
+      documentType: documentTypeDraft || null,
+      documentNumber: documentNumberDraft.trim() || null,
+      birthDate: birthDateDraft || null,
+      sexCode: sexCodeDraft || null,
+      userTypeCode: userTypeCodeDraft || null,
+      countryOfResidenceCode: countryCodeDraft || null,
+      municipalityOfResidenceCode: municipalityCodeDraft || null,
+      residenceZoneCode: zoneCodeDraft || null,
+    };
+    const outcome = await updatePatient(patient.id, patch);
     setSaving(false);
     if (outcome.status === "error") {
       setSaveError(outcome.message);
@@ -134,11 +189,11 @@ export function PatientRecordModal({
     }
     onUpdated({
       ...patient,
-      firstName: firstNameDraft.trim() || patient.firstName,
-      lastName: lastNameDraft.trim() || patient.lastName,
-      phone: phoneDraft.trim() || null,
-      email: emailDraft.trim() || null,
-      documentId: documentDraft.trim() || null,
+      ...patch,
+      documentId:
+        documentTypeDraft && documentNumberDraft.trim()
+          ? `${documentTypeDraft} ${documentNumberDraft.trim()}`
+          : patient.documentId,
     });
     setEditing(false);
   };
@@ -256,21 +311,191 @@ export function PatientRecordModal({
                 </div>
 
                 <div className="flex items-center justify-between gap-2">
-                  <dt className="text-label-foreground">Documento</dt>
+                  <dt className="text-label-foreground">Paciente desde</dt>
+                  <dd className="truncate font-medium">{PATIENT_SINCE_FORMATTER.format(new Date(patient.createdAt))}</dd>
+                </div>
+
+                {/* Identificación — RIPS #3 (Documento Técnico 1 U01/U02/U04/U05).
+                    Nombres humanos siempre, nunca el código crudo (ver el
+                    principio de producto de esta tarea). */}
+                <div className="border-t border-border pt-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-label-foreground">Identificación</p>
                   {editing ? (
-                    <input
-                      value={documentDraft}
-                      onChange={(e) => setDocumentDraft(e.target.value)}
-                      className={`${FIELD_CLASS} max-w-[60%]`}
-                    />
+                    <div className="flex flex-col gap-2.5">
+                      <div className="grid grid-cols-[minmax(0,90px)_1fr] gap-2">
+                        <select
+                          value={documentTypeDraft}
+                          onChange={(e) => setDocumentTypeDraft(e.target.value)}
+                          className={FIELD_CLASS}
+                        >
+                          <option value="">Tipo</option>
+                          {identityCatalogs.TipoDocumento.map((d) => (
+                            <option key={d.code} value={d.code}>
+                              {d.label}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          value={documentNumberDraft}
+                          onChange={(e) => setDocumentNumberDraft(e.target.value)}
+                          placeholder="Número de documento"
+                          className={FIELD_CLASS}
+                        />
+                      </div>
+                      <label className="flex items-center justify-between gap-2 text-sm">
+                        <span className="text-label-foreground">Fecha de nacimiento</span>
+                        <input
+                          type="date"
+                          value={birthDateDraft}
+                          onChange={(e) => setBirthDateDraft(e.target.value)}
+                          className={`${FIELD_CLASS} max-w-[60%]`}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-2 text-sm">
+                        <span className="text-label-foreground">Sexo</span>
+                        <select
+                          value={sexCodeDraft}
+                          onChange={(e) => setSexCodeDraft(e.target.value)}
+                          className={`${FIELD_CLASS} max-w-[60%]`}
+                        >
+                          <option value="">Sin registrar</option>
+                          {identityCatalogs.SEXOconIndeterminado.map((s) => (
+                            <option key={s.code} value={s.code}>
+                              {s.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
                   ) : (
-                    <dd className="truncate font-medium">{patient.documentId || "Sin registrar"}</dd>
+                    <div className="flex flex-col gap-2 text-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <dt className="text-label-foreground">Documento</dt>
+                        <dd className="truncate font-medium">
+                          {patient.documentType && patient.documentNumber
+                            ? `${labelFor(identityCatalogs.TipoDocumento, patient.documentType)} ${patient.documentNumber}`
+                            : "Sin registrar"}
+                        </dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <dt className="text-label-foreground">Nacimiento</dt>
+                        <dd className="truncate font-medium">{patient.birthDate ?? "No configurado"}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <dt className="text-label-foreground">Sexo</dt>
+                        <dd className="truncate font-medium">{labelFor(identityCatalogs.SEXOconIndeterminado, patient.sexCode)}</dd>
+                      </div>
+                    </div>
                   )}
                 </div>
 
-                <div className="flex items-center justify-between gap-2">
-                  <dt className="text-label-foreground">Paciente desde</dt>
-                  <dd className="truncate font-medium">{PATIENT_SINCE_FORMATTER.format(new Date(patient.createdAt))}</dd>
+                {/* Residencia — U06/U07/U08. Municipio/Zona solo son
+                    obligatorios cuando el país es Colombia (170) — ver
+                    completeness.ts — pero se muestran siempre por si el
+                    paciente reside en el exterior sin necesitarlos. */}
+                <div className="border-t border-border pt-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-label-foreground">Residencia</p>
+                  {editing ? (
+                    <div className="flex flex-col gap-2.5">
+                      <label className="flex items-center justify-between gap-2 text-sm">
+                        <span className="text-label-foreground">País</span>
+                        <select
+                          value={countryCodeDraft}
+                          onChange={(e) => setCountryCodeDraft(e.target.value)}
+                          className={`${FIELD_CLASS} max-w-[60%]`}
+                        >
+                          <option value="">Sin registrar</option>
+                          {identityCatalogs.Pais.map((p) => (
+                            <option key={p.code} value={p.code}>
+                              {p.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {countryCodeDraft === COLOMBIA_CODE && (
+                        <>
+                          <label className="flex flex-col gap-1 text-sm">
+                            <span className="text-label-foreground">Municipio</span>
+                            <ReferenceValueAutocomplete
+                              catalogKey="Municipio"
+                              value={municipalityCodeDraft}
+                              displayLabel={municipalityLabelDraft}
+                              placeholder="Busca un municipio (p. ej. Tunja)"
+                              onChange={(v) => {
+                                setMunicipalityCodeDraft(v?.code ?? "");
+                                setMunicipalityLabelDraft(v?.label ?? "");
+                              }}
+                            />
+                          </label>
+                          <label className="flex items-center justify-between gap-2 text-sm">
+                            <span className="text-label-foreground">Zona</span>
+                            <select
+                              value={zoneCodeDraft}
+                              onChange={(e) => setZoneCodeDraft(e.target.value)}
+                              className={`${FIELD_CLASS} max-w-[60%]`}
+                            >
+                              <option value="">Sin registrar</option>
+                              {identityCatalogs.ZonaVersion2.map((z) => (
+                                <option key={z.code} value={z.code}>
+                                  {z.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2 text-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <dt className="text-label-foreground">País</dt>
+                        <dd className="truncate font-medium">{labelFor(identityCatalogs.Pais, patient.countryOfResidenceCode)}</dd>
+                      </div>
+                      {patient.countryOfResidenceCode === COLOMBIA_CODE && (
+                        <>
+                          <div className="flex items-center justify-between gap-2">
+                            <dt className="text-label-foreground">Municipio</dt>
+                            <dd className="truncate font-medium">
+                              {patient.municipalityOfResidenceCode ? municipalityLabelDraft || "…" : "No configurado"}
+                            </dd>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <dt className="text-label-foreground">Zona</dt>
+                            <dd className="truncate font-medium">{labelFor(identityCatalogs.ZonaVersion2, patient.residenceZoneCode)}</dd>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Información para atención — U03. */}
+                <div className="border-t border-border pt-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-label-foreground">Información para atención</p>
+                  {editing ? (
+                    <label className="flex items-center justify-between gap-2 text-sm">
+                      <span className="text-label-foreground">Tipo de usuario</span>
+                      <select
+                        value={userTypeCodeDraft}
+                        onChange={(e) => setUserTypeCodeDraft(e.target.value)}
+                        className={`${FIELD_CLASS} max-w-[60%]`}
+                      >
+                        <option value="">Sin registrar</option>
+                        {identityCatalogs.RIPSTipoUsuarioVersion2.map((u) => (
+                          <option key={u.code} value={u.code}>
+                            {u.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2 text-sm">
+                      <dt className="text-label-foreground">Tipo de usuario</dt>
+                      <dd className="truncate font-medium">
+                        {labelFor(identityCatalogs.RIPSTipoUsuarioVersion2, patient.userTypeCode)}
+                      </dd>
+                    </div>
+                  )}
                 </div>
               </dl>
 

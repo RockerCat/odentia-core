@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useToast } from "@/components/toast";
 import { UserAvatar } from "@/components/user-avatar";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import type { ReferenceValue } from "@/features/rips/catalog-data";
 import { fetchWeeklyAvailability, summarizeWeeklyAvailability } from "@/features/settings/availability-data";
 import { createClient } from "@/lib/supabase/client";
 import type { Specialty, TeamMember } from "./data";
@@ -70,10 +71,12 @@ export function StatusBadge({ active }: { active: boolean }) {
 export function MyProfessionalProfileSection({
   selfMember,
   specialties,
+  documentTypes,
   onSaved,
 }: {
   selfMember: TeamMember | null;
   specialties: Specialty[];
+  documentTypes: ReferenceValue[];
   onSaved: (updated: NonNullable<TeamMember["professionalProfile"]>) => void;
 }) {
   const { showToast } = useToast();
@@ -95,6 +98,8 @@ export function MyProfessionalProfileSection({
   const [licenseNumber, setLicenseNumber] = useState("");
   const [duration, setDuration] = useState<string>("");
   const [bio, setBio] = useState("");
+  const [documentType, setDocumentType] = useState<string>("");
+  const [documentNumber, setDocumentNumber] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -135,6 +140,8 @@ export function MyProfessionalProfileSection({
     setLicenseNumber(professionalProfile.licenseNumber ?? "");
     setDuration(professionalProfile.defaultAppointmentDurationMinutes?.toString() ?? "");
     setBio(professionalProfile.bio ?? "");
+    setDocumentType(professionalProfile.documentType ?? "");
+    setDocumentNumber(professionalProfile.documentNumber ?? "");
     setError(null);
     setMode("editing");
   };
@@ -146,6 +153,8 @@ export function MyProfessionalProfileSection({
     setLicenseNumber("");
     setDuration("");
     setBio("");
+    setDocumentType("");
+    setDocumentNumber("");
     setError(null);
     setMode("creating");
   };
@@ -170,6 +179,8 @@ export function MyProfessionalProfileSection({
       licenseNumber,
       defaultAppointmentDurationMinutes: duration ? Number(duration) : null,
       bio,
+      documentType: documentType || null,
+      documentNumber,
     };
     const outcome =
       mode === "creating"
@@ -226,6 +237,11 @@ export function MyProfessionalProfileSection({
           onDurationChange={setDuration}
           bio={bio}
           onBioChange={setBio}
+          documentType={documentType}
+          onDocumentTypeChange={setDocumentType}
+          documentNumber={documentNumber}
+          onDocumentNumberChange={setDocumentNumber}
+          documentTypes={documentTypes}
           specialties={specialties}
           saving={saving}
           error={error}
@@ -244,6 +260,16 @@ export function MyProfessionalProfileSection({
             <div>
               <dt className="text-xs text-label-foreground">Registro profesional</dt>
               <dd className="mt-0.5 font-medium">{professionalProfile.licenseNumber || "No configurado"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-label-foreground">Documento de identidad</dt>
+              <dd className="mt-0.5 font-medium">
+                {professionalProfile.documentType && professionalProfile.documentNumber
+                  ? // Nombre humano del catálogo oficial (p.ej. "Cédula Ciudadanía"),
+                    // nunca el código crudo — ver el principio de producto de esta tarea.
+                    `${documentTypes.find((d) => d.code === professionalProfile.documentType)?.label ?? professionalProfile.documentType} ${professionalProfile.documentNumber}`
+                  : "No configurado"}
+              </dd>
             </div>
             <div>
               <dt className="text-xs text-label-foreground">Duración de cita</dt>
@@ -313,6 +339,11 @@ function ProfileForm({
   onDurationChange,
   bio,
   onBioChange,
+  documentType,
+  onDocumentTypeChange,
+  documentNumber,
+  onDocumentNumberChange,
+  documentTypes,
   specialties,
   saving,
   error,
@@ -329,6 +360,11 @@ function ProfileForm({
   onDurationChange: (value: string) => void;
   bio: string;
   onBioChange: (value: string) => void;
+  documentType: string;
+  onDocumentTypeChange: (value: string) => void;
+  documentNumber: string;
+  onDocumentNumberChange: (value: string) => void;
+  documentTypes: ReferenceValue[];
   specialties: Specialty[];
   saving: boolean;
   error: string | null;
@@ -358,6 +394,27 @@ function ProfileForm({
             onChange={(e) => onLicenseNumberChange(e.target.value)}
             disabled={saving}
             placeholder="Número de registro"
+            className={FIELD_CLASS}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-xs text-label-foreground">Tipo de documento</span>
+          <select value={documentType} onChange={(e) => onDocumentTypeChange(e.target.value)} disabled={saving} className={FIELD_CLASS}>
+            <option value="">Selecciona un tipo</option>
+            {documentTypes.map((d) => (
+              <option key={d.code} value={d.code}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-xs text-label-foreground">Número de documento</span>
+          <input
+            value={documentNumber}
+            onChange={(e) => onDocumentNumberChange(e.target.value)}
+            disabled={saving}
+            placeholder="Número de documento"
             className={FIELD_CLASS}
           />
         </label>

@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { CloseIcon } from "@/components/shell/icons";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import type { ReferenceValue } from "@/features/rips/catalog-data";
 import { createPatient } from "./actions";
 import type { Patient } from "./data";
 
@@ -18,23 +19,27 @@ import type { Patient } from "./data";
 // fake a capability that doesn't persist).
 export function NewPatientModal({
   clinicId,
+  documentTypes,
   onClose,
   onCreate,
 }: {
   clinicId: string;
+  documentTypes: ReferenceValue[];
   onClose: () => void;
   onCreate: (patient: Patient) => void;
 }) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [documentId, setDocumentId] = useState("");
+  const [documentType, setDocumentType] = useState("");
+  const [documentNumber, setDocumentNumber] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canCreate = Boolean(firstName.trim() && lastName.trim() && documentId.trim() && phone.trim()) && !creating;
+  const canCreate =
+    Boolean(firstName.trim() && lastName.trim() && documentType && documentNumber.trim() && phone.trim()) && !creating;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -46,7 +51,8 @@ export function NewPatientModal({
       clinicId,
       firstName: firstName.trim(),
       lastName: lastName.trim(),
-      documentId: documentId.trim(),
+      documentType,
+      documentNumber: documentNumber.trim(),
       phone: phone.trim(),
       email: email.trim() || null,
       birthDate: birthDate || null,
@@ -108,16 +114,34 @@ export function NewPatientModal({
                 />
               </label>
             </div>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-label-foreground">Documento</span>
-              <input
-                value={documentId}
-                onChange={(e) => setDocumentId(e.target.value)}
-                className={FIELD_CLASS}
-                placeholder="CC 1.234.567"
-                required
-              />
-            </label>
+            <div className="grid grid-cols-[minmax(0,110px)_1fr] gap-3">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-label-foreground">Tipo doc.</span>
+                <select
+                  value={documentType}
+                  onChange={(e) => setDocumentType(e.target.value)}
+                  className={FIELD_CLASS}
+                  required
+                >
+                  <option value="">Tipo</option>
+                  {documentTypes.map((d) => (
+                    <option key={d.code} value={d.code}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-label-foreground">Número de documento</span>
+                <input
+                  value={documentNumber}
+                  onChange={(e) => setDocumentNumber(e.target.value)}
+                  className={FIELD_CLASS}
+                  placeholder="1234567"
+                  required
+                />
+              </label>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <label className="flex flex-col gap-1 text-sm">
                 <span className="text-label-foreground">Fecha de nacimiento</span>

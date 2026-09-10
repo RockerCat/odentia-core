@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { ReferenceValue } from "@/features/rips/catalog-data";
 
 // Real /pacientes data — takes an already-constructed SupabaseClient (same
 // convention as src/features/session/resolve-clinic-context.ts and
@@ -26,9 +27,23 @@ export type Patient = {
   birthDate: string | null;
   active: boolean;
   createdAt: string;
+  // RIPS #3 — Documento Técnico 1 campos U01-U08/U11 (usuarios[]). Todos
+  // nullable: no todo paciente existente los tiene completos todavía, ver
+  // src/features/rips/completeness.ts. documentId (arriba) sigue siendo
+  // el campo libre histórico que ~15 pantallas de solo lectura ya leen —
+  // se mantiene sincronizado como "TIPO NUMERO" al guardar desde el
+  // formulario real (ver actions.ts), nunca reescrito aquí.
+  documentType: string | null;
+  documentNumber: string | null;
+  sexCode: string | null;
+  userTypeCode: string | null;
+  countryOfResidenceCode: string | null;
+  municipalityOfResidenceCode: string | null;
+  residenceZoneCode: string | null;
+  countryOfOriginCode: string | null;
 };
 
-function mapRow(row: {
+type PatientRow = {
   id: string;
   first_name: string;
   last_name: string;
@@ -38,7 +53,17 @@ function mapRow(row: {
   birth_date: string | null;
   active: boolean;
   created_at: string;
-}): Patient {
+  document_type: string | null;
+  document_number: string | null;
+  sex_code: string | null;
+  user_type_code: string | null;
+  country_of_residence_code: string | null;
+  municipality_of_residence_code: string | null;
+  residence_zone_code: string | null;
+  country_of_origin_code: string | null;
+};
+
+function mapRow(row: PatientRow): Patient {
   return {
     id: row.id,
     firstName: row.first_name,
@@ -49,10 +74,22 @@ function mapRow(row: {
     birthDate: row.birth_date,
     active: row.active,
     createdAt: row.created_at,
+    documentType: row.document_type,
+    documentNumber: row.document_number,
+    sexCode: row.sex_code,
+    userTypeCode: row.user_type_code,
+    countryOfResidenceCode: row.country_of_residence_code,
+    municipalityOfResidenceCode: row.municipality_of_residence_code,
+    residenceZoneCode: row.residence_zone_code,
+    countryOfOriginCode: row.country_of_origin_code,
   };
 }
 
-const PATIENT_COLUMNS = "id, first_name, last_name, document_id, phone, email, birth_date, active, created_at";
+// A single string literal (not built via +) so supabase-js can still
+// infer the exact row shape from it — concatenation widens this to
+// `string`, which breaks that inference (confirmed by tsc).
+const PATIENT_COLUMNS =
+  "id, first_name, last_name, document_id, phone, email, birth_date, active, created_at, document_type, document_number, sex_code, user_type_code, country_of_residence_code, municipality_of_residence_code, residence_zone_code, country_of_origin_code";
 
 export async function fetchPatients(supabase: SupabaseClient, clinicId: string): Promise<Patient[]> {
   const { data, error } = await supabase
@@ -69,6 +106,37 @@ export async function fetchPatients(supabase: SupabaseClient, clinicId: string):
 // check anyway, so a UUID belonging to another clinic returns null (→ the
 // page's notFound()) rather than relying on RLS alone (see CLAUDE.md task
 // scope, section 3: RLS is a second layer, not the only one).
+// RIPS #3 — the small reference catalogs the patient identity form needs
+// (Municipio, at 1,124 rows, is deliberately excluded — see
+// ReferenceValueAutocomplete's own server-side search action instead).
+// Fetched once, server-side, and threaded down to every screen that can
+// open NewPatientModal/PatientRecordModal (/pacientes, /agenda's own "Ver
+// paciente" flow) — never re-fetched per modal open.
+export type PatientIdentityCatalogs = {
+  TipoDocumento: ReferenceValue[];
+  SEXOconIndeterminado: ReferenceValue[];
+  RIPSTipoUsuarioVersion2: ReferenceValue[];
+  Pais: ReferenceValue[];
+  ZonaVersion2: ReferenceValue[];
+};
+
+// The actual fetch (fetchPatientIdentityCatalogs) lives in its own
+// server-only module — identity-catalogs.ts — not here: this file
+// (data.ts) is imported by both Server AND Client Components (e.g.
+// reports-screen.tsx, for the `Patient` type), and pulling in
+// @/features/rips/catalog-data's `getActiveReferenceValues` (which
+// transitively imports @/lib/supabase/server → next/headers) here would
+// make next/headers reachable from client bundles, breaking the build —
+// confirmed by trying it first. EMPTY_PATIENT_IDENTITY_CATALOGS has no
+// such dependency (a plain object literal) and stays safe to keep here.
+export const EMPTY_PATIENT_IDENTITY_CATALOGS: PatientIdentityCatalogs = {
+  TipoDocumento: [],
+  SEXOconIndeterminado: [],
+  RIPSTipoUsuarioVersion2: [],
+  Pais: [],
+  ZonaVersion2: [],
+};
+
 export async function fetchPatientById(
   supabase: SupabaseClient,
   clinicId: string,

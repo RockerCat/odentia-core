@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/shell/app-shell";
 import { fetchActiveSpecialties, fetchTeamMembers, type Specialty, type TeamMember } from "@/features/clinic/data";
 import { MyProfessionalProfileScreen } from "@/features/clinic/my-professional-profile-screen";
+import { getActiveReferenceValues, type ReferenceValue } from "@/features/rips/catalog-data";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
 import { createClient } from "@/lib/supabase/server";
 
@@ -53,6 +54,7 @@ export default async function MiPerfilProfesionalPage() {
 
   let members: TeamMember[] = [];
   let specialties: Specialty[] = [];
+  let documentTypes: ReferenceValue[] = [];
 
   if (context.status === "ok") {
     try {
@@ -69,6 +71,12 @@ export default async function MiPerfilProfesionalPage() {
     } catch (error) {
       console.error("[/mi-perfil-profesional] fetchActiveSpecialties failed", error);
     }
+
+    try {
+      documentTypes = await getActiveReferenceValues("TipoDocumento");
+    } catch (error) {
+      console.error("[/mi-perfil-profesional] getActiveReferenceValues(TipoDocumento) failed", error);
+    }
   }
 
   const selfMember =
@@ -76,7 +84,7 @@ export default async function MiPerfilProfesionalPage() {
 
   return (
     <AppShell activeNavLabel="Mi perfil profesional" heading="Mi perfil profesional" allowedRoles={["dentist", "clinic-admin"]}>
-      <MyProfessionalProfileScreen initialSelfMember={selfMember} specialties={specialties} />
+      <MyProfessionalProfileScreen initialSelfMember={selfMember} specialties={specialties} documentTypes={documentTypes} />
     </AppShell>
   );
 }

@@ -8,6 +8,7 @@ import { firstName } from "@/lib/format";
 import type { MembershipRole } from "@/features/session/types";
 import type { Patient } from "@/features/patients/data";
 import { PatientRecordModal } from "@/features/patients/patient-record-modal";
+import type { PatientIdentityCatalogs } from "@/features/patients/patients-screen";
 import { AnchoredPopover } from "./appointment-detail-modal";
 import type { Appointment, AppointmentStatus, ClinicalProfessional } from "./appointments-data";
 import { getDisplayStatus, getStatusStyle, pickSlotAppointment, REAL_STATUS_LABELS } from "./real-status";
@@ -242,6 +243,7 @@ export function RealAppointmentsBoard({
   roomOptions,
   canEditPatientData,
   canAttendPatients,
+  identityCatalogs,
 }: {
   clinicId: string;
   role: MembershipRole;
@@ -262,6 +264,7 @@ export function RealAppointmentsBoard({
   roomOptions: string[];
   canEditPatientData: boolean;
   canAttendPatients: boolean;
+  identityCatalogs: PatientIdentityCatalogs;
 }) {
   const professionals = rawProfessionals.map(toBoardProfessional);
   const isDentist = role === "dentist";
@@ -595,6 +598,7 @@ export function RealAppointmentsBoard({
           patient={viewingPatient}
           clinicId={clinicId}
           canEditPatientData={canEditPatientData}
+          identityCatalogs={identityCatalogs}
           onClose={() => {
             setViewingPatientId(null);
             setSelectedAppointmentId(null);

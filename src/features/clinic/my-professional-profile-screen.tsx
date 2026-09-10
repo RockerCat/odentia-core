@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { ReferenceValue } from "@/features/rips/catalog-data";
 import type { Specialty, TeamMember } from "./data";
 import { MyProfessionalProfileSection } from "./my-professional-profile-section";
 
@@ -15,9 +16,11 @@ import { MyProfessionalProfileSection } from "./my-professional-profile-section"
 export function MyProfessionalProfileScreen({
   initialSelfMember,
   specialties,
+  documentTypes,
 }: {
   initialSelfMember: TeamMember | null;
   specialties: Specialty[];
+  documentTypes: ReferenceValue[];
 }) {
   const [selfMember, setSelfMember] = useState(initialSelfMember);
 
@@ -25,6 +28,7 @@ export function MyProfessionalProfileScreen({
     <MyProfessionalProfileSection
       selfMember={selfMember}
       specialties={specialties}
+      documentTypes={documentTypes}
       onSaved={(updated) => setSelfMember((prev) => (prev ? { ...prev, professionalProfile: updated } : prev))}
     />
   );

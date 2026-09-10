@@ -25,6 +25,7 @@ import { ClinicIdentityCard } from "@/features/dashboard/clinic-identity-card";
 import { ConsoleCapture } from "./console-capture"; // permanent — see that file's own comment
 import { MarketplaceCard } from "@/features/dashboard/marketplace-card";
 import { RealAgendaScreen } from "@/features/dashboard/real-agenda-screen";
+import { EMPTY_PATIENT_IDENTITY_CATALOGS } from "@/features/patients/data";
 import { FIXTURE_CLINIC_ID, fixtureAppointments, fixturePatients, fixtureProfessionals } from "./fixtures";
 
 export default async function AgendaPreviewPage({
@@ -70,6 +71,7 @@ export default async function AgendaPreviewPage({
         roomOptions={["Consultorio 1", "Consultorio 2", "Consultorio 3"]}
         canEditPatientData={true}
         canAttendPatients={canAttendPatients}
+        identityCatalogs={EMPTY_PATIENT_IDENTITY_CATALOGS}
         // key= here isn't for a list — RealAgendaScreen places these as
         // static siblings, not a .map() — but React 19.2.8's dev-mode key
         // validation flags a Client Component's static children array when

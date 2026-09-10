@@ -255,6 +255,62 @@ export async function getActiveReferenceValues(catalogKey: string): Promise<Refe
   return data.map(mapReferenceValueRow);
 }
 
+// Resolves a single (catalogKey, code) pair to its label — used to show a
+// human name for a code a form already has (e.g. a patient's saved
+// municipality) without fetching that catalog's other ~1,100 rows just to
+// find the one that matches.
+export async function findReferenceValueByCode(catalogKey: string, code: string): Promise<ReferenceValue | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("rips_reference_values")
+    .select(REFERENCE_VALUE_COLUMNS)
+    .eq("catalog_key", catalogKey)
+    .eq("code", code)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return mapReferenceValueRow(data);
+}
+
+// A code only ever means something WITHIN its own catalog_key — "01" is a
+// valid GrupoServicios code and a valid ZonaVersion2 code and means two
+// completely different things in each. Every caller (new-patient form,
+// professional-profile form, future RIPS validations) must always check
+// (catalogKey, code) together, never `code` alone — this is that one
+// check, so nobody has to remember to scope it correctly by hand.
+export async function isValidReferenceCode(catalogKey: string, code: string): Promise<boolean> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("rips_reference_values")
+    .select("id")
+    .eq("catalog_key", catalogKey)
+    .eq("code", code)
+    .eq("status", "active")
+    .maybeSingle();
+
+  return !error && data !== null;
+}
+
+// Server-side substring search over one catalog's currently active
+// labels — the Municipio picker's own backing query (1,124 rows is too
+// many to ship to the client at once, see this task's Performance
+// section), same capped-limit shape as searchCups/searchDiagnoses above.
+export async function searchReferenceValues(catalogKey: string, query: string, limit = 20): Promise<ReferenceValue[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("rips_reference_values")
+    .select(REFERENCE_VALUE_COLUMNS)
+    .eq("catalog_key", catalogKey)
+    .eq("status", "active")
+    .ilike("label", `%${query}%`)
+    .order("label")
+    .limit(limit);
+
+  if (error || !data) return [];
+  return data.map(mapReferenceValueRow);
+}
+
 // Municipio is the one reference catalog with an official parent
 // hierarchy (→ Departamento) confirmed so far — see the migration's own
 // comment on why parent_code has no formal FK yet. This is a thin,

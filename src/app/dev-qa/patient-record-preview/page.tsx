@@ -309,6 +309,14 @@ function PatientRecordPreviewContent({
         birthDate: "1990-05-01",
         active: true,
         createdAt: new Date().toISOString(),
+        documentType: null,
+        documentNumber: "111",
+        sexCode: null,
+        userTypeCode: null,
+        countryOfResidenceCode: null,
+        municipalityOfResidenceCode: null,
+        residenceZoneCode: null,
+        countryOfOriginCode: null,
       }}
       clinicId={FIXTURE_CLINIC_ID}
       clinicName="Dental Test"

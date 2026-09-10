@@ -55,6 +55,10 @@ export type PrimaryLocation = {
   timezone: string;
   latitude: number | null;
   longitude: number | null;
+  // RIPS #3 — Documento Técnico 1 C01/P01 codPrestador (código de
+  // habilitación REPS), un dato por sede, ver la migración que agrega
+  // esta columna para la cita regulatoria completa.
+  codPrestador: string | null;
 };
 
 // bootstrap_clinic() always creates exactly one is_primary location — see
@@ -63,7 +67,7 @@ export type PrimaryLocation = {
 export async function fetchPrimaryLocation(supabase: SupabaseClient, clinicId: string): Promise<PrimaryLocation | null> {
   const { data, error } = await supabase
     .from("clinic_locations")
-    .select("id, name, address, city, state, country, phone, timezone, latitude, longitude")
+    .select("id, name, address, city, state, country, phone, timezone, latitude, longitude, cod_prestador")
     .eq("clinic_id", clinicId)
     .eq("is_primary", true)
     .maybeSingle();
@@ -84,6 +88,7 @@ export async function fetchPrimaryLocation(supabase: SupabaseClient, clinicId: s
     timezone: data.timezone,
     latitude: data.latitude,
     longitude: data.longitude,
+    codPrestador: data.cod_prestador,
   };
 }
 
@@ -114,6 +119,11 @@ export type TeamMember = {
     specialtyName: string | null;
     defaultAppointmentDurationMinutes: number | null;
     bio: string | null;
+    // RIPS #3 — official TipoDocumento catalog code + national ID number,
+    // a genuine pair (never a single "CC 123456" string). Nullable: not
+    // every existing professional_profile has these set yet.
+    documentType: string | null;
+    documentNumber: string | null;
   } | null;
 };
 
@@ -158,7 +168,9 @@ export async function fetchTeamMembers(supabase: SupabaseClient, clinicId: strin
   }
   const professionalProfilesResult = await supabase
     .from("professional_profiles")
-    .select("id, active, license_number, clinic_membership_id, default_appointment_duration_minutes, bio, primary_specialty_id")
+    .select(
+      "id, active, license_number, clinic_membership_id, default_appointment_duration_minutes, bio, primary_specialty_id, document_type, document_number",
+    )
     .eq("clinic_id", clinicId);
   if (professionalProfilesResult.error) {
     logStepFailed("fetchTeamMembers (professional_profiles)", professionalProfilesResult.error);
@@ -189,6 +201,8 @@ export async function fetchTeamMembers(supabase: SupabaseClient, clinicId: strin
         specialtyName: pp.primary_specialty_id ? (specialtyNameById.get(pp.primary_specialty_id) ?? null) : null,
         defaultAppointmentDurationMinutes: pp.default_appointment_duration_minutes,
         bio: pp.bio,
+        documentType: pp.document_type,
+        documentNumber: pp.document_number,
       },
     ]),
   );

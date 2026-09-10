@@ -1,6 +1,7 @@
 import { PatientsGreeting } from "@/components/patients-greeting";
 import { AppShell } from "@/components/shell/app-shell";
-import { fetchPatients, type Patient } from "@/features/patients/data";
+import { EMPTY_PATIENT_IDENTITY_CATALOGS, fetchPatients, type Patient, type PatientIdentityCatalogs } from "@/features/patients/data";
+import { fetchPatientIdentityCatalogs } from "@/features/patients/identity-catalogs";
 import { fetchPatientKpis, type PatientKpis } from "@/features/patients/patient-kpis";
 import { PatientsScreen } from "@/features/patients/patients-screen";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
@@ -41,6 +42,7 @@ export default async function PatientsPage() {
   // "optional for the page as a whole" pattern already used below for
   // rooms/members in src/app/clinica/page.tsx.
   let kpis: PatientKpis | null = null;
+  let identityCatalogs: PatientIdentityCatalogs = EMPTY_PATIENT_IDENTITY_CATALOGS;
   if (context.status === "ok") {
     try {
       patients = await fetchPatients(supabase, context.clinic.id);
@@ -53,6 +55,15 @@ export default async function PatientsPage() {
       kpis = await fetchPatientKpis(supabase, context.clinic.id);
     } catch (error) {
       console.error("[/pacientes] fetchPatientKpis failed", error);
+    }
+
+    try {
+      identityCatalogs = await fetchPatientIdentityCatalogs();
+    } catch (error) {
+      // RIPS #3 — only feeds the identity pickers in the create/edit
+      // forms; an empty catalog there just means fewer options, not a
+      // broken page (same "optional for the page" handling as above).
+      console.error("[/pacientes] fetchPatientIdentityCatalogs failed", error);
     }
   }
 
@@ -70,6 +81,7 @@ export default async function PatientsPage() {
           clinicId={context.status === "ok" ? context.clinic.id : null}
           canCreatePatient={canCreatePatient}
           kpis={kpis}
+          identityCatalogs={identityCatalogs}
         />
       )}
     </AppShell>
