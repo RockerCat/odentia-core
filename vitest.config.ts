@@ -14,6 +14,11 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["src/**/*.test.ts"],
+    // scripts/rips-import/**/*.test.mjs: pure-logic tests for the RIPS
+    // catalog importers (CSV parsing/validation) — no database, same
+    // "pure function, no rendering" spirit as the src/**/*.test.ts suite
+    // above, just living next to the .mjs scripts it tests instead of
+    // under src/.
+    include: ["src/**/*.test.ts", "scripts/**/*.test.mjs"],
   },
 });

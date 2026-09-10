@@ -1,0 +1,4 @@
+code,description,chapter,section,category,rips_service_type,rips_service_type_source
+TEST001,"Consulta de prueba, control","89 - Consulta y atención",Consulta general,,consultation,"fixture only — not an official classification"
+TEST002,Procedimiento de prueba,04 - Procedimientos de prueba,,,procedure,"fixture only — not an official classification"
+TEST003,Código de prueba sin clasificar RIPS,,,,,
