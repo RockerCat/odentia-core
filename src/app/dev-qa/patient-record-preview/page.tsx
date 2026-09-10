@@ -145,6 +145,7 @@ const FIXTURE_ENCOUNTERS: ClinicalEncounterRecord[] = [
     treatment: "Control de ortodoncia, Blanqueamiento dental",
     notes: "nota 10",
     indications: "indicaciones",
+    incapacityCode: null,
     attendedBy: null,
     finalizedAt: "2026-09-04T15:36:46.437Z",
     createdAt: "2026-09-04T15:35:25.691Z",
@@ -159,6 +160,7 @@ const FIXTURE_ENCOUNTERS: ClinicalEncounterRecord[] = [
     treatment: "Blanqueamiento dental, Extracción dental",
     notes: "nota2",
     indications: "indicaciones",
+    incapacityCode: null,
     attendedBy: null,
     finalizedAt: "2026-09-04T14:40:23.507Z",
     createdAt: "2026-09-04T14:36:41.809Z",
@@ -324,6 +326,7 @@ function PatientRecordPreviewContent({
       medicalHistory={FIXTURE_MEDICAL_HISTORY}
       toothFindings={FIXTURE_TOOTH_FINDINGS}
       clinicalEncounters={FIXTURE_ENCOUNTERS}
+      encounterClinicalData={new Map()}
       clinicalDocuments={[]}
       clinicalNotes={clinicalNotes}
       treatmentPlanItems={treatmentPlanItems}

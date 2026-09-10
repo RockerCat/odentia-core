@@ -106,6 +106,17 @@ export default function ClinicalEncounterPreviewPage() {
       initialToothFindings={[]}
       existingEncounter={null}
       existingProcedures={[]}
+      existingDiagnoses={[]}
+      existingServices={[]}
+      diagnosisTypeOptions={[]}
+      incapacityOptions={[]}
+      viaIngresoOptions={[]}
+      modalidadOptions={[]}
+      grupoServiciosOptions={[]}
+      serviciosOptions={[]}
+      finalidadOptions={[]}
+      causaMotivoOptions={[]}
+      conceptoRecaudoOptions={[]}
     />
   );
 }

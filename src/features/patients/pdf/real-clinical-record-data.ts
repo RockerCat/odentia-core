@@ -77,6 +77,21 @@ export type PdfEncounterRow = {
   treatment: string | null;
   notes: string | null;
   indications: string | null;
+  // RIPS #4 — diagnósticos CIE-10/servicios CUPS realmente realizados,
+  // already resolved to human "código — descripción" strings by the
+  // caller (see patient-clinical-record-screen.tsx's handleDownloadPdf) —
+  // this builder stays a pure/synchronous function, so it never resolves
+  // a catalog code itself. Empty/null simply means this encounter has no
+  // structured RIPS clinical data yet (e.g. a legacy encounter).
+  diagnosisPrincipalLabel: string | null;
+  relatedDiagnosisLabels: string[];
+  serviceLabels: string[];
+};
+
+export type PdfEncounterClinicalLabels = {
+  diagnosisPrincipalLabel: string | null;
+  relatedDiagnosisLabels: string[];
+  serviceLabels: string[];
 };
 
 export type PdfDocumentRow = {
@@ -140,6 +155,7 @@ export function buildRealClinicalRecordPdfData({
   medicalHistory,
   toothFindings,
   clinicalEncounters,
+  encounterClinicalLabels = new Map(),
   clinicalDocuments,
   clinicalNotes,
   treatmentPlanItems,
@@ -149,6 +165,7 @@ export function buildRealClinicalRecordPdfData({
   medicalHistory: PatientMedicalHistory | null;
   toothFindings: ToothFindingRecord[];
   clinicalEncounters: ClinicalEncounterRecord[];
+  encounterClinicalLabels?: Map<string, PdfEncounterClinicalLabels>;
   clinicalDocuments: ClinicalDocumentRecord[];
   clinicalNotes: ClinicalNoteRecord[];
   treatmentPlanItems: TreatmentPlanItem[];
@@ -213,6 +230,7 @@ export function buildRealClinicalRecordPdfData({
 
   const encounters: PdfEncounterRow[] = clinicalEncounters.map((encounter) => {
     const occurredAt = new Date(encounter.occurredAt);
+    const clinicalLabels = encounterClinicalLabels.get(encounter.id);
     return {
       id: encounter.id,
       dateLabel: DATE_FORMATTER.format(occurredAt),
@@ -223,6 +241,9 @@ export function buildRealClinicalRecordPdfData({
       treatment: encounter.treatment,
       notes: encounter.notes,
       indications: encounter.indications,
+      diagnosisPrincipalLabel: clinicalLabels?.diagnosisPrincipalLabel ?? null,
+      relatedDiagnosisLabels: clinicalLabels?.relatedDiagnosisLabels ?? [],
+      serviceLabels: clinicalLabels?.serviceLabels ?? [],
     };
   });
 

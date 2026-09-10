@@ -6,13 +6,14 @@ import { ChevronIcon, DownloadIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { fetchTeamMembers } from "@/features/clinic/data";
 import type { Appointment } from "@/features/dashboard/appointments-data";
+import { findCupsByCodeAction, findDiagnosisByCodeAction } from "@/features/rips/actions";
 import type { Treatment } from "@/features/treatments/data";
 import { createClient } from "@/lib/supabase/client";
 import { AntecedentesTab } from "./antecedentes-tab";
 import { AtencionesTab } from "./atenciones-tab";
 import { ClinicalAlerts } from "./clinical-alerts";
 import type { ClinicalDocumentRecord } from "./clinical-documents-data";
-import type { ClinicalEncounterRecord } from "./clinical-encounters-data";
+import type { ClinicalEncounterRecord, EncounterClinicalData } from "./clinical-encounters-data";
 import type { ClinicalNoteRecord } from "./clinical-notes-data";
 import type { Patient } from "./data";
 import { DocumentosTab } from "./documentos-tab";
@@ -76,6 +77,7 @@ export function PatientClinicalRecordScreen({
   medicalHistory: initialMedicalHistory,
   toothFindings: initialToothFindings,
   clinicalEncounters,
+  encounterClinicalData,
   clinicalDocuments: initialClinicalDocuments,
   clinicalNotes: initialClinicalNotes,
   treatmentPlanItems: initialTreatmentPlanItems,
@@ -90,6 +92,7 @@ export function PatientClinicalRecordScreen({
   medicalHistory: PatientMedicalHistory | null;
   toothFindings: ToothFindingRecord[];
   clinicalEncounters: ClinicalEncounterRecord[];
+  encounterClinicalData: Map<string, EncounterClinicalData>;
   clinicalDocuments: ClinicalDocumentRecord[];
   clinicalNotes: ClinicalNoteRecord[];
   treatmentPlanItems: TreatmentPlanItem[];
@@ -137,11 +140,48 @@ export function PatientClinicalRecordScreen({
         ]),
       );
 
+      // RIPS #4 — resolve every diagnosis/service code referenced by
+      // clinicalEncounters to a human "código — descripción" label BEFORE
+      // calling buildRealClinicalRecordPdfData (a pure/synchronous
+      // function, same as every other builder input here) — each code is
+      // resolved against the catalog version in effect on the date it was
+      // recorded, same convention as atenciones-tab.tsx's own resolution.
+      const encounterClinicalLabels = new Map<
+        string,
+        { diagnosisPrincipalLabel: string | null; relatedDiagnosisLabels: string[]; serviceLabels: string[] }
+      >();
+      for (const encounter of clinicalEncounters) {
+        const clinicalData = encounterClinicalData.get(encounter.id);
+        if (!clinicalData) continue;
+        const principal = clinicalData.diagnoses.find((d) => d.role === "principal");
+        const related = clinicalData.diagnoses.filter((d) => d.role === "related");
+        const [principalResolved, relatedResolved, servicesResolved] = await Promise.all([
+          principal ? findDiagnosisByCodeAction(principal.cie10Code, encounter.occurredAt) : Promise.resolve(null),
+          Promise.all(related.map((d) => findDiagnosisByCodeAction(d.cie10Code, encounter.occurredAt))),
+          Promise.all(clinicalData.services.map((s) => findCupsByCodeAction(s.cupsCode, s.performedAt))),
+        ]);
+        encounterClinicalLabels.set(encounter.id, {
+          diagnosisPrincipalLabel: principal
+            ? principalResolved
+              ? `${principal.cie10Code} — ${principalResolved.description}`
+              : principal.cie10Code
+            : null,
+          relatedDiagnosisLabels: related.map((d, i) =>
+            relatedResolved[i] ? `${d.cie10Code} — ${relatedResolved[i]!.description}` : d.cie10Code,
+          ),
+          serviceLabels: clinicalData.services.map((s, i) => {
+            const typeLabel = s.ripsServiceType === "consultation" ? "Consulta" : s.ripsServiceType === "procedure" ? "Procedimiento" : "Servicio";
+            return servicesResolved[i] ? `${typeLabel}: ${s.cupsCode} — ${servicesResolved[i]!.description}` : `${typeLabel}: ${s.cupsCode}`;
+          }),
+        });
+      }
+
       const data = buildRealClinicalRecordPdfData({
         patient,
         medicalHistory,
         toothFindings,
         clinicalEncounters,
+        encounterClinicalLabels,
         clinicalDocuments,
         clinicalNotes,
         treatmentPlanItems,
@@ -303,7 +343,9 @@ export function PatientClinicalRecordScreen({
           onChanged={setToothFindings}
         />
       )}
-      {activeTab === "Atenciones" && <AtencionesTab clinicId={clinicId} encounters={clinicalEncounters} />}
+      {activeTab === "Atenciones" && (
+        <AtencionesTab clinicId={clinicId} encounters={clinicalEncounters} encounterClinicalData={encounterClinicalData} />
+      )}
       {activeTab === "Documentos" && (
         <DocumentosTab
           patientId={patient.id}

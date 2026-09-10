@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getClinicLocationRipsIdentityCompleteness,
+  getEncounterRipsClinicalCompleteness,
   getPatientRipsIdentityCompleteness,
   getProfessionalRipsIdentityCompleteness,
 } from "./completeness";
@@ -94,5 +95,83 @@ describe("getPatientRipsIdentityCompleteness", () => {
       "userTypeCode",
       "countryOfResidenceCode",
     ]);
+  });
+});
+
+describe("getEncounterRipsClinicalCompleteness", () => {
+  it("is complete with a principal diagnosis, a classified consultation with a captured value, and incapacity set", () => {
+    const result = getEncounterRipsClinicalCompleteness({
+      hasPrincipalDiagnosis: true,
+      services: [{ ripsServiceType: "consultation", serviceValue: 50000 }],
+      incapacityCode: "02",
+    });
+    expect(result).toEqual({ complete: true, missingFields: [] });
+  });
+
+  it("is complete for a procedure with service_value 0 (the regulatory default) — never flagged as missing", () => {
+    const result = getEncounterRipsClinicalCompleteness({
+      hasPrincipalDiagnosis: true,
+      services: [{ ripsServiceType: "procedure", serviceValue: 0 }],
+      incapacityCode: "02",
+    });
+    expect(result).toEqual({ complete: true, missingFields: [] });
+  });
+
+  it("flags a missing principal diagnosis", () => {
+    const result = getEncounterRipsClinicalCompleteness({
+      hasPrincipalDiagnosis: false,
+      services: [{ ripsServiceType: "consultation", serviceValue: 50000 }],
+      incapacityCode: "02",
+    });
+    expect(result.missingFields).toContain("principalDiagnosis");
+  });
+
+  it("flags a missing service when none were performed", () => {
+    const result = getEncounterRipsClinicalCompleteness({
+      hasPrincipalDiagnosis: true,
+      services: [],
+      incapacityCode: "02",
+    });
+    expect(result.missingFields).toContain("service");
+  });
+
+  it("flags an unresolved CUPS classification ('unknown')", () => {
+    const result = getEncounterRipsClinicalCompleteness({
+      hasPrincipalDiagnosis: true,
+      services: [{ ripsServiceType: "unknown", serviceValue: null }],
+      incapacityCode: "02",
+    });
+    expect(result.missingFields).toContain("cupsClassification");
+  });
+
+  it("flags a missing service_value only for a consultation, never for a procedure", () => {
+    const result = getEncounterRipsClinicalCompleteness({
+      hasPrincipalDiagnosis: true,
+      services: [
+        { ripsServiceType: "consultation", serviceValue: null },
+        { ripsServiceType: "procedure", serviceValue: 0 },
+      ],
+      incapacityCode: "02",
+    });
+    expect(result.missingFields).toEqual(["serviceValue"]);
+  });
+
+  it("flags missing incapacity when not yet set", () => {
+    const result = getEncounterRipsClinicalCompleteness({
+      hasPrincipalDiagnosis: true,
+      services: [{ ripsServiceType: "consultation", serviceValue: 50000 }],
+      incapacityCode: null,
+    });
+    expect(result.missingFields).toContain("incapacity");
+  });
+
+  it("does not crash on a legacy encounter with nothing recorded", () => {
+    const result = getEncounterRipsClinicalCompleteness({
+      hasPrincipalDiagnosis: false,
+      services: [],
+      incapacityCode: null,
+    });
+    expect(result.complete).toBe(false);
+    expect(result.missingFields).toEqual(["principalDiagnosis", "service", "incapacity"]);
   });
 });

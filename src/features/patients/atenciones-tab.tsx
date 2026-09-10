@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { ClinicalEncounterRecord } from "./clinical-encounters-data";
+import { findCupsByCodeAction, findDiagnosisByCodeAction } from "@/features/rips/actions";
+import type { ClinicalEncounterRecord, EncounterClinicalData } from "./clinical-encounters-data";
 import { resolveUpdatedByProfessional, type UpdatedByProfessional } from "./resolve-updated-by";
 
 // Restores the approved demo's Atenciones layout (clinical-record-screen.tsx's
@@ -40,7 +41,20 @@ const FIELD_LABELS = [
   { key: "indications", label: "Indicaciones al paciente" },
 ] as const satisfies readonly { key: keyof ClinicalEncounterRecord; label: string }[];
 
-export function AtencionesTab({ clinicId, encounters }: { clinicId: string | null; encounters: ClinicalEncounterRecord[] }) {
+export function AtencionesTab({
+  clinicId,
+  encounters,
+  encounterClinicalData,
+}: {
+  clinicId: string | null;
+  encounters: ClinicalEncounterRecord[];
+  // RIPS #4 — diagnósticos/servicios realizados por atención, read-only
+  // here (this tab never writes clinical data — that only happens in the
+  // real Iniciar/Continuar atención screen). Keyed by encounter id, one
+  // batched fetch per page load (see fetchEncounterClinicalDataForEncounters)
+  // rather than a query per row.
+  encounterClinicalData: Map<string, EncounterClinicalData>;
+}) {
   // Resolves each encounter's attended_by (a profiles.id) to a real
   // name/specialty — reuses fetchTeamMembers via resolveUpdatedByProfessional
   // (see resolve-updated-by.ts), same pattern as Antecedentes/Odontograma:
@@ -78,6 +92,67 @@ export function AtencionesTab({ clinicId, encounters }: { clinicId: string | nul
     };
   }, [clinicId, encounters]);
 
+  // Human descriptions for each diagnosis/service code — the DB only
+  // stores the code (see clinical-encounters-data.ts's own comment on why
+  // there's no snapshotted description), so resolve against the catalog
+  // version that was actually in effect on the date the code was recorded
+  // (the diagnosis's encounter occurred_at, the service's own performed_at)
+  // — never today's catalog, and never a raw code shown alone. Keyed by
+  // "kind:code:onDate" so the same code at two different points in time
+  // (a catalog version change) is never conflated.
+  const [codeDescriptions, setCodeDescriptions] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const diagnosisLookups = new Map<string, { code: string; onDate: string }>();
+      const cupsLookups = new Map<string, { code: string; onDate: string }>();
+      for (const encounter of encounters) {
+        const data = encounterClinicalData.get(encounter.id);
+        if (!data) continue;
+        for (const d of data.diagnoses) {
+          diagnosisLookups.set(`cie10:${d.cie10Code}:${encounter.occurredAt}`, { code: d.cie10Code, onDate: encounter.occurredAt });
+        }
+        for (const s of data.services) {
+          cupsLookups.set(`cups:${s.cupsCode}:${s.performedAt}`, { code: s.cupsCode, onDate: s.performedAt });
+        }
+      }
+      if (diagnosisLookups.size === 0 && cupsLookups.size === 0) return;
+      try {
+        const diagnosisEntries = Array.from(diagnosisLookups.entries());
+        const cupsEntries = Array.from(cupsLookups.entries());
+        const [diagnosisResults, cupsResults] = await Promise.all([
+          Promise.all(diagnosisEntries.map(([, { code, onDate }]) => findDiagnosisByCodeAction(code, onDate))),
+          Promise.all(cupsEntries.map(([, { code, onDate }]) => findCupsByCodeAction(code, onDate))),
+        ]);
+        if (cancelled) return;
+        const next = new Map<string, string>();
+        diagnosisEntries.forEach(([key], i) => {
+          if (diagnosisResults[i]) next.set(key, diagnosisResults[i]!.description);
+        });
+        cupsEntries.forEach(([key], i) => {
+          if (cupsResults[i]) next.set(key, cupsResults[i]!.description);
+        });
+        setCodeDescriptions(next);
+      } catch {
+        if (!cancelled) setCodeDescriptions(new Map());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [encounters, encounterClinicalData]);
+
+  const diagnosisLabel = (encounter: ClinicalEncounterRecord, d: { cie10Code: string }) => {
+    const description = codeDescriptions.get(`cie10:${d.cie10Code}:${encounter.occurredAt}`);
+    return description ? `${d.cie10Code} — ${description}` : d.cie10Code;
+  };
+
+  const serviceLabel = (s: { cupsCode: string; performedAt: string; ripsServiceType: "consultation" | "procedure" | "unknown" }) => {
+    const description = codeDescriptions.get(`cups:${s.cupsCode}:${s.performedAt}`);
+    const typeLabel = s.ripsServiceType === "consultation" ? "Consulta" : s.ripsServiceType === "procedure" ? "Procedimiento" : "Servicio";
+    return description ? `${typeLabel}: ${s.cupsCode} — ${description}` : `${typeLabel}: ${s.cupsCode}`;
+  };
+
   if (encounters.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
@@ -113,6 +188,34 @@ export function AtencionesTab({ clinicId, encounters }: { clinicId: string | nul
                     </p>
                   );
                 })}
+                {(() => {
+                  const data = encounterClinicalData.get(encounter.id);
+                  if (!data || (data.diagnoses.length === 0 && data.services.length === 0)) return null;
+                  const principal = data.diagnoses.find((d) => d.role === "principal");
+                  const related = data.diagnoses.filter((d) => d.role === "related");
+                  return (
+                    <>
+                      {principal && (
+                        <p className="text-sm text-foreground/80">
+                          <span className="font-medium text-foreground">Diagnóstico principal:</span>{" "}
+                          {diagnosisLabel(encounter, principal)}
+                        </p>
+                      )}
+                      {related.length > 0 && (
+                        <p className="text-sm text-foreground/80">
+                          <span className="font-medium text-foreground">Diagnósticos relacionados:</span>{" "}
+                          {related.map((d) => diagnosisLabel(encounter, d)).join("; ")}
+                        </p>
+                      )}
+                      {data.services.length > 0 && (
+                        <p className="text-sm text-foreground/80">
+                          <span className="font-medium text-foreground">Servicios realizados:</span>{" "}
+                          {data.services.map((s) => serviceLabel(s)).join("; ")}
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </li>
           );

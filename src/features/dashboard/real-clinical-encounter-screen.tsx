@@ -14,6 +14,7 @@ import {
   ClockIcon,
   CloseIcon,
   FlagIcon,
+  ListIcon,
   NoteIcon,
   PhoneIcon,
   PlusIcon,
@@ -26,8 +27,16 @@ import type { Patient } from "@/features/patients/data";
 import { buildProceduresPayload, buildTreatmentText } from "@/features/patients/clinical-encounter-draft";
 import { EditOdontogramaModal } from "@/features/patients/edit-odontograma-modal";
 import { upsertPatientClinicalEncounter } from "@/features/patients/clinical-encounters-actions";
-import type { ClinicalEncounterProcedureRecord, ClinicalEncounterRecord } from "@/features/patients/clinical-encounters-data";
+import type {
+  ClinicalEncounterProcedureRecord,
+  ClinicalEncounterRecord,
+  EncounterDiagnosisRecord,
+  EncounterServiceRecord,
+} from "@/features/patients/clinical-encounters-data";
 import { toOdontogramData, type ToothFindingRecord } from "@/features/patients/tooth-findings-data";
+import { CodeSearchAutocomplete } from "@/features/rips/code-search-autocomplete";
+import { findCupsByCodeAction, findDiagnosisByCodeAction, searchCupsAction, searchDiagnosesAction } from "@/features/rips/actions";
+import type { ReferenceValue } from "@/features/rips/catalog-data";
 import { FIELD_CLASS } from "./appointment-detail-modal";
 import { updateAppointment } from "./appointments-actions";
 import { fetchAppointmentsForPatient, type Appointment } from "./appointments-data";
@@ -78,6 +87,44 @@ import type { WeekDay } from "./real-week";
 
 type ProcedureRow = { id: string; name: string; note: string };
 
+// RIPS #4 — structured diagnosis/service rows, entirely separate from
+// ProcedureRow above (the clinic's own free-text "Procedimientos
+// realizados" list, never CUPS-coded, never the RIPS source — see this
+// task's own core principle). `description` is resolved client-side
+// (search selection, or a one-time lookup for a pre-existing row) purely
+// for display — never sent back to the server as the source of truth;
+// only the code is persisted.
+type DiagnosisRow = {
+  id: string;
+  cie10Code: string;
+  description: string;
+  role: "principal" | "related";
+  diagnosisTypeCode: string;
+  // For a 'related' row: the id of the ServiceRow (below) this diagnosis
+  // is scoped to, or "" for "applies to the whole encounter" (the only
+  // value a principal diagnosis can have). Resolved to a service_sequence
+  // position at save time — see buildDiagnosesPayload.
+  serviceRowId: string;
+};
+
+type ServiceRow = {
+  id: string;
+  cupsCode: string;
+  description: string;
+  ripsServiceType: "consultation" | "procedure" | "unknown";
+  professionalProfileId: string;
+  serviceValue: string;
+  viaIngresoCode: string;
+  modalidadCode: string;
+  grupoServiciosCode: string;
+  codServicioCode: string;
+  finalidadCode: string;
+  causaMotivoCode: string;
+  conceptoRecaudoCode: string;
+  valorPagoModerador: string;
+  detailsOpen: boolean;
+};
+
 const HISTORY_LIMIT = 3;
 
 export function RealClinicalEncounterScreen({
@@ -92,6 +139,17 @@ export function RealClinicalEncounterScreen({
   initialToothFindings,
   existingEncounter,
   existingProcedures,
+  existingDiagnoses,
+  existingServices,
+  diagnosisTypeOptions,
+  incapacityOptions,
+  viaIngresoOptions,
+  modalidadOptions,
+  grupoServiciosOptions,
+  serviciosOptions,
+  finalidadOptions,
+  causaMotivoOptions,
+  conceptoRecaudoOptions,
 }: {
   appointment: Appointment;
   professional: BoardProfessional | null;
@@ -104,6 +162,17 @@ export function RealClinicalEncounterScreen({
   initialToothFindings: ToothFindingRecord[];
   existingEncounter: ClinicalEncounterRecord | null;
   existingProcedures: ClinicalEncounterProcedureRecord[];
+  existingDiagnoses: EncounterDiagnosisRecord[];
+  existingServices: EncounterServiceRecord[];
+  diagnosisTypeOptions: ReferenceValue[];
+  incapacityOptions: ReferenceValue[];
+  viaIngresoOptions: ReferenceValue[];
+  modalidadOptions: ReferenceValue[];
+  grupoServiciosOptions: ReferenceValue[];
+  serviciosOptions: ReferenceValue[];
+  finalidadOptions: ReferenceValue[];
+  causaMotivoOptions: ReferenceValue[];
+  conceptoRecaudoOptions: ReferenceValue[];
 }) {
   const router = useRouter();
   // Clinical action — never Assistant (see CLAUDE.md's Roles: Assistant
@@ -120,6 +189,164 @@ export function RealClinicalEncounterScreen({
   const [procedures, setProcedures] = useState<ProcedureRow[]>(() =>
     existingProcedures.map((p) => ({ id: p.id, name: p.name, note: p.note ?? "" })),
   );
+
+  // RIPS #4 — structured diagnoses/servicios. Row `id` for a pre-existing
+  // row is the SAME id as its DB row (encounter_diagnoses.id /
+  // encounter_services.id) — a `related` diagnosis's `serviceRowId` is
+  // therefore just `encounterServiceId` verbatim, no id-translation table
+  // needed. New rows get a locally-generated `diag-N`/`svc-N` id instead,
+  // which can never collide with a real uuid.
+  const [incapacityCode, setIncapacityCode] = useState<string | null>(existingEncounter?.incapacityCode ?? null);
+  const [diagnoses, setDiagnoses] = useState<DiagnosisRow[]>(() =>
+    existingDiagnoses.map((d) => ({
+      id: d.id,
+      cie10Code: d.cie10Code,
+      description: "",
+      role: d.role,
+      diagnosisTypeCode: d.diagnosisTypeCode ?? "",
+      serviceRowId: d.encounterServiceId ?? "",
+    })),
+  );
+  const [services, setServices] = useState<ServiceRow[]>(() =>
+    existingServices.map((s) => ({
+      id: s.id,
+      cupsCode: s.cupsCode,
+      description: "",
+      ripsServiceType: s.ripsServiceType,
+      professionalProfileId: s.professionalProfileId,
+      serviceValue: s.serviceValue != null ? String(s.serviceValue) : "",
+      viaIngresoCode: s.viaIngresoCode ?? "",
+      modalidadCode: s.modalidadCode ?? "",
+      grupoServiciosCode: s.grupoServiciosCode ?? "",
+      codServicioCode: s.codServicioCode ?? "",
+      finalidadCode: s.finalidadCode ?? "",
+      causaMotivoCode: s.causaMotivoCode ?? "",
+      conceptoRecaudoCode: s.conceptoRecaudoCode ?? "",
+      valorPagoModerador: s.valorPagoModerador != null ? String(s.valorPagoModerador) : "",
+      detailsOpen: false,
+    })),
+  );
+  const nextDiagnosisId = useRef(0);
+  const nextServiceId = useRef(0);
+
+  // One-time resolution of the human description for each pre-existing
+  // diagnosis/service row — the DB only stores the code (see this file's
+  // own DiagnosisRow/ServiceRow comment on why), so on first load we look
+  // each one up by code to show something other than a bare code. Matched
+  // by id (never by array position) so a row the user adds/removes while
+  // this is still in flight is never mismatched.
+  useEffect(() => {
+    if (existingDiagnoses.length === 0 && existingServices.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const [diagnosisResults, cupsResults] = await Promise.all([
+        Promise.all(existingDiagnoses.map((d) => findDiagnosisByCodeAction(d.cie10Code))),
+        Promise.all(existingServices.map((s) => findCupsByCodeAction(s.cupsCode))),
+      ]);
+      if (cancelled) return;
+      setDiagnoses((prev) =>
+        prev.map((row) => {
+          const idx = existingDiagnoses.findIndex((d) => d.id === row.id);
+          return idx === -1 ? row : { ...row, description: diagnosisResults[idx]?.description ?? row.description };
+        }),
+      );
+      setServices((prev) =>
+        prev.map((row) => {
+          const idx = existingServices.findIndex((s) => s.id === row.id);
+          return idx === -1 ? row : { ...row, description: cupsResults[idx]?.description ?? row.description };
+        }),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const addDiagnosis = (role: "principal" | "related") => {
+    nextDiagnosisId.current += 1;
+    setDiagnoses((prev) => [
+      ...prev,
+      { id: `diag-${nextDiagnosisId.current}`, cie10Code: "", description: "", role, diagnosisTypeCode: "", serviceRowId: "" },
+    ]);
+  };
+
+  const updateDiagnosis = (id: string, patch: Partial<DiagnosisRow>) => {
+    setDiagnoses((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+  };
+
+  const removeDiagnosis = (id: string) => {
+    setDiagnoses((prev) => prev.filter((d) => d.id !== id));
+  };
+
+  const addService = () => {
+    nextServiceId.current += 1;
+    setServices((prev) => [
+      ...prev,
+      {
+        id: `svc-${nextServiceId.current}`,
+        cupsCode: "",
+        description: "",
+        ripsServiceType: "unknown",
+        professionalProfileId: appointment.professionalProfileId,
+        serviceValue: "",
+        viaIngresoCode: "",
+        modalidadCode: "",
+        grupoServiciosCode: "",
+        codServicioCode: "",
+        finalidadCode: "",
+        causaMotivoCode: "",
+        conceptoRecaudoCode: "",
+        valorPagoModerador: "",
+        detailsOpen: false,
+      },
+    ]);
+  };
+
+  const updateService = (id: string, patch: Partial<ServiceRow>) => {
+    setServices((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  };
+
+  const removeService = (id: string) => {
+    setServices((prev) => prev.filter((s) => s.id !== id));
+    // A diagnosis scoped to the removed service falls back to "applies to
+    // the whole encounter" rather than pointing at a row that no longer
+    // exists.
+    setDiagnoses((prev) => prev.map((d) => (d.serviceRowId === id ? { ...d, serviceRowId: "" } : d)));
+  };
+
+  // Resolves each `related` diagnosis's serviceRowId to the 0-based
+  // position of that service WITHIN THIS SAME CALL's services array — the
+  // RPC's own `service_sequence` contract (see clinical-encounters-actions.ts).
+  // A principal diagnosis, or one scoped to "whole encounter", always
+  // sends serviceSequence: null.
+  const buildDiagnosesPayload = () =>
+    diagnoses
+      .filter((d) => d.cie10Code)
+      .map((d) => ({
+        cie10Code: d.cie10Code,
+        role: d.role,
+        diagnosisTypeCode: d.role === "principal" ? d.diagnosisTypeCode || null : null,
+        serviceSequence: d.role === "related" && d.serviceRowId ? services.findIndex((s) => s.id === d.serviceRowId) : null,
+      }));
+
+  const buildServicesPayload = () =>
+    services
+      .filter((s) => s.cupsCode)
+      .map((s) => ({
+        cupsCode: s.cupsCode,
+        professionalProfileId: s.professionalProfileId || appointment.professionalProfileId,
+        serviceValue: s.serviceValue.trim() === "" ? null : Number(s.serviceValue),
+        viaIngresoCode: s.viaIngresoCode || null,
+        modalidadCode: s.modalidadCode || null,
+        grupoServiciosCode: s.grupoServiciosCode || null,
+        codServicioCode: s.codServicioCode || null,
+        finalidadCode: s.finalidadCode || null,
+        causaMotivoCode: s.causaMotivoCode || null,
+        conceptoRecaudoCode: s.conceptoRecaudoCode || null,
+        valorPagoModerador: s.valorPagoModerador.trim() === "" ? null : Number(s.valorPagoModerador),
+      }));
+
   const [needsNextAppointment, setNeedsNextAppointment] = useState<boolean | null>(null);
   const [nextTreatment, setNextTreatment] = useState("");
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
@@ -215,6 +442,9 @@ export function RealClinicalEncounterScreen({
       notes: notes || null,
       indications: indications || null,
       procedures: buildProceduresPayload(procedures),
+      incapacityCode,
+      diagnoses: buildDiagnosesPayload(),
+      services: buildServicesPayload(),
       finalize: false,
     });
     setSavingDraft(false);
@@ -249,6 +479,9 @@ export function RealClinicalEncounterScreen({
       notes: notes || null,
       indications: indications || null,
       procedures: buildProceduresPayload(procedures),
+      incapacityCode,
+      diagnoses: buildDiagnosesPayload(),
+      services: buildServicesPayload(),
       finalize: true,
     });
     if (encounterResult.status === "error") {
@@ -292,6 +525,9 @@ export function RealClinicalEncounterScreen({
 
   const elapsedSeconds = Math.max(0, Math.floor((now.getTime() - startedAt.getTime()) / 1000));
   const hasAlerts = Boolean(appointment.notes);
+
+  const principalDiagnosis = diagnoses.find((d) => d.role === "principal") ?? null;
+  const relatedDiagnoses = diagnoses.filter((d) => d.role === "related");
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
@@ -378,6 +614,341 @@ export function RealClinicalEncounterScreen({
                 />
               </Section>
 
+              <Section title="Diagnósticos" icon={ListIcon}>
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <p className="text-xs font-medium text-foreground/80">Diagnóstico principal</p>
+                    {principalDiagnosis ? (
+                      <div className="mt-2 flex items-start gap-2 rounded-lg border border-border p-2.5">
+                        <div className="grid flex-1 gap-2 sm:grid-cols-2">
+                          <CodeSearchAutocomplete
+                            value={principalDiagnosis.cie10Code}
+                            displayDescription={
+                              principalDiagnosis.cie10Code
+                                ? `${principalDiagnosis.cie10Code} — ${principalDiagnosis.description}`
+                                : ""
+                            }
+                            search={searchDiagnosesAction}
+                            onChange={(picked) =>
+                              updateDiagnosis(
+                                principalDiagnosis.id,
+                                picked ? { cie10Code: picked.code, description: picked.description } : { cie10Code: "", description: "" },
+                              )
+                            }
+                            placeholder="Buscar por código o descripción…"
+                          />
+                          <select
+                            value={principalDiagnosis.diagnosisTypeCode}
+                            onChange={(e) => updateDiagnosis(principalDiagnosis.id, { diagnosisTypeCode: e.target.value })}
+                            className={FIELD_CLASS}
+                          >
+                            <option value="">Tipo de diagnóstico</option>
+                            {diagnosisTypeOptions.map((opt) => (
+                              <option key={opt.code} value={opt.code}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeDiagnosis(principalDiagnosis.id)}
+                          aria-label="Quitar diagnóstico principal"
+                          className="mt-1.5 shrink-0 text-muted-foreground/60 hover:text-danger"
+                        >
+                          <CloseIcon className="size-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => addDiagnosis("principal")}
+                        className="mt-2 flex items-center justify-center gap-1.5 self-start rounded-lg border border-dashed border-border px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                      >
+                        <PlusIcon className="size-3.5" />
+                        Agregar diagnóstico principal
+                      </button>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-medium text-foreground/80">Diagnósticos relacionados</p>
+                    <div className="mt-2 flex flex-col gap-2.5">
+                      {relatedDiagnoses.map((d) => (
+                        <div key={d.id} className="flex items-start gap-2 rounded-lg border border-border p-2.5">
+                          <div className="grid flex-1 gap-2 sm:grid-cols-2">
+                            <CodeSearchAutocomplete
+                              value={d.cie10Code}
+                              displayDescription={d.cie10Code ? `${d.cie10Code} — ${d.description}` : ""}
+                              search={searchDiagnosesAction}
+                              onChange={(picked) =>
+                                updateDiagnosis(
+                                  d.id,
+                                  picked ? { cie10Code: picked.code, description: picked.description } : { cie10Code: "", description: "" },
+                                )
+                              }
+                              placeholder="Buscar por código o descripción…"
+                            />
+                            <select
+                              value={d.serviceRowId}
+                              onChange={(e) => updateDiagnosis(d.id, { serviceRowId: e.target.value })}
+                              className={FIELD_CLASS}
+                            >
+                              <option value="">Aplica a toda la atención</option>
+                              {services.map((s, i) => (
+                                <option key={s.id} value={s.id}>
+                                  Servicio {i + 1}
+                                  {s.cupsCode ? ` — ${s.cupsCode}` : ""}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeDiagnosis(d.id)}
+                            aria-label="Quitar diagnóstico relacionado"
+                            className="mt-1.5 shrink-0 text-muted-foreground/60 hover:text-danger"
+                          >
+                            <CloseIcon className="size-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => addDiagnosis("related")}
+                        className="flex items-center justify-center gap-1.5 self-start rounded-lg border border-dashed border-border px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                      >
+                        <PlusIcon className="size-3.5" />
+                        Agregar diagnóstico relacionado
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </Section>
+
+              <Section title="Servicios realizados" icon={CheckCircleIcon}>
+                <div className="flex flex-col gap-2.5">
+                  {services.length === 0 && (
+                    <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+                      Aún no se han registrado servicios realizados.
+                    </p>
+                  )}
+                  {services.map((s) => {
+                    const filteredServicios = s.grupoServiciosCode
+                      ? serviciosOptions.filter((o) => o.parentCode === s.grupoServiciosCode)
+                      : [];
+                    return (
+                      <div key={s.id} className="rounded-lg border border-border p-2.5">
+                        <div className="flex items-start gap-2">
+                          <div className="grid flex-1 gap-2 sm:grid-cols-2">
+                            <CodeSearchAutocomplete
+                              value={s.cupsCode}
+                              displayDescription={s.cupsCode ? `${s.cupsCode} — ${s.description}` : ""}
+                              search={searchCupsAction}
+                              onChange={(picked) =>
+                                updateService(
+                                  s.id,
+                                  picked
+                                    ? { cupsCode: picked.code, description: picked.description, ripsServiceType: picked.ripsServiceType }
+                                    : { cupsCode: "", description: "", ripsServiceType: "unknown" },
+                                )
+                              }
+                              placeholder="Buscar por código o descripción…"
+                            />
+                            {professionals.length > 1 ? (
+                              <select
+                                value={s.professionalProfileId}
+                                onChange={(e) => updateService(s.id, { professionalProfileId: e.target.value })}
+                                className={FIELD_CLASS}
+                              >
+                                <option value="">Selecciona un profesional</option>
+                                {professionals.map((p) => (
+                                  <option key={p.professionalProfileId} value={p.professionalProfileId}>
+                                    {p.name}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <div className="flex items-center text-xs text-muted-foreground">
+                                {professional?.name ?? "Sin asignar"}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeService(s.id)}
+                            aria-label="Quitar servicio"
+                            className="mt-1.5 shrink-0 text-muted-foreground/60 hover:text-danger"
+                          >
+                            <CloseIcon className="size-4" />
+                          </button>
+                        </div>
+
+                        {s.cupsCode && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                                s.ripsServiceType === "consultation"
+                                  ? "border-info/25 bg-info/10 text-info"
+                                  : s.ripsServiceType === "procedure"
+                                    ? "border-primary/25 bg-primary/10 text-primary"
+                                    : "border-warning/25 bg-warning/10 text-warning"
+                              }`}
+                            >
+                              {s.ripsServiceType === "consultation"
+                                ? "Consulta"
+                                : s.ripsServiceType === "procedure"
+                                  ? "Procedimiento"
+                                  : "Sin clasificar"}
+                            </span>
+
+                            {s.ripsServiceType === "consultation" && (
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={s.serviceValue}
+                                onChange={(e) => updateService(s.id, { serviceValue: e.target.value })}
+                                placeholder="Valor cobrado al paciente"
+                                className={`${FIELD_CLASS} w-44`}
+                              />
+                            )}
+                            {s.ripsServiceType === "procedure" && (
+                              <span className="text-xs text-muted-foreground">Valor: $0 (sin factura, según normativa)</span>
+                            )}
+                            {s.ripsServiceType === "unknown" && (
+                              <span className="text-xs text-warning">
+                                Este código CUPS no tiene una clasificación RIPS conocida.
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => updateService(s.id, { detailsOpen: !s.detailsOpen })}
+                          className="mt-2 flex items-center gap-1 text-xs font-medium text-foreground/60 hover:text-foreground"
+                        >
+                          <ChevronIcon className={`size-3.5 transition-transform ${s.detailsOpen ? "rotate-90" : ""}`} />
+                          Detalles RIPS
+                        </button>
+
+                        {s.detailsOpen && (
+                          <div className="mt-2 grid gap-2 border-t border-border pt-2.5 sm:grid-cols-2">
+                            {s.ripsServiceType === "procedure" && (
+                              <select
+                                value={s.viaIngresoCode}
+                                onChange={(e) => updateService(s.id, { viaIngresoCode: e.target.value })}
+                                className={FIELD_CLASS}
+                              >
+                                <option value="">Vía de ingreso</option>
+                                {viaIngresoOptions.map((o) => (
+                                  <option key={o.code} value={o.code}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            {s.ripsServiceType === "consultation" && (
+                              <select
+                                value={s.causaMotivoCode}
+                                onChange={(e) => updateService(s.id, { causaMotivoCode: e.target.value })}
+                                className={FIELD_CLASS}
+                              >
+                                <option value="">Causa externa</option>
+                                {causaMotivoOptions.map((o) => (
+                                  <option key={o.code} value={o.code}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            <select
+                              value={s.modalidadCode}
+                              onChange={(e) => updateService(s.id, { modalidadCode: e.target.value })}
+                              className={FIELD_CLASS}
+                            >
+                              <option value="">Modalidad de atención</option>
+                              {modalidadOptions.map((o) => (
+                                <option key={o.code} value={o.code}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={s.grupoServiciosCode}
+                              onChange={(e) => updateService(s.id, { grupoServiciosCode: e.target.value, codServicioCode: "" })}
+                              className={FIELD_CLASS}
+                            >
+                              <option value="">Grupo de servicios</option>
+                              {grupoServiciosOptions.map((o) => (
+                                <option key={o.code} value={o.code}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={s.codServicioCode}
+                              onChange={(e) => updateService(s.id, { codServicioCode: e.target.value })}
+                              disabled={!s.grupoServiciosCode}
+                              className={FIELD_CLASS}
+                            >
+                              <option value="">{s.grupoServiciosCode ? "Servicio" : "Selecciona primero un grupo"}</option>
+                              {filteredServicios.map((o) => (
+                                <option key={o.code} value={o.code}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={s.finalidadCode}
+                              onChange={(e) => updateService(s.id, { finalidadCode: e.target.value })}
+                              className={FIELD_CLASS}
+                            >
+                              <option value="">Finalidad</option>
+                              {finalidadOptions.map((o) => (
+                                <option key={o.code} value={o.code}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={s.conceptoRecaudoCode}
+                              onChange={(e) => updateService(s.id, { conceptoRecaudoCode: e.target.value })}
+                              className={FIELD_CLASS}
+                            >
+                              <option value="">Concepto de recaudo</option>
+                              {conceptoRecaudoOptions.map((o) => (
+                                <option key={o.code} value={o.code}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={s.valorPagoModerador}
+                              onChange={(e) => updateService(s.id, { valorPagoModerador: e.target.value })}
+                              placeholder="Valor pago moderador (opcional)"
+                              className={FIELD_CLASS}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={addService}
+                    className="flex items-center justify-center gap-1.5 self-start rounded-lg border border-dashed border-border px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                  >
+                    <PlusIcon className="size-3.5" />
+                    Agregar servicio
+                  </button>
+                </div>
+              </Section>
+
               <Section title="Procedimientos realizados" icon={ClipboardIcon}>
                 <div className="flex flex-col gap-2.5">
                   {procedures.length === 0 && (
@@ -455,6 +1026,25 @@ export function RealClinicalEncounterScreen({
                   onChange={setIndications}
                   placeholder="Recomendaciones, cuidados o medicamentos indicados…"
                 />
+              </Section>
+
+              <Section title="Incapacidad" icon={AlertTriangleIcon}>
+                <div className="flex items-center gap-2">
+                  {incapacityOptions.map((opt) => (
+                    <button
+                      key={opt.code}
+                      type="button"
+                      onClick={() => setIncapacityCode(opt.code)}
+                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                        incapacityCode === opt.code
+                          ? "border-primary/30 bg-primary/10 text-primary"
+                          : "border-border text-foreground/70 hover:bg-foreground/5"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </Section>
 
               <Section title="Próxima cita" icon={CalendarIcon}>

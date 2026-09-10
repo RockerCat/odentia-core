@@ -80,3 +80,43 @@ export function getPatientRipsIdentityCompleteness(input: {
 
   return buildResult(missingFields);
 }
+
+// RIPS #4 — does a finalized clinical encounter have the minimum
+// structured clinical data RIPS will eventually need: a principal
+// diagnosis, at least one service ACTUALLY PERFORMED (never a Treatment
+// Plan item), every service's CUPS classification resolved (never
+// 'unknown'), and — for a consultation specifically — a captured
+// service_value (a procedure's is auto-filled with the regulatory 0 for
+// RIPS sin factura, so it's never "missing" here; see the RPC's own
+// comment on why). `incapacity` is reported when null not because the
+// Documento Técnico 1 marks it unconditionally obligatorio (it doesn't —
+// same "condicional, not always required" reasoning as this file's own
+// patient completeness helper), but because there is currently no
+// automatic default for it and this task's own scope asks it be
+// surfaced explicitly for staff review, never silently defaulted.
+export type EncounterServiceCompletenessInput = {
+  ripsServiceType: "consultation" | "procedure" | "unknown";
+  serviceValue: number | null;
+};
+
+export function getEncounterRipsClinicalCompleteness(input: {
+  hasPrincipalDiagnosis: boolean;
+  services: EncounterServiceCompletenessInput[];
+  incapacityCode: string | null;
+}): RipsIdentityCompleteness {
+  const missingFields: string[] = [];
+  if (!input.hasPrincipalDiagnosis) missingFields.push("principalDiagnosis");
+  if (input.services.length === 0) missingFields.push("service");
+
+  if (input.services.some((s) => s.ripsServiceType === "unknown")) {
+    missingFields.push("cupsClassification");
+  }
+
+  if (input.services.some((s) => s.ripsServiceType === "consultation" && s.serviceValue == null)) {
+    missingFields.push("serviceValue");
+  }
+
+  if (!input.incapacityCode) missingFields.push("incapacity");
+
+  return buildResult(missingFields);
+}

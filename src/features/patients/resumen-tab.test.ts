@@ -25,6 +25,7 @@ function encounter(overrides: Partial<ClinicalEncounterRecord>): ClinicalEncount
     treatment: "Blanqueamiento dental",
     notes: "nota",
     indications: "indicaciones",
+    incapacityCode: null,
     attendedBy: null,
     finalizedAt: "2026-09-04T15:36:46.437Z",
     createdAt: "2026-09-04T15:35:25.691Z",

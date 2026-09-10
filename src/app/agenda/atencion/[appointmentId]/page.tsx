@@ -4,10 +4,16 @@ import { RealClinicalEncounterScreen } from "@/features/dashboard/real-clinical-
 import { toBoardProfessional } from "@/features/dashboard/real-format";
 import { canStartClinicalEncounter } from "@/features/dashboard/real-status";
 import { getWeekDaysContaining } from "@/features/dashboard/real-week";
-import { fetchClinicalEncounterByAppointmentId, fetchClinicalEncounterProcedures } from "@/features/patients/clinical-encounters-data";
+import {
+  fetchClinicalEncounterByAppointmentId,
+  fetchClinicalEncounterProcedures,
+  fetchEncounterDiagnoses,
+  fetchEncounterServices,
+} from "@/features/patients/clinical-encounters-data";
 import { canEditClinicalData } from "@/features/patients/clinical-permissions";
 import { fetchPatients } from "@/features/patients/data";
 import { fetchPatientToothFindings } from "@/features/patients/tooth-findings-data";
+import { getActiveReferenceValues } from "@/features/rips/catalog-data";
 import { fetchActiveTreatmentNames } from "@/features/treatments/data";
 import { fetchActiveRoomNames } from "@/features/rooms/data";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
@@ -76,26 +82,60 @@ export default async function ClinicalEncounterPage({ params }: { params: Promis
   }
 
   const weekDays = getWeekDaysContaining(appointment.startsAt);
-  const [rawProfessionals, patients, treatmentOptions, roomOptions, toothFindings, existingEncounter] = await Promise.all([
-    fetchClinicalProfessionals(supabase, clinicId),
-    fetchPatients(supabase, clinicId),
-    fetchActiveTreatmentNames(supabase, clinicId),
-    fetchActiveRoomNames(supabase, clinicId),
-    fetchPatientToothFindings(supabase, clinicId, appointment.patientId),
-    // Load/resume check: does this Cita already have a draft or finalized
-    // encounter recorded ("Guardar borrador" from an earlier visit to this
-    // same URL, or a previous "Finalizar atención" that persisted the
-    // encounter but never got to flip the Cita to `completed`)? See
-    // real-clinical-encounter-screen.tsx's own comment on how this is
-    // used — never re-inserted, only ever upserted from here on.
-    fetchClinicalEncounterByAppointmentId(supabase, clinicId, appointmentId),
-  ]);
+  const [
+    rawProfessionals,
+    patients,
+    treatmentOptions,
+    roomOptions,
+    toothFindings,
+    existingEncounter,
+    diagnosisTypeOptions,
+    incapacityOptions,
+    viaIngresoOptions,
+    modalidadOptions,
+    grupoServiciosOptions,
+    serviciosOptions,
+    finalidadOptions,
+    causaMotivoOptions,
+    conceptoRecaudoOptions,
+  ] =
+    await Promise.all([
+      fetchClinicalProfessionals(supabase, clinicId),
+      fetchPatients(supabase, clinicId),
+      fetchActiveTreatmentNames(supabase, clinicId),
+      fetchActiveRoomNames(supabase, clinicId),
+      fetchPatientToothFindings(supabase, clinicId, appointment.patientId),
+      // Load/resume check: does this Cita already have a draft or finalized
+      // encounter recorded ("Guardar borrador" from an earlier visit to this
+      // same URL, or a previous "Finalizar atención" that persisted the
+      // encounter but never got to flip the Cita to `completed`)? See
+      // real-clinical-encounter-screen.tsx's own comment on how this is
+      // used — never re-inserted, only ever upserted from here on.
+      fetchClinicalEncounterByAppointmentId(supabase, clinicId, appointmentId),
+      // RIPS #4 — small reference catalogs the Diagnósticos/Incapacidad
+      // UI needs; never the full CIE-10/CUPS catalogs (those are searched
+      // server-side, see code-search-autocomplete.tsx).
+      getActiveReferenceValues("RIPSTipoDiagnosticoPrincipalVersion2"),
+      getActiveReferenceValues("LstSiNo"),
+      getActiveReferenceValues("RIPSViaIngresoIPS"),
+      getActiveReferenceValues("ModalidadAtencion"),
+      getActiveReferenceValues("GrupoServicios"),
+      getActiveReferenceValues("Servicios"),
+      getActiveReferenceValues("RIPSFinalidadConsultaVersion2"),
+      getActiveReferenceValues("RIPSCausaExternaVersion2"),
+      getActiveReferenceValues("conceptoRecaudo"),
+    ]);
 
   // Only fetch once we know an encounter (draft or finalized) actually
-  // exists — a brand-new attention has no procedures to reconstruct yet.
-  const existingProcedures = existingEncounter
-    ? await fetchClinicalEncounterProcedures(supabase, clinicId, existingEncounter.id)
-    : [];
+  // exists — a brand-new attention has no procedures/diagnoses/services to
+  // reconstruct yet.
+  const [existingProcedures, existingDiagnoses, existingServices] = existingEncounter
+    ? await Promise.all([
+        fetchClinicalEncounterProcedures(supabase, clinicId, existingEncounter.id),
+        fetchEncounterDiagnoses(supabase, clinicId, existingEncounter.id),
+        fetchEncounterServices(supabase, clinicId, existingEncounter.id),
+      ])
+    : [[], [], []];
 
   const professionals = rawProfessionals.map(toBoardProfessional);
   const professional = professionals.find((p) => p.professionalProfileId === appointment.professionalProfileId) ?? null;
@@ -113,6 +153,17 @@ export default async function ClinicalEncounterPage({ params }: { params: Promis
       initialToothFindings={toothFindings}
       existingEncounter={existingEncounter}
       existingProcedures={existingProcedures}
+      existingDiagnoses={existingDiagnoses}
+      existingServices={existingServices}
+      diagnosisTypeOptions={diagnosisTypeOptions}
+      incapacityOptions={incapacityOptions}
+      viaIngresoOptions={viaIngresoOptions}
+      modalidadOptions={modalidadOptions}
+      grupoServiciosOptions={grupoServiciosOptions}
+      serviciosOptions={serviciosOptions}
+      finalidadOptions={finalidadOptions}
+      causaMotivoOptions={causaMotivoOptions}
+      conceptoRecaudoOptions={conceptoRecaudoOptions}
     />
   );
 }

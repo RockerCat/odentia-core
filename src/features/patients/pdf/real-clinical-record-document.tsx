@@ -345,6 +345,19 @@ function EncounterRow({ encounter }: { encounter: PdfEncounterRow }) {
       {encounter.treatment && <Text style={styles.compactNote}>Procedimientos realizados: {encounter.treatment}</Text>}
       {encounter.notes && <Text style={styles.compactNote}>Notas: {encounter.notes}</Text>}
       {encounter.indications && <Text style={styles.compactNote}>Indicaciones: {encounter.indications}</Text>}
+      {/* RIPS #4 — diagnósticos CIE-10/servicios CUPS realmente realizados,
+          distinct from "diagnosis"/"treatment" above (the encounter's own
+          free-text fields) — human "código — descripción" labels only,
+          never a raw code alone. */}
+      {encounter.diagnosisPrincipalLabel && (
+        <Text style={styles.compactNote}>Diagnóstico principal (CIE-10): {encounter.diagnosisPrincipalLabel}</Text>
+      )}
+      {encounter.relatedDiagnosisLabels.length > 0 && (
+        <Text style={styles.compactNote}>Diagnósticos relacionados: {encounter.relatedDiagnosisLabels.join("; ")}</Text>
+      )}
+      {encounter.serviceLabels.length > 0 && (
+        <Text style={styles.compactNote}>Servicios realizados (CUPS): {encounter.serviceLabels.join("; ")}</Text>
+      )}
     </CompactRow>
   );
 }

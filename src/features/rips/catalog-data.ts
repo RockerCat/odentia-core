@@ -127,17 +127,27 @@ export async function findCupsByCode(code: string, onDate?: string): Promise<Cup
   return mapCupsRow(data);
 }
 
-// Server-side substring search over currently active CUPS descriptions —
-// deliberately capped (`limit`) so no caller can accidentally pull the
-// full ~13,640-row catalog into a single response (see the report's
-// Section 14, Performance).
+// Server-side search over currently active CUPS rows, by code OR
+// description (RIPS #4, Section 5 — a dentist searching "89030" or
+// "consulta de control" must both find 890304) — deliberately capped
+// (`limit`) so no caller can accidentally pull the full ~13,640-row
+// catalog into a single response (see the report's Section 14,
+// Performance). PostgREST `.or()` needs its comma-separated value escaped
+// for commas/parens in the query itself — a CUPS/CIE10 search term never
+// legitimately contains either, so this is a defensive strip, not a
+// feature.
+function sanitizeSearchTerm(query: string): string {
+  return query.replace(/[,()]/g, "");
+}
+
 export async function searchCups(query: string, limit = 20): Promise<CupsCode[]> {
   const supabase = await createClient();
+  const term = sanitizeSearchTerm(query);
   const { data, error } = await supabase
     .from("cups_catalog")
     .select(CUPS_COLUMNS)
     .eq("status", "active")
-    .ilike("description", `%${query}%`)
+    .or(`code.ilike.%${term}%,description.ilike.%${term}%`)
     .order("code")
     .limit(limit);
 
@@ -197,12 +207,13 @@ export async function findDiagnosisByCode(
 
 export async function searchDiagnoses(classificationSystem: string, query: string, limit = 20): Promise<DiagnosisCode[]> {
   const supabase = await createClient();
+  const term = sanitizeSearchTerm(query);
   const { data, error } = await supabase
     .from("diagnosis_catalog")
     .select(DIAGNOSIS_COLUMNS)
     .eq("classification_system", classificationSystem)
     .eq("status", "active")
-    .ilike("description", `%${query}%`)
+    .or(`code.ilike.%${term}%,description.ilike.%${term}%`)
     .order("code")
     .limit(limit);
 

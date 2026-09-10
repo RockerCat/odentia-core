@@ -1,7 +1,7 @@
 import { PortalShell } from "@/components/shell/portal-shell";
 import { fetchAppointmentsForPatient } from "@/features/dashboard/appointments-data";
 import { fetchPatientClinicalDocuments } from "@/features/patients/clinical-documents-data";
-import { fetchPatientClinicalEncounters } from "@/features/patients/clinical-encounters-data";
+import { fetchEncounterClinicalDataForEncounters, fetchPatientClinicalEncounters } from "@/features/patients/clinical-encounters-data";
 import { fetchPatientClinicalNotes } from "@/features/patients/clinical-notes-data";
 import { fetchPatientById, type Patient } from "@/features/patients/data";
 import { fetchPatientMedicalHistory, type PatientMedicalHistory } from "@/features/patients/medical-history-data";
@@ -91,6 +91,25 @@ export default async function PortalMedicalRecordPage() {
     console.error("[/portal/historia] fetchPatientClinicalEncounters failed", error);
   }
 
+  // RIPS #4 — same batched diagnósticos/servicios fetch the staff page
+  // uses. NOTE: encounter_diagnoses/encounter_services only have an
+  // is_clinic_member(clinic_id) SELECT policy today (see the migration) —
+  // a Patient isn't a clinic member, so RLS silently returns zero rows
+  // here and AtencionesTab simply shows no Diagnósticos/Servicios lines
+  // for now. Not a crash, not a leak — just not yet exposed to the
+  // Patient Portal specifically; extending that read would need its own
+  // additive RLS policy, out of this task's scope.
+  let encounterClinicalData: Awaited<ReturnType<typeof fetchEncounterClinicalDataForEncounters>> = new Map();
+  try {
+    encounterClinicalData = await fetchEncounterClinicalDataForEncounters(
+      supabase,
+      clinicId,
+      clinicalEncounters.map((e) => e.id),
+    );
+  } catch (error) {
+    console.error("[/portal/historia] fetchEncounterClinicalDataForEncounters failed", error);
+  }
+
   let clinicalDocuments: Awaited<ReturnType<typeof fetchPatientClinicalDocuments>> = [];
   try {
     clinicalDocuments = await fetchPatientClinicalDocuments(supabase, clinicId, patientId);
@@ -130,6 +149,7 @@ export default async function PortalMedicalRecordPage() {
         medicalHistory={medicalHistory}
         toothFindings={toothFindings}
         clinicalEncounters={clinicalEncounters}
+        encounterClinicalData={encounterClinicalData}
         clinicalDocuments={clinicalDocuments}
         clinicalNotes={clinicalNotes}
         treatmentPlanItems={treatmentPlanItems}

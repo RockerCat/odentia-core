@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
 import { fetchAppointmentsForPatient } from "@/features/dashboard/appointments-data";
 import { fetchPatientClinicalDocuments } from "@/features/patients/clinical-documents-data";
-import { fetchPatientClinicalEncounters } from "@/features/patients/clinical-encounters-data";
+import { fetchEncounterClinicalDataForEncounters, fetchPatientClinicalEncounters } from "@/features/patients/clinical-encounters-data";
 import { fetchPatientClinicalNotes } from "@/features/patients/clinical-notes-data";
 import { canEditClinicalData } from "@/features/patients/clinical-permissions";
 import { fetchPatientById } from "@/features/patients/data";
@@ -70,6 +70,20 @@ export default async function PatientClinicalRecordPage({ params }: { params: Pr
     console.error("[/pacientes/[id]/historia-clinica] fetchPatientClinicalEncounters failed", error);
   }
 
+  // RIPS #4 — Atenciones' own diagnósticos/servicios realizados, one
+  // batched fetch keyed by encounter id (see fetchEncounterClinicalDataForEncounters).
+  // Same "optional for the page" rule as the tabs above.
+  let encounterClinicalData: Awaited<ReturnType<typeof fetchEncounterClinicalDataForEncounters>> = new Map();
+  try {
+    encounterClinicalData = await fetchEncounterClinicalDataForEncounters(
+      supabase,
+      context.clinic.id,
+      clinicalEncounters.map((e) => e.id),
+    );
+  } catch (error) {
+    console.error("[/pacientes/[id]/historia-clinica] fetchEncounterClinicalDataForEncounters failed", error);
+  }
+
   // Documentos follows the same "optional for the page" rule as the other
   // clinical tabs above.
   let clinicalDocuments: Awaited<ReturnType<typeof fetchPatientClinicalDocuments>> = [];
@@ -129,6 +143,7 @@ export default async function PatientClinicalRecordPage({ params }: { params: Pr
         medicalHistory={medicalHistory}
         toothFindings={toothFindings}
         clinicalEncounters={clinicalEncounters}
+        encounterClinicalData={encounterClinicalData}
         clinicalDocuments={clinicalDocuments}
         clinicalNotes={clinicalNotes}
         treatmentPlanItems={treatmentPlanItems}

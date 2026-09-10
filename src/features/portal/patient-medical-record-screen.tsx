@@ -6,7 +6,7 @@ import { AntecedentesTab } from "@/features/patients/antecedentes-tab";
 import { AtencionesTab } from "@/features/patients/atenciones-tab";
 import { ClinicalAlerts } from "@/features/patients/clinical-alerts";
 import type { ClinicalDocumentRecord } from "@/features/patients/clinical-documents-data";
-import type { ClinicalEncounterRecord } from "@/features/patients/clinical-encounters-data";
+import type { ClinicalEncounterRecord, EncounterClinicalData } from "@/features/patients/clinical-encounters-data";
 import type { ClinicalNoteRecord } from "@/features/patients/clinical-notes-data";
 import type { Patient } from "@/features/patients/data";
 import { DocumentosTab } from "@/features/patients/documentos-tab";
@@ -71,6 +71,7 @@ export function PatientMedicalRecordScreen({
   medicalHistory,
   toothFindings,
   clinicalEncounters,
+  encounterClinicalData,
   clinicalDocuments,
   clinicalNotes,
   treatmentPlanItems,
@@ -81,6 +82,7 @@ export function PatientMedicalRecordScreen({
   medicalHistory: PatientMedicalHistory | null;
   toothFindings: ToothFindingRecord[];
   clinicalEncounters: ClinicalEncounterRecord[];
+  encounterClinicalData: Map<string, EncounterClinicalData>;
   clinicalDocuments: ClinicalDocumentRecord[];
   clinicalNotes: ClinicalNoteRecord[];
   treatmentPlanItems: TreatmentPlanItem[];
@@ -191,7 +193,9 @@ export function PatientMedicalRecordScreen({
           onChanged={() => {}}
         />
       )}
-      {activeTab === "Atenciones" && <AtencionesTab clinicId={clinicId} encounters={clinicalEncounters} />}
+      {activeTab === "Atenciones" && (
+        <AtencionesTab clinicId={clinicId} encounters={clinicalEncounters} encounterClinicalData={encounterClinicalData} />
+      )}
       {activeTab === "Documentos" && (
         <DocumentosTab
           patientId={patient.id}
