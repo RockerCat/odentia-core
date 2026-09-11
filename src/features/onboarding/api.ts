@@ -152,6 +152,22 @@ const nullIfEmpty = (value: string) => {
 // the user only as the generic "No pudimos crear tu clínica" message.
 export const sanitizeTaxId = (value: string) => value.replace(/[^0-9]/g, "") || null;
 
+// Mirrors clinics_tax_id_format's own bounds exactly (RIPS #3 migration —
+// Documento Técnico 1 field T01: "tamaño 4-12"). sanitizeTaxId() already
+// guarantees a digits-only result, so length is the ONLY way a sanitized
+// value can still violate that CHECK — a short QA placeholder ("123") or
+// an accidentally-pasted longer number (a phone number with country
+// code, say) both sanitize to an all-digit string outside [4, 12].
+// Exported so clinic-step.tsx can reject those BEFORE bootstrap_clinic()
+// ever runs, instead of surfacing a raw 23514 as the generic "no pudimos
+// crear tu clínica" — same bounds, checked in exactly one place.
+const TAX_ID_MIN_LENGTH = 4;
+const TAX_ID_MAX_LENGTH = 12;
+
+export function isValidTaxIdLength(sanitized: string | null): boolean {
+  return sanitized === null || (sanitized.length >= TAX_ID_MIN_LENGTH && sanitized.length <= TAX_ID_MAX_LENGTH);
+}
+
 export type BootstrapResult = {
   clinicId: string;
   slug: string;

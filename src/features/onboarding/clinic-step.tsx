@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { isValidTaxIdLength, sanitizeTaxId } from "./api";
 import { ClinicLocationPicker } from "./clinic-location-picker";
 import { ClinicLogoPicker } from "./clinic-logo-picker";
 import { INPUT_CLASS } from "./field-classes";
@@ -49,6 +50,7 @@ export function ClinicStep({
 }) {
   const [data, setData] = useState(initial);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [taxIdError, setTaxIdError] = useState<string | null>(null);
 
   const update = (patch: Partial<ClinicFormData>) => setData((prev) => ({ ...prev, ...patch }));
 
@@ -59,6 +61,18 @@ export function ClinicStep({
       return;
     }
     setNameError(null);
+
+    // Catches what bootstrap_clinic()'s own clinics_tax_id_format CHECK
+    // would otherwise reject with a raw 23514 — a NIT that, once digits
+    // are extracted (sanitizeTaxId, same rule bootstrapClinic() applies),
+    // is too short or too long. tax_id stays fully optional either way —
+    // this only fires when something was typed.
+    if (!isValidTaxIdLength(sanitizeTaxId(data.taxId))) {
+      setTaxIdError("El NIT debe tener entre 4 y 12 dígitos (los puntos y el guion del dígito de verificación se ignoran).");
+      return;
+    }
+    setTaxIdError(null);
+
     onContinue(data);
   };
 
@@ -130,6 +144,7 @@ export function ClinicStep({
                   value={data.taxId}
                   onChange={(e) => update({ taxId: e.target.value })}
                 />
+                {taxIdError && <span className="text-xs text-danger">{taxIdError}</span>}
               </label>
               <label htmlFor="clinicInstitutionalEmail" className="flex flex-col gap-1 text-sm">
                 <span className="font-medium text-foreground/80">Email institucional</span>

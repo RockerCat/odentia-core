@@ -46,7 +46,14 @@ export async function GET(request: NextRequest) {
       : { error: new Error("missing token_hash/type or code") };
 
   if (!error) {
-    return NextResponse.redirect(`${origin}${next}`);
+    // `next` is a bare relative path in the common (same-origin) case —
+    // prepend this request's own origin, exactly as before. For the one
+    // exception (a loopback destination — see resolveSafeNext's own
+    // comment), it's already a full absolute URL for a DIFFERENT origin;
+    // prepending `origin` on top of that would silently redirect back to
+    // production, exactly the bug this fix exists to close.
+    const destination = /^https?:\/\//.test(next) ? next : `${origin}${next}`;
+    return NextResponse.redirect(destination);
   }
 
   // Covers an invalid code, an expired link, and a link that was already

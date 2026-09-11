@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSignUpRedirectTo, decideRegistroReentry, sanitizeTaxId } from "./api";
+import { buildSignUpRedirectTo, decideRegistroReentry, isValidTaxIdLength, sanitizeTaxId } from "./api";
 
 // Regression coverage for "PROMPT NINJA — Fix Supabase Auth email
 // RedirectTo / Confirm Signup": proves signUpAccount()'s own
@@ -77,5 +77,40 @@ describe("decideRegistroReentry", () => {
 
   it("a real session with an active membership redirects to the product — never a second-clinic attempt, never a dead-end screen", () => {
     expect(decideRegistroReentry(true, true)).toBe("redirect-to-product");
+  });
+});
+
+// Regression coverage for "PROMPT NINJA — Fix definitivo: onboarding sigue
+// violando clinics_tax_id_format en producción": sanitizeTaxId() already
+// guarantees an all-digit result, so length is the only remaining way a
+// sanitized value can violate the DB CHECK (4-12 digits) — these mirror
+// its exact bounds, checked BEFORE bootstrap_clinic() ever runs.
+describe("isValidTaxIdLength", () => {
+  it("accepts null (tax_id stays fully optional)", () => {
+    expect(isValidTaxIdLength(null)).toBe(true);
+  });
+
+  it("accepts a real Colombian NIT with its customary punctuation, once sanitized", () => {
+    expect(isValidTaxIdLength(sanitizeTaxId("900.123.456-7"))).toBe(true);
+  });
+
+  it("accepts a plain-digit NIT with no punctuation", () => {
+    expect(isValidTaxIdLength(sanitizeTaxId("900123456"))).toBe(true);
+  });
+
+  it("accepts the exact lower boundary (4 digits)", () => {
+    expect(isValidTaxIdLength(sanitizeTaxId("1234"))).toBe(true);
+  });
+
+  it("accepts the exact upper boundary (12 digits)", () => {
+    expect(isValidTaxIdLength(sanitizeTaxId("123456789012"))).toBe(true);
+  });
+
+  it("rejects a value that's too short even after sanitizing — e.g. a QA placeholder", () => {
+    expect(isValidTaxIdLength(sanitizeTaxId("123"))).toBe(false);
+  });
+
+  it("rejects a value that's too long even after sanitizing — e.g. a phone number pasted by mistake", () => {
+    expect(isValidTaxIdLength(sanitizeTaxId("1234567890123"))).toBe(false);
   });
 });

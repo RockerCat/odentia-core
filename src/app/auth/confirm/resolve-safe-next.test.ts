@@ -62,4 +62,36 @@ describe("resolveSafeNext", () => {
     expect(resolveSafeNext("/reset-password", ORIGIN, "/reset-password")).toBe("/reset-password");
     expect(resolveSafeNext("https://odentia.co/invitacion/abc123", ORIGIN, "/reset-password")).toBe("/invitacion/abc123");
   });
+
+  // Regression coverage for "PROMPT NINJA — signup iniciado en localhost
+  // confirma email en producción": when Site URL is production (ORIGIN
+  // here), a signup started on localhost still has its email confirmed by
+  // a request TO production — `origin` is always production's own, never
+  // localhost's. These prove the one deliberate exception: a loopback
+  // destination is trusted even though its origin differs from `origin`,
+  // and — critically — returned as a FULL absolute URL so route.ts never
+  // re-prepends production's own origin on top of it (the exact bug a
+  // first pass at this fix introduced and this test would have caught).
+  it("trusts a loopback (localhost) destination even though its origin differs from the confirm request's own", () => {
+    expect(resolveSafeNext("http://localhost:3000/registro", ORIGIN)).toBe("http://localhost:3000/registro");
+  });
+
+  it("trusts a loopback (127.0.0.1) destination the same way", () => {
+    expect(resolveSafeNext("http://127.0.0.1:3000/registro", ORIGIN)).toBe("http://127.0.0.1:3000/registro");
+  });
+
+  it("preserves a query string on a loopback destination", () => {
+    expect(resolveSafeNext("http://localhost:3000/invitacion/abc123?foo=bar", ORIGIN)).toBe(
+      "http://localhost:3000/invitacion/abc123?foo=bar",
+    );
+  });
+
+  it("never trusts an https loopback URL — a real Next.js dev server is always http", () => {
+    expect(resolveSafeNext("https://localhost:3000/registro", ORIGIN)).toBe("/registro");
+  });
+
+  it("never trusts a look-alike hostname — exact match only, never a substring/subdomain trick", () => {
+    expect(resolveSafeNext("http://localhost.evil.example.com/phish", ORIGIN)).toBe("/registro");
+    expect(resolveSafeNext("http://127.0.0.1.evil.example.com/phish", ORIGIN)).toBe("/registro");
+  });
 });
