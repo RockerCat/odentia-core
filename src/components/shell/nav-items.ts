@@ -3,6 +3,7 @@ import {
   BuildingIcon,
   CalendarIcon,
   CreditCardIcon,
+  FlagIcon,
   SlidersIcon,
   StoreIcon,
   UserIcon,
@@ -38,6 +39,9 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Reportes", icon: BarChartIcon, group: "work", href: "/reportes" },
   { label: "Marketplace", icon: StoreIcon, group: "marketplace", href: MARKETPLACE_URL },
   { label: "Clínica", icon: BuildingIcon, group: "admin", href: "/clinica" },
+  // RIPS #5 — Admin Clínica only (see src/dev/role.ts's own exclusions
+  // for dentist/assistant, and the route's own AppShell allowedRoles).
+  { label: "RIPS", icon: FlagIcon, group: "admin", href: "/rips" },
   { label: "Mi Suscripción", icon: CreditCardIcon, group: "admin", href: "/suscripcion" },
   { label: "Configuración", icon: SlidersIcon, group: "admin", href: "/configuracion" },
 ];

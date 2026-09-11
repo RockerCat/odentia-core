@@ -85,7 +85,9 @@ export const ROLE_NAV_ITEMS: Record<Role, readonly NavItem[]> = {
   // pulled from NAV_ITEMS the same way (no duplicated item definition)
   // except for the one item that doesn't exist there yet.
   dentist: [
-    ...NAV_ITEMS.filter((item) => item.label !== "Clínica" && item.label !== "Mi Suscripción" && item.label !== "Configuración"),
+    ...NAV_ITEMS.filter(
+      (item) => item.label !== "Clínica" && item.label !== "Mi Suscripción" && item.label !== "Configuración" && item.label !== "RIPS",
+    ),
     MI_PERFIL_PROFESIONAL_ITEM,
     ...NAV_ITEMS.filter((item) => item.label === "Configuración"),
   ],
@@ -96,7 +98,8 @@ export const ROLE_NAV_ITEMS: Record<Role, readonly NavItem[]> = {
         item.label !== "Clínica" &&
         item.label !== "Mi Suscripción" &&
         item.label !== "Configuración" &&
-        item.label !== "Reportes",
+        item.label !== "Reportes" &&
+        item.label !== "RIPS",
     ),
   ],
   // Superadmin manages the platform itself, not a clinic's operation —

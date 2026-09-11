@@ -33,6 +33,7 @@ const PRIVATE_CLINIC_PATHS = [
   "/configuracion",
   "/suscripcion",
   "/mi-perfil-profesional",
+  "/rips",
 ];
 
 // Explicit leaf paths, not a blanket "/portal" prefix — deliberately
