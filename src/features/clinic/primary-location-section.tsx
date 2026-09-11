@@ -44,14 +44,6 @@ export function PrimaryLocationSection({ location }: { location: PrimaryLocation
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // codPrestador (RIPS #3) is independent of address/geocoding — its own
-  // save flow, never bundled into the "Guardar ubicación" dirty-state
-  // above, since editing it must never clear the map pin the way editing
-  // address/city/state does.
-  const [codPrestador, setCodPrestador] = useState(location?.codPrestador ?? "");
-  const [savingCod, setSavingCod] = useState(false);
-  const [codError, setCodError] = useState<string | null>(null);
-
   if (!location) {
     return (
       <div>
@@ -118,24 +110,6 @@ export function PrimaryLocationSection({ location }: { location: PrimaryLocation
       return;
     }
     setDirty(false);
-  };
-
-  const handleSaveCodPrestador = async () => {
-    setSavingCod(true);
-    setCodError(null);
-    const trimmed = codPrestador.trim();
-    if (trimmed !== "" && !/^\d{12}$/.test(trimmed)) {
-      setSavingCod(false);
-      setCodError("Debe tener exactamente 12 dígitos.");
-      return;
-    }
-    const outcome = await updatePrimaryLocation(location.id, { cod_prestador: trimmed || null });
-    setSavingCod(false);
-    if (outcome.status === "error") {
-      setCodError("No pudimos guardar el código. Intenta de nuevo.");
-      return;
-    }
-    setCodPrestador(trimmed);
   };
 
   const hasPin = latitude !== null && longitude !== null;
@@ -211,38 +185,6 @@ export function PrimaryLocationSection({ location }: { location: PrimaryLocation
             {saveError && <p className="text-xs text-danger">{saveError}</p>}
           </div>
         )}
-
-        <div className="mt-2 border-t border-border pt-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-xs text-label-foreground">Código de habilitación (REPS)</span>
-            <input
-              className={FIELD_CLASS}
-              value={codPrestador}
-              placeholder="No configurado"
-              maxLength={12}
-              onChange={(e) => {
-                setCodError(null);
-                setCodPrestador(e.target.value);
-              }}
-            />
-          </label>
-          <p className="mt-1 text-xs text-muted-foreground">
-            El código de 12 dígitos que el Ministerio de Salud asignó a esta sede en el Registro Especial de
-            Prestadores de Servicios de Salud (REPS). Si no lo tienes a la mano, puedes consultarlo en el REPS o
-            preguntarle a quien gestionó la habilitación de la sede.
-          </p>
-          <div className="mt-2 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleSaveCodPrestador}
-              disabled={savingCod || codPrestador.trim() === (location.codPrestador ?? "")}
-              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
-            >
-              {savingCod ? "Guardando…" : "Guardar código"}
-            </button>
-            {codError && <p className="text-xs text-danger">{codError}</p>}
-          </div>
-        </div>
       </div>
     </div>
   );

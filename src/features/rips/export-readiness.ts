@@ -244,7 +244,11 @@ export function getRipsExportReadiness(input: RipsExportReadinessInput): RipsRea
       code: "CLINIC_TAX_ID_MISSING",
       scope: "clinic",
       message: "La clínica no tiene NIT (numDocumentoIdObligado) registrado.",
-      fixHref: "/clinica",
+      // Points at the dedicated "Configuración RIPS" block (PROMPT NINJA
+      // "Crear bloque dedicado Configuración RIPS en Clínica") — a stable
+      // anchor on /clinica, never a bare route the user has to hunt
+      // through "Información general" for.
+      fixHref: "/clinica#rips",
     });
   }
 
@@ -258,7 +262,12 @@ export function getRipsExportReadiness(input: RipsExportReadinessInput): RipsRea
   // rather than silently picking the primary one (this task's own
   // explicit instruction).
   if (input.locations.length === 0) {
-    errors.push({ code: "LOCATION_MISSING", scope: "location", message: "La clínica no tiene ninguna sede registrada.", fixHref: "/clinica" });
+    errors.push({
+      code: "LOCATION_MISSING",
+      scope: "location",
+      message: "La clínica no tiene ninguna sede registrada.",
+      fixHref: "/clinica#rips",
+    });
   } else if (input.locations.length === 1) {
     const location = input.locations[0]!;
     if (!location.codPrestador) {
@@ -267,7 +276,7 @@ export function getRipsExportReadiness(input: RipsExportReadinessInput): RipsRea
         scope: "location",
         locationId: location.id,
         message: `Sede ${location.name} — falta el código de prestador (codPrestador).`,
-        fixHref: "/clinica",
+        fixHref: "/clinica#rips",
       });
     }
   } else {

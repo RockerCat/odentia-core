@@ -11,6 +11,7 @@ import { CLINIC_LOGO_ACCEPTED_TYPES, CLINIC_LOGO_MAX_BYTES, removeClinicLogo, up
 import { InviteMemberModal } from "@/features/clinic/invite-member-modal";
 import { MyProfessionalProfileSection, StatusBadge } from "@/features/clinic/my-professional-profile-section";
 import { PrimaryLocationSection } from "@/features/clinic/primary-location-section";
+import { RipsConfigSection } from "@/features/clinic/rips-config-section";
 import { setClinicMemberStatus } from "@/features/clinic/team-actions";
 import { createRoom, renameRoom, setRoomActive } from "@/features/rooms/actions";
 import type { Room } from "@/features/rooms/data";
@@ -61,9 +62,18 @@ export function ClinicSettingsScreen({
     ? (members.find((m) => m.membershipId === initialSelfMember.membershipId) ?? null)
     : null;
 
+  // Lifted the same way as members/selfMember above — RipsConfigSection
+  // (Configuración RIPS, below) needs the CURRENT saved value of both to
+  // compute readiness, not just the initial server-fetched prop, so a
+  // save in either place updates it immediately (this task's own Section
+  // 5 — no polling, no new global state).
+  const [taxId, setTaxId] = useState(clinic.taxId ?? "");
+  const [codPrestador, setCodPrestador] = useState(location?.codPrestador ?? "");
+
   return (
     <div className="flex flex-col gap-6">
-      <InformacionGeneralSection clinic={clinic} location={location} />
+      <InformacionGeneralSection clinic={clinic} location={location} taxId={taxId} onTaxIdChange={setTaxId} />
+      <RipsConfigSection taxId={taxId} location={location} codPrestador={codPrestador} onCodPrestadorSaved={setCodPrestador} />
       <EquipoSection members={members} onMembersChange={setMembers} />
       <MyProfessionalProfileSection
         selfMember={selfMember}
@@ -100,7 +110,20 @@ export function ClinicSettingsScreen({
 // task scope, section 1). legal_name/status are real clinics columns with
 // no editor in this screen — not wired here. tax_id (NIT) DOES have an
 // editor now (RIPS #3 — Documento Técnico 1 T01 numDocumentoIdObligado).
-function InformacionGeneralSection({ clinic, location }: { clinic: ClinicDetail; location: PrimaryLocation | null }) {
+function InformacionGeneralSection({
+  clinic,
+  location,
+  taxId,
+  onTaxIdChange,
+}: {
+  clinic: ClinicDetail;
+  location: PrimaryLocation | null;
+  // Lifted to ClinicSettingsScreen (RIPS Configuración RIPS block, below)
+  // so a save here is reflected there immediately — see this task's own
+  // "evita dos formularios independientes para editar el mismo valor".
+  taxId: string;
+  onTaxIdChange: (next: string) => void;
+}) {
   const [logoUrl, setLogoUrl] = useState<string | null>(clinic.logoUrl);
   // Which logo action is in flight, not just whether one is — "Cambiar
   // logo" and "Eliminar logo" used to share a single boolean, so removing
@@ -114,7 +137,6 @@ function InformacionGeneralSection({ clinic, location }: { clinic: ClinicDetail;
   const [clinicName, setClinicName] = useState(clinic.name);
   const [phone, setPhone] = useState(clinic.phone ?? "");
   const [email, setEmail] = useState(clinic.email ?? "");
-  const [taxId, setTaxId] = useState(clinic.taxId ?? "");
 
   // Only one field editable at a time (see task scope) — a single key here,
   // rather than each InfoField owning its own "isEditing" state.
@@ -227,7 +249,7 @@ function InformacionGeneralSection({ clinic, location }: { clinic: ClinicDetail;
             saving={savingField === "tax_id"}
             error={editingField === "tax_id" ? fieldError : null}
             onStartEdit={() => setEditingField("tax_id")}
-            onSave={(next) => saveClinicField("tax_id", next, () => setTaxId(next))}
+            onSave={(next) => saveClinicField("tax_id", next, () => onTaxIdChange(next))}
             onCancel={() => setEditingField(null)}
           />
         </div>

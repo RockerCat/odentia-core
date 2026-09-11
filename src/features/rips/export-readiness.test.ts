@@ -170,19 +170,55 @@ describe("getRipsExportReadiness", () => {
     expect(result.errors.map((e) => e.code)).toContain("LOCATION_COD_PRESTADOR_MISSING");
   });
 
-  it("flags ambiguity — never silently picks the primary — when more than one location exists", () => {
+  // Regression coverage for "PROMPT NINJA — Crear bloque dedicado
+  // Configuración RIPS en Clínica": clinic/location blockers must land the
+  // user directly on the new anchored block, never a bare /clinica the
+  // fix is buried somewhere inside.
+  it.each(["CLINIC_TAX_ID_MISSING", "LOCATION_MISSING", "LOCATION_COD_PRESTADOR_MISSING"] as const)(
+    "%s points Corregir at the Configuración RIPS anchor, not a bare /clinica",
+    (code) => {
+      const inputsByCode: Record<typeof code, Parameters<typeof getRipsExportReadiness>[0]> = {
+        CLINIC_TAX_ID_MISSING: { clinicTaxId: null, locations: [readyLocation], patients: [], encounters: [] },
+        LOCATION_MISSING: { clinicTaxId: "900123456", locations: [], patients: [], encounters: [] },
+        LOCATION_COD_PRESTADOR_MISSING: {
+          clinicTaxId: "900123456",
+          locations: [{ ...readyLocation, codPrestador: null }],
+          patients: [],
+          encounters: [],
+        },
+      };
+      const result = getRipsExportReadiness(inputsByCode[code]);
+      const error = result.errors.find((e) => e.code === code);
+      expect(error?.fixHref).toBe("/clinica#rips");
+    },
+  );
+
+  it("flags ambiguity — never silently picks the primary — when more than one location exists, with no fix screen to link to", () => {
     const result = getRipsExportReadiness({
       clinicTaxId: "900123456",
       locations: [readyLocation, { id: "loc-2", name: "Sede Norte", codPrestador: "110010123402" }],
       patients: [],
       encounters: [],
     });
-    expect(result.errors.map((e) => e.code)).toContain("LOCATION_AMBIGUOUS");
+    const error = result.errors.find((e) => e.code === "LOCATION_AMBIGUOUS");
+    expect(error).toBeDefined();
+    expect(error?.fixHref).toBeNull();
   });
 
   it("flags a clinic with zero locations", () => {
     const result = getRipsExportReadiness({ clinicTaxId: "900123456", locations: [], patients: [], encounters: [] });
     expect(result.errors.map((e) => e.code)).toContain("LOCATION_MISSING");
+  });
+
+  it("never touches a patient blocker's own fixHref (/pacientes)", () => {
+    const result = getRipsExportReadiness({
+      clinicTaxId: "900123456",
+      locations: [readyLocation],
+      patients: [readyPatient({ documentType: null })],
+      encounters: [],
+    });
+    const error = result.errors.find((e) => e.code === "PATIENT_DOCUMENT_TYPE_MISSING");
+    expect(error?.fixHref).toBe("/pacientes");
   });
 
   it.each([
