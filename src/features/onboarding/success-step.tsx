@@ -2,13 +2,10 @@ import Link from "next/link";
 import { CheckCircleIcon } from "@/components/shell/icons";
 import { Logo } from "@/components/shell/logo";
 
-// The app shells still gate on the mock session (see CLAUDE.md, section
-// 23: login/session/route guards stay mock until a later task), so unlike
-// the demo version of this screen, "Ir a Odentia" can't drop the user
-// straight into /agenda with their real Supabase identity without faking a
-// mock session — a hack this task explicitly rules out. The card itself
-// (logo/checkmark, clinic name, copy) is unchanged from the approved demo;
-// only the CTA's destination and label change.
+// Auth/session/route guards are fully real now (see CLAUDE.md's own
+// "Auth is fully real" section) — the CTA drops the user straight into
+// /agenda with the real Supabase identity/session bootstrap_clinic() just
+// created, never a demo/mock detour.
 export function SuccessStep({
   clinicName,
   logoUrl,
@@ -49,15 +46,11 @@ export function SuccessStep({
           )}
 
           <Link
-            href="/"
+            href="/agenda"
             className="mt-6 block w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
           >
-            Volver al inicio
+            Ir a mi agenda
           </Link>
-          <p className="mt-3 text-xs text-muted-foreground">
-            Muy pronto podrás iniciar sesión con tu cuenta real. Mientras tanto, puedes explorar Odentia con nuestro
-            acceso de demostración.
-          </p>
         </div>
       </div>
     </div>
