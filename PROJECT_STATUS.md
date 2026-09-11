@@ -817,8 +817,53 @@ sync (`supabase migration list --linked`).
   - No E2E browser smoke with real login credentials (same environment
     limitation as the rest of this project's QA — see dev-qa fixtures
     instead: `/dev-qa/clinical-encounter-preview`, `/dev-qa/rips-preview`).
-- **Explicitly not built yet (future phase)**: MUV integration, CUV,
-  ProcesoId, submission states, retries/polling, FEV/DIAN, glosas, SIIFA.
+- **RIPS #6A — SISPRO/MUV auth audit: PASS WITH ISSUES, no integration
+  built.** Both official mechanisms (Cliente-Servidor desktop app, and the
+  "API-Docker" REST solution) require running Ministry-provided software
+  that talks to `localhost` — the API's own manual (v4.3) documents every
+  endpoint as `https://localhost:9443/...` ("puerto asignado por el
+  servidor dockerizado"), including production (`DockerProd`). Odentia
+  runs on Vercel + Supabase, with no persistent host to run that Docker +
+  SQL Server component. Standing one up is a separate infra/cost/ops
+  decision (plus PTS registration with SISPRO) — deliberately not done
+  here. No SISPRO credential of any kind is requested or stored anywhere
+  in this codebase.
+- **RIPS #5B — pilot-validation traceability (real).** Since automatic
+  submission isn't possible yet, the productive flow stays fully manual:
+  generate → download → the odontóloga uploads the file herself through
+  her own official process → she reports back what the MUV said. Added on
+  top of RIPS #5's existing `rips_export_log`:
+  - `content_hash` — SHA-256 (hex) of the EXACT UTF-8 string returned for
+    download, computed in `export-hash.ts`, enforced at the DB layer
+    (`^[0-9a-f]{64}$`) — lets a later manual result be tied unambiguously
+    to the file that was actually uploaded, without storing the file
+    itself a second time. Regenerating the same period always inserts a
+    new `rips_export_log` row (never overwrites) — identical inputs
+    produce an identical hash, changed inputs never do.
+  - `result_status` (`generated` → `accepted`/`rejected`, never the
+    reverse and never re-editable) + `muv_proceso_id`/`muv_cuv`/
+    `muv_radicacion_at`/`muv_result_notes`, written ONLY through
+    `record_rips_export_result()` (`SECURITY DEFINER`, `clinic_admin`-only,
+    one-shot — a second call against an already-resolved export is
+    rejected). `accepted` requires a CUV, `rejected` requires a summary,
+    both enforced at the DB layer too (`check` constraints), not just in
+    the RPC.
+  - `/rips` gained a "Historial de archivos" list (status badges: Archivo
+    generado / Aceptado por MUV / Rechazado por MUV — this exact
+    terminology is deliberate, see CLAUDE.md-adjacent task notes: Odentia's
+    own internal validation passing is never presented as a MUV outcome)
+    and a small post-generation note reminding that the definitive
+    validation is the Ministry's, not Odentia's.
+  - `rips_export_log`'s SELECT policy was tightened from "any clinic
+    member" (RIPS #5) to `clinic_admin`-only, reusing the foundation
+    schema's own `has_clinic_role()` helper — unlike
+    `encounter_diagnoses`/`encounter_services`, staff never need to read
+    this table.
+  - Full procedure for the actual pilot run (not yet executed): `docs/
+    rips-pilot-validation.md`.
+- **Explicitly not built yet (future phase)**: MUV integration, CUV
+  generation/inference, ProcesoId auto-capture, submission states beyond
+  a manually-recorded result, retries/polling, FEV/DIAN, glosas, SIIFA.
 
 ---
 

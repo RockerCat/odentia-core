@@ -4,9 +4,17 @@ import { useEffect, useState } from "react";
 import { AlertTriangleIcon, CheckCircleIcon, ChevronDownIcon, DownloadIcon } from "@/components/shell/icons";
 import { useToast } from "@/components/toast";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
-import { generateRipsSinFacturaExportAction, getRipsPeriodSummaryAction, type RipsPeriodSummary } from "./export-actions";
+import {
+  generateRipsSinFacturaExportAction,
+  getRipsExportHistoryAction,
+  getRipsPeriodSummaryAction,
+  type RipsExportHistoryEntry,
+  type RipsPeriodSummary,
+} from "./export-actions";
 import type { RipsExportPeriod } from "./export-datetime";
+import { RipsExportHistoryList } from "./export-history-list";
 import type { RipsReadinessError, RipsReadinessScope } from "./export-readiness";
+import { RecordRipsResultModal } from "./record-rips-result-modal";
 
 // RIPS #5 — the first real RIPS screen (Admin Clínica only, see this
 // task's own Section 36 and the route's page.tsx server-side gate).
@@ -61,6 +69,14 @@ export function RipsScreen() {
   const [showPending, setShowPending] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [justGenerated, setJustGenerated] = useState(false);
+  const [history, setHistory] = useState<RipsExportHistoryEntry[]>([]);
+  const [recordingEntry, setRecordingEntry] = useState<RipsExportHistoryEntry | null>(null);
+
+  const refreshHistory = async () => {
+    const result = await getRipsExportHistoryAction();
+    if (result.status === "ok") setHistory(result.entries);
+  };
 
   const applySummaryResult = (result: Awaited<ReturnType<typeof getRipsPeriodSummaryAction>>) => {
     setLoading(false);
@@ -77,8 +93,10 @@ export function RipsScreen() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const result = await getRipsPeriodSummaryAction(period);
-      if (!cancelled) applySummaryResult(result);
+      const [summaryResult, historyResult] = await Promise.all([getRipsPeriodSummaryAction(period), getRipsExportHistoryAction()]);
+      if (cancelled) return;
+      applySummaryResult(summaryResult);
+      if (historyResult.status === "ok") setHistory(historyResult.entries);
     })();
     return () => {
       cancelled = true;
@@ -92,6 +110,7 @@ export function RipsScreen() {
     setPeriod(next);
     setLoading(true);
     setGenerateError(null);
+    setJustGenerated(false);
     const result = await getRipsPeriodSummaryAction(next);
     applySummaryResult(result);
   };
@@ -99,6 +118,7 @@ export function RipsScreen() {
   const handleGenerate = async () => {
     setGenerating(true);
     setGenerateError(null);
+    setJustGenerated(false);
     const result = await generateRipsSinFacturaExportAction(period);
     setGenerating(false);
     if (result.status === "error") {
@@ -117,6 +137,8 @@ export function RipsScreen() {
     link.remove();
     URL.revokeObjectURL(url);
     showToast("RIPS generado y descargado.");
+    setJustGenerated(true);
+    refreshHistory();
   };
 
   const readiness = summary?.readiness ?? null;
@@ -212,7 +234,33 @@ export function RipsScreen() {
               {generating ? "Generando…" : "Generar RIPS"}
             </button>
           </div>
+
+          {justGenerated && (
+            <div className="rounded-lg border border-border bg-foreground/[0.03] px-3.5 py-3 text-sm text-foreground/80">
+              El archivo está listo para ser cargado manualmente en el MUV. Este archivo fue generado y validado internamente por Odentia. Debe
+              cargarse en el Mecanismo Único de Validación (MUV) mediante tu proceso habitual — la validación definitiva corresponde al Ministerio
+              de Salud.
+            </div>
+          )}
         </>
+      )}
+
+      {/* Clinic-wide, independent of the currently selected period — stays visible even if that period's own summary failed to load. */}
+      <section className="rounded-xl border border-border bg-background p-4 sm:p-5">
+        <p className="mb-3 text-sm font-semibold">Historial de archivos</p>
+        <RipsExportHistoryList entries={history} onRecordResult={setRecordingEntry} />
+      </section>
+
+      {recordingEntry && (
+        <RecordRipsResultModal
+          entry={recordingEntry}
+          onClose={() => setRecordingEntry(null)}
+          onRecorded={() => {
+            setRecordingEntry(null);
+            showToast("Resultado del MUV registrado.");
+            refreshHistory();
+          }}
+        />
       )}
     </div>
   );
