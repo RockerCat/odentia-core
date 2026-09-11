@@ -33,16 +33,39 @@ const SCOPE_LABELS: Record<RipsReadinessScope, string> = {
   service: "Servicios",
 };
 
+// PROMPT NINJA "Mejorar selector de período RIPS y mantener UI
+// completamente en español" — Chrome's native <input type="month"> shows
+// its calendar UI in the browser's own language (English on an
+// en-US-configured Chrome), inconsistent with the rest of Odentia. Two
+// plain <select>s replace it below, but both still only ever produce the
+// exact same "YYYY-MM" string handlePeriodChange() already expects —
+// nothing about the period's own representation/effects changes.
+export const MONTH_NAMES_ES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
+
+// A reasonable operating window, not a hardcoded year: the year ahead
+// (so this never needs a code change right as a new year starts) plus
+// enough prior years to reach real historical periods — always derived
+// from `referenceYear`, never a literal year.
+const YEARS_BACK = 3;
+export function getPeriodYearOptions(referenceYear: number): number[] {
+  const years: number[] = [];
+  for (let year = referenceYear + 1; year >= referenceYear - YEARS_BACK; year--) years.push(year);
+  return years;
+}
+
 function currentPeriod(): RipsExportPeriod {
   const now = new Date();
   return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
-function periodToInputValue(period: RipsExportPeriod): string {
+export function periodToInputValue(period: RipsExportPeriod): string {
   return `${period.year}-${String(period.month).padStart(2, "0")}`;
 }
 
-function inputValueToPeriod(value: string): RipsExportPeriod | null {
+export function inputValueToPeriod(value: string): RipsExportPeriod | null {
   const match = /^(\d{4})-(\d{2})$/.exec(value);
   if (!match) return null;
   return { year: Number(match[1]), month: Number(match[2]) };
@@ -53,6 +76,22 @@ function groupErrorsByScope(errors: RipsReadinessError[]): { scope: RipsReadines
   return order
     .map((scope) => ({ scope, errors: errors.filter((e) => e.scope === scope) }))
     .filter((group) => group.errors.length > 0);
+}
+
+// PROMPT NINJA "Corregir estado 'Listo para generar' cuando el período no
+// tiene atenciones" — the ONE place this screen decides which of the 3
+// visible states applies, so the banner text and the Generar RIPS button
+// can never disagree the way they used to: readiness.ready alone used to
+// say "Listo para generar" even with 0 atenciones, while the button's own
+// disabled= already correctly required encounterCount > 0 too. "0
+// atenciones, sin blockers" is a valid empty state, never an invented
+// blocker (Section 3) — it's distinguished from "blockers" here, not
+// folded into it.
+export type RipsGenerateState = "blockers" | "empty-period" | "ready";
+
+export function getRipsGenerateState(readinessReady: boolean | undefined, encounterCount: number | undefined): RipsGenerateState {
+  if (!readinessReady) return "blockers";
+  return (encounterCount ?? 0) > 0 ? "ready" : "empty-period";
 }
 
 export function RipsScreen() {
@@ -143,20 +182,46 @@ export function RipsScreen() {
 
   const readiness = summary?.readiness ?? null;
   const errorGroups = readiness ? groupErrorsByScope(readiness.errors) : [];
+  const yearOptions = getPeriodYearOptions(new Date().getFullYear());
+  const generateState = getRipsGenerateState(readiness?.ready, summary?.encounterCount);
+  const canGenerate = generateState === "ready";
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <section className="rounded-xl border border-border bg-background p-4 sm:p-5">
-        <label className="text-[11px] text-label-foreground" htmlFor="rips-period">
-          Período
-        </label>
-        <input
-          id="rips-period"
-          type="month"
-          value={periodToInputValue(period)}
-          onChange={(e) => handlePeriodChange(e.target.value)}
-          className={`${FIELD_CLASS} mt-1 max-w-xs`}
-        />
+        <p className="text-[11px] text-label-foreground">Período</p>
+        <div className="mt-1 flex flex-col gap-3 sm:flex-row">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-[11px] text-label-foreground">Mes</span>
+            <select
+              id="rips-period-month"
+              value={period.month}
+              onChange={(e) => handlePeriodChange(periodToInputValue({ year: period.year, month: Number(e.target.value) }))}
+              className={`${FIELD_CLASS} sm:max-w-[10rem]`}
+            >
+              {MONTH_NAMES_ES.map((name, index) => (
+                <option key={name} value={index + 1}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-[11px] text-label-foreground">Año</span>
+            <select
+              id="rips-period-year"
+              value={period.year}
+              onChange={(e) => handlePeriodChange(periodToInputValue({ year: Number(e.target.value), month: period.month }))}
+              className={`${FIELD_CLASS} sm:max-w-[8rem]`}
+            >
+              {yearOptions.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </section>
 
       {loading && (
@@ -177,10 +242,22 @@ export function RipsScreen() {
           </section>
 
           <section className="rounded-xl border border-border bg-background p-4 sm:p-5">
-            {readiness?.ready ? (
+            {generateState === "ready" ? (
               <div className="flex items-center gap-2 text-sm font-medium text-primary">
                 <CheckCircleIcon className="size-5 shrink-0" />
                 Listo para generar
+              </div>
+            ) : generateState === "empty-period" ? (
+              // Sin blockers de configuración/readiness, pero 0 atenciones
+              // exportables — nunca "Listo para generar", pero tampoco un
+              // pendiente ficticio: esto NO es un blocker, es un período
+              // vacío legítimo.
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                  <CheckCircleIcon className="size-5 shrink-0" />
+                  Configuración RIPS completa
+                </div>
+                <p className="pl-7 text-xs text-muted-foreground">No hay atenciones para generar RIPS en este período.</p>
               </div>
             ) : (
               <div className="flex flex-col gap-3">
@@ -227,7 +304,7 @@ export function RipsScreen() {
             <button
               type="button"
               onClick={handleGenerate}
-              disabled={!readiness?.ready || generating || summary.encounterCount === 0}
+              disabled={!canGenerate || generating}
               className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               <DownloadIcon className="size-4" />
