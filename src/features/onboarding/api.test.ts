@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSignUpRedirectTo } from "./api";
+import { buildSignUpRedirectTo, decideRegistroReentry, sanitizeTaxId } from "./api";
 
 // Regression coverage for "PROMPT NINJA — Fix Supabase Auth email
 // RedirectTo / Confirm Signup": proves signUpAccount()'s own
@@ -30,5 +30,52 @@ describe("buildSignUpRedirectTo", () => {
 
   it("works with whatever origin the browser is actually on (local dev, not just production)", () => {
     expect(buildSignUpRedirectTo("http://127.0.0.1:3000", "/registro")).toBe("http://127.0.0.1:3000/registro");
+  });
+});
+
+// Regression coverage for "PROMPT NINJA — Bug: onboarding no puede crear
+// clínica": bootstrap_clinic()'s clinics INSERT hits
+// clinics_tax_id_format (digits only, 4-12 chars) — a real Colombian NIT
+// typed with its customary "-DV" check-digit suffix (or dot thousands
+// separators) must never reach that constraint unsanitized, the same way
+// src/features/clinic/actions.ts's updateClinicInfo() already normalizes
+// this exact column.
+describe("sanitizeTaxId", () => {
+  it("strips a NIT's customary hyphenated check digit", () => {
+    expect(sanitizeTaxId("900123456-7")).toBe("9001234567");
+  });
+
+  it("strips dot thousands separators together with the check digit", () => {
+    expect(sanitizeTaxId("900.123.456-7")).toBe("9001234567");
+  });
+
+  it("leaves a plain-digit NIT unchanged", () => {
+    expect(sanitizeTaxId("900123456")).toBe("900123456");
+  });
+
+  it("returns null for an empty or whitespace-only value, never an empty string", () => {
+    expect(sanitizeTaxId("")).toBeNull();
+    expect(sanitizeTaxId("   ")).toBeNull();
+  });
+});
+
+// Regression coverage for "PROMPT NINJA — Bug: /registro queda en bucle y
+// no permite reiniciar onboarding": the exact 3-way branch behind the
+// reentry check, covering all four diagnostic states from that task.
+describe("decideRegistroReentry", () => {
+  it("a brand-new visitor with no session starts at Paso 1 (account)", () => {
+    expect(decideRegistroReentry(false, false)).toBe("account");
+  });
+
+  it("no session always wins, even if a stale membership lookup somehow says true", () => {
+    expect(decideRegistroReentry(false, true)).toBe("account");
+  });
+
+  it("a real session with no active membership resumes at Paso 2 (clinic), never blocked", () => {
+    expect(decideRegistroReentry(true, false)).toBe("clinic");
+  });
+
+  it("a real session with an active membership redirects to the product — never a second-clinic attempt, never a dead-end screen", () => {
+    expect(decideRegistroReentry(true, true)).toBe("redirect-to-product");
   });
 });

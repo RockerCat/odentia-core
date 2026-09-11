@@ -19,6 +19,34 @@ export function buildSignUpRedirectTo(origin: string, next: string): string {
   return `${origin}${next}`;
 }
 
+export type RegistroReentryDecision = "account" | "clinic" | "redirect-to-product";
+
+// The exact 3-way branch behind /registro's reentry check (see
+// onboarding-wizard.tsx's mount effect, the only caller), extracted so
+// it's independently testable without a DOM/mocked Supabase client — same
+// "pure decide-where-to-go function" convention this codebase already
+// uses for decideClinicRedirect/decideAuthenticatedRedirect
+// (src/lib/supabase/proxy.ts / src/features/session/
+// decide-authenticated-redirect.ts).
+//
+// "redirect-to-product" (PROMPT NINJA "Bug: /registro queda en bucle")
+// replaces what used to be a static "already onboarded" screen whose only
+// ways forward were signing out (back to Paso 1, clinic no longer
+// visible) or a link to the public marketing page — never into the app
+// itself. That was the actual loop: the only way to reach a clinic you
+// already had was to sign out and log back in through /login, which DOES
+// resolve to /agenda for the identical "has an active membership"
+// condition (see decideAuthenticatedRedirect). Reusing that same
+// destination here means a stray visit to /registro with a real,
+// completed clinic drops the user straight into the product instead of a
+// dead end — and, just as importantly, never lets them create a second
+// clinic by accident.
+export function decideRegistroReentry(hasSession: boolean, hasActiveMembership: boolean): RegistroReentryDecision {
+  if (!hasSession) return "account";
+  if (hasActiveMembership) return "redirect-to-product";
+  return "clinic";
+}
+
 // Paso 1 — real Supabase Auth signup. first_name/last_name travel in
 // user_metadata; the on_auth_user_created trigger (see the foundation
 // schema migration) is what actually creates the profiles row — never
@@ -114,6 +142,16 @@ const nullIfEmpty = (value: string) => {
   return trimmed === "" ? null : trimmed;
 };
 
+// tax_id (RIPS #3's clinics_tax_id_format CHECK: digits only, 4-12 chars)
+// needs the SAME normalization src/features/clinic/actions.ts's
+// updateClinicInfo() already applies for the exact same column — strip
+// everything but digits, empty → null. Missing here (bootstrap_clinic is
+// a separate write path, added before that check existed) meant a real
+// Colombian NIT typed with its customary "-DV" check-digit suffix (e.g.
+// "900123456-7") made the RPC's INSERT fail the constraint, surfaced to
+// the user only as the generic "No pudimos crear tu clínica" message.
+export const sanitizeTaxId = (value: string) => value.replace(/[^0-9]/g, "") || null;
+
 export type BootstrapResult = {
   clinicId: string;
   slug: string;
@@ -140,7 +178,7 @@ export async function bootstrapClinic(
       clinic_name: clinic.name.trim(),
       clinic_slug: slugCandidate(baseSlug, attempt),
       clinic_legal_name: nullIfEmpty(clinic.legalName),
-      clinic_tax_id: nullIfEmpty(clinic.taxId),
+      clinic_tax_id: sanitizeTaxId(clinic.taxId),
       clinic_email: nullIfEmpty(clinic.institutionalEmail),
       clinic_phone: nullIfEmpty(clinic.phone),
       clinic_logo_url: null,

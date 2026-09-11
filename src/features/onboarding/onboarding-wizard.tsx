@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/shell/logo";
 import { createClient } from "@/lib/supabase/client";
 import { AccountStep } from "./account-step";
-import { AlreadyOnboarded } from "./already-onboarded";
-import { bootstrapClinic, findActiveMembership, friendlyBootstrapError, signUpAccount, uploadClinicLogo } from "./api";
+import { bootstrapClinic, decideRegistroReentry, findActiveMembership, friendlyBootstrapError, signUpAccount, uploadClinicLogo } from "./api";
 import { ClinicStep } from "./clinic-step";
 import { EmailConfirmationPending } from "./email-confirmation-pending";
 import { ProgressSteps } from "./progress-steps";
@@ -30,19 +30,22 @@ import {
 // for every actual backend call. `phase` is broader than the 3 visible
 // steps (see ProgressSteps) — it also covers the async states a real
 // backend introduces: checking for an existing session/membership on
-// mount, email confirmation pending, and an already-onboarded reentry.
+// mount, email confirmation pending, and a real-membership reentry (see
+// the reentry effect below — this last one now redirects straight into
+// the product instead of ever becoming a rendered phase of its own; see
+// PROMPT NINJA "Bug: /registro queda en bucle" for why).
 type WizardPhase =
   | "loading"
   | "check-failed"
   | "confirmation-error"
   | "account"
   | "confirmation-pending"
-  | "already-onboarded"
   | "clinic"
   | "role"
   | "success";
 
 export function OnboardingWizard() {
+  const router = useRouter();
   const [phase, setPhase] = useState<WizardPhase>("loading");
   const [account, setAccount] = useState<AccountFormData>(EMPTY_ACCOUNT);
   const [accountSubmitting, setAccountSubmitting] = useState(false);
@@ -106,13 +109,20 @@ export function OnboardingWizard() {
           data: { session },
         } = await supabase.auth.getSession();
 
-        if (!session) {
-          if (!cancelled) setPhase("account");
+        // Only worth checking membership once a session actually exists —
+        // see decideRegistroReentry's own comment for the full 3-way
+        // decision this mirrors.
+        const { found } = session ? await findActiveMembership() : { found: false };
+        if (cancelled) return;
+
+        const decision = decideRegistroReentry(Boolean(session), found);
+        if (decision === "redirect-to-product") {
+          // `phase` intentionally stays "loading" — this component is
+          // about to unmount.
+          router.replace("/agenda");
           return;
         }
-
-        const { found } = await findActiveMembership();
-        if (!cancelled) setPhase(found ? "already-onboarded" : "clinic");
+        setPhase(decision);
       } catch {
         if (!cancelled) setPhase("check-failed");
       }
@@ -121,7 +131,9 @@ export function OnboardingWizard() {
     return () => {
       cancelled = true;
     };
-  }, [retryToken]);
+    // router is stable across renders (Next.js App Router) — safe to
+    // include without causing extra re-runs.
+  }, [retryToken, router]);
 
   // Phase already starts at "loading" for the initial mount check; the
   // "Reintentar" button (see the check-failed screen below) is the only
@@ -185,6 +197,10 @@ export function OnboardingWizard() {
       setSuccessInfo({ logoUrl, logoWarning });
       setPhase("success");
     } catch (error) {
+      // Technical detail stays out of the UI (friendlyBootstrapError below
+      // is the only thing rendered) but is still available for diagnosis —
+      // never DB internals/PII in what's actually shown to the user.
+      console.error("[onboarding] bootstrapClinic failed", error);
       setBootstrapError(friendlyBootstrapError(error));
     } finally {
       setBootstrapping(false);
@@ -253,7 +269,6 @@ export function OnboardingWizard() {
   }
 
   if (phase === "confirmation-pending") return <EmailConfirmationPending email={account.email} />;
-  if (phase === "already-onboarded") return <AlreadyOnboarded onSignedOut={handleRetryInitialCheck} />;
   if (phase === "success") {
     return <SuccessStep clinicName={clinic.name} logoUrl={successInfo.logoUrl} logoWarning={successInfo.logoWarning} />;
   }
