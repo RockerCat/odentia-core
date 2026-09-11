@@ -2,7 +2,7 @@
 
 # Odentia Core
 
-**Last Updated:** 2026-09-09
+**Last Updated:** 2026-09-10
 
 ---
 
@@ -40,6 +40,15 @@ vertical at a time, never redesigning the approved UI. **Phase 3** was Real E2E
 Stabilization — proving the critical journeys work end to end in production, not
 just in code. Phase 3 is done. **Phase 4 (current)** is full manual QA by role —
 see "Success Criteria" below.
+
+**RIPS, added during Functional Freeze (explicitly requested, not scope creep):**
+a full Colombian regulatory-reporting vertical (RIPS sin factura, Documento
+Técnico 1 / Resolución 948 de 2026) was built and shipped between this
+checkpoint and the previous one, as its own explicitly-scoped initiative — the
+Functional Freeze policy below is about not *proactively* expanding MVP scope,
+not about refusing a distinct, explicitly-requested feature. See "RIPS
+(Colombian regulatory reporting)" under "Progress So Far" for the full detail;
+it does not change anything about the Functional Freeze/Manual QA status above.
 
 ---
 
@@ -197,6 +206,12 @@ Detailed per-vertical implementation notes are further below.
   dental (still mock — see OUT OF SCOPE ACTUAL).
 - **Marketplace** — real external link to the independently-deployed Marketplace
   app; Odentia Core never shares its database or business logic with it.
+- **RIPS** (`/rips`, Clinic Admin only) — real regulatory-identity fields on
+  clinics/sedes/professionals/patients, real structured clinical data per
+  atención (`encounter_diagnoses`/`encounter_services`, CIE-10/CUPS validated
+  against real SISPRO catalogs), real readiness checks, and a real, runtime-
+  validated RIPS sin factura JSON export with download. See "RIPS (Colombian
+  regulatory reporting)" below for the full detail.
 
 ---
 
@@ -685,6 +700,125 @@ implementation.
   every user-facing name/avatar must read from (Header, `PatientsGreeting`,
   `Greeting`) — never the raw mock `useAuthenticatedIdentity()` alone, which the
   real role-bridge never feeds a real name/avatar into.
+
+## RIPS (Colombian regulatory reporting)
+
+Regulatory basis: **Documento Técnico 1, "Especificaciones técnicas de los
+campos de datos y las reglas de validación del RIPS como soporte de la FEV en
+salud", Versión 003 (15 de julio de 2026)**, Resolución 948 de 2026. Scope for
+this phase: **RIPS sin Factura Electrónica de Venta** only — no FEV/XML DIAN,
+no MUV submission, no CUV, no batches/periods beyond a single calendar month.
+All migrations `20260910090000` through `20260910180000` are applied and in
+sync (`supabase migration list --linked`).
+
+- **Catalogs (real, imported from official SISPRO tables)** —
+  `public.cups_catalog` (13,632 rows), `public.diagnosis_catalog` (12,634
+  CIE-10 rows), `public.rips_reference_values` (16 catalogs, 1,656 rows —
+  TipoDocumento, RIPSTipoUsuarioVersion2, Pais, Municipio, ZonaVersion2,
+  LstSiNo, RIPSViaIngresoIPS, ModalidadAtencion, GrupoServicios, Servicios,
+  RIPSFinalidadConsultaVersion2, RIPSCausaExternaVersion2, conceptoRecaudo,
+  RIPSTipoDiagnosticoPrincipalVersion2, etc.). Import tooling lives in
+  `scripts/rips-import/` (one script per catalog, idempotent, service-role
+  only). `CUPSGrServicios` (~1.44M rows) is deliberately NOT imported — see
+  its own gap note below.
+- **Regulatory identity (real)** — `clinics.tax_id` (T01
+  numDocumentoIdObligado), `clinic_locations.cod_prestador` (C01/P01, per
+  sede — REPS habilitación code), `professional_profiles.document_type`/
+  `document_number` (C15/C16, P11/P12 — who actually performed the
+  consulta/procedimiento), and 8 columns on `patients` (document_type/
+  number, sex_code, user_type_code, country_of_residence_code,
+  municipality_of_residence_code, residence_zone_code, country_of_origin_code
+  — U01-U11). All nullable/backward-compatible; `src/features/rips/
+  completeness.ts` reports exactly what's missing per clinic/sede/
+  professional/patient, never blocking the rest of the app. Server-side
+  search-as-you-type (`src/features/rips/catalog-data.ts`,
+  `code-search-autocomplete.tsx`, `reference-value-autocomplete.tsx`) is the
+  only way a large catalog (Municipio, CUPS, CIE-10) ever reaches the
+  browser — never the full table.
+- **Structured clinical data per atención (real)** —
+  `public.encounter_diagnoses` (CIE-10, `role` principal/related, optionally
+  scoped to one specific `encounter_services` row when two services in the
+  same atención need independently different principal diagnoses) and
+  `public.encounter_services` (CUPS, `rips_service_type` — consultation/
+  procedure/unknown, snapshotted from `cups_catalog` at save time, never
+  re-derived later), plus `patient_clinical_encounters.incapacity_code`
+  (U09, a fact of the atención, never the patient). `upsert_patient_clinical_encounter`
+  (the only write path) validates every code against its real catalog inline
+  and enforces type-exclusivity (e.g. `via_ingreso_code` only for a
+  procedure, `causa_motivo_code` only for a consultation) via real CHECK
+  constraints, not just app code. Integrated directly into the real
+  Iniciar/Continuar atención screen (`RealClinicalEncounterScreen`) —
+  Diagnósticos (principal + relacionados), Servicios realizados (CUPS
+  search, human-labeled consultation/procedure badge, per-type fields), and
+  an Incapacidad toggle — never a separate technical "RIPS form". Read-side:
+  Historia Clínica's Atenciones tab (staff and Patient Portal, same shared
+  component) and the clinical record PDF both show the persisted
+  diagnósticos/servicios for a finalized atención, resolved to human
+  descriptions against the catalog version in effect on that date.
+- **Readiness + JSON export (real)** — `/rips` (Clinic Admin only, gated in
+  `proxy.ts`/`AppShell`/every server action independently). Architecture,
+  entirely under `src/features/rips/`:
+  - `export-readiness.ts` — pure, two levels: `getEncounterRipsReadiness`
+    (does this one atención have everything needed) and
+    `getRipsExportReadiness` (does the whole period — clinic, sede,
+    patients, atenciones). Returns structured errors (`code`, `scope`,
+    human `message`, `fixHref` to a real route or `null` when no fix screen
+    exists yet), never bare strings.
+  - `export-generator.ts` — pure mapping (model → RIPS DTO) + serialization.
+    `resolveDiagnosesForService()` is the single shared rule (used by both
+    readiness and the generator) for which diagnosis applies to which
+    servicio: a service-scoped principal wins over the encounter-wide one;
+    related diagnoses are the deduplicated union of both, truncated to the
+    JSON's own fixed slots (3 for consulta, 1 for procedimiento — DT1 v003
+    defines different limits for each). `usuarios[]` groups by
+    `(patientId, incapacityCode)`, not by patient alone — confirmed against
+    DT1 v003's own worked example, which shows the same person split across
+    two usuario entries when a user-level field differs between their
+    atenciones.
+  - `export-schema.ts` — runtime structural validator (hand-rolled, no Zod —
+    not present in this project) run AFTER mapping and BEFORE
+    serialization/download; catches a malformed DTO that `tsc` alone never
+    could at runtime. Deliberately NOT a reimplementation of the MUV's
+    100+ regulatory rules — structural only (required/type/nullability/
+    length/format), documented as a permanent boundary.
+  - `export-data.ts` — the only file that touches Supabase; loads by
+    conjuntos (never N+1).
+  - `export-actions.ts` — the pipeline is literally `load → readiness → map
+    → runtime schema validation → serialize → download`; re-checks
+    readiness immediately before generating (never trusts an earlier
+    summary call), and never logs the generated transaction itself (PII).
+  - `public.rips_export_log` + `log_rips_export()` (`SECURITY DEFINER`,
+    inline `clinic_admin` check, `clinic_id` always resolved from the
+    caller's own membership — never a client-supplied value) — a minimal,
+    non-blocking audit trail (who generated which period, when, how many
+    patients/consultas/procedimientos) — deliberately NOT a "batch" entity:
+    no status/CUV/submitted column exists anywhere yet.
+  - Filename: `RIPS_Sin_Factura_YYYY-MM.json`. No JSON preview by default,
+    no manual JSON editor.
+- **Full field-by-field mapping**: `docs/rips-json-mapping.md` — every JSON
+  field, its Odentia source, the rule, and the exact DT1 v003 citation.
+- **Tests** — 76 RIPS-specific tests (readiness, generator golden fixture +
+  determinism, runtime schema validation), part of the full suite (272/278
+  passing project-wide, 6 skipped integration tests needing real
+  credentials).
+- **Known gaps (real, documented, not silently hidden)**:
+  - A clinic with more than one `clinic_location` cannot export — see
+    CLAUDE.md's own RIPS section.
+  - A missing professional document identity has no admin-facing fix route
+    (it's strictly self-service via `update_my_professional_profile`) —
+    `fixHref: null`, message-only.
+  - `CUPSGrServicios` cross-validation (grupo/servicio/CUPS combination)
+    deferred — Odentia validates each field against its own catalog but not
+    the specific official combination; readiness language is deliberately
+    scoped ("datos válidos contra los catálogos que Odentia tiene", never
+    "pasará el MUV sin objeciones").
+  - No real pilot JSON fixture was available to contrast shape against —
+    everything was derived directly from DT1 v003's own text.
+  - No E2E browser smoke with real login credentials (same environment
+    limitation as the rest of this project's QA — see dev-qa fixtures
+    instead: `/dev-qa/clinical-encounter-preview`, `/dev-qa/rips-preview`).
+- **Explicitly not built yet (future phase)**: MUV integration, CUV,
+  ProcesoId, submission states, retries/polling, FEV/DIAN, glosas, SIIFA.
 
 ---
 

@@ -559,6 +559,41 @@ the conflict, and propose an adaptation before writing any code.
 
 ---
 
+# RIPS (Colombian Regulatory Reporting)
+
+Odentia can generate a RIPS sin factura JSON export (Documento Técnico 1,
+Resolución 948 de 2026) from `/rips` — Clinic Admin only. The one
+permanent rule, never to be relaxed: **RIPS is built exclusively from
+services actually performed** — `encounter_diagnoses`/`encounter_services`,
+snapshotted onto the encounter at "Finalizar atención" — never from a
+Treatment Plan, a planned/recommended procedure, or the odontogram alone.
+"Plan de Tratamiento ≠ servicio realizado" is the reason this lives in its
+own tables, entirely separate from `patient_clinical_encounter_procedures`
+(the clinic's own free-text procedure list, never CUPS-coded, never a
+RIPS source).
+
+RIPS identity (`clinics.tax_id`, `clinic_locations.cod_prestador`,
+`professional_profiles.document_type/number`, and the RIPS identity
+columns on `patients`) reuses the same real tables every other feature
+already reads/writes — never a parallel "RIPS profile." CIE-10/CUPS codes
+and every other RIPS reference value are always validated server-side
+against the official SISPRO catalogs (`cups_catalog`/`diagnosis_catalog`/
+`rips_reference_values`) at write time — never inferred from free text,
+never accepted merely because the UI offered it, and never validated by
+loading a full catalog into the client (search is always server-side).
+
+A clinic with more than one `clinic_location` cannot generate an export
+yet — nothing in the schema links a specific atención to a specific sede
+(`appointments.room` is free text, not a location FK). This is a known,
+deliberate architectural gap (the export blocks rather than guessing the
+sede), not an oversight — do not silently pick the primary location if
+this is ever revisited.
+
+See `docs/rips-json-mapping.md` for the full field-by-field JSON mapping
+and PROJECT_STATUS.md's own "RIPS" section for current scope and gaps.
+
+---
+
 # Security
 
 Security always has priority over convenience.
