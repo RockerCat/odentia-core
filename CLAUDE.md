@@ -135,6 +135,28 @@ refresh, bookmark) is redirected to `/portal`, never `/registro`'s
 onboarding wizard — `/registro` stays reserved for someone who is
 actually neither staff nor a linked Patient.
 
+`/registro`'s own reentry check (`decideRegistroReentry()`,
+`src/features/onboarding/api.ts`) sends an authenticated user who already
+has an active clinic membership straight to `/agenda` — the same
+destination `decideAuthenticatedRedirect()` uses for the identical
+condition at `/login` — never a dead-end screen with no way back into the
+product short of signing out and logging back in. `/registro` also
+exposes its own "Cerrar sesión" (`decideAfterSignOut()`, same file) for
+the mid-onboarding case: a real, active session that simply belongs to
+the wrong account.
+
+`resolveSafeNext()` (`src/app/auth/confirm/resolve-safe-next.ts`) trusts
+exactly one different-origin redirect target beyond the confirm request's
+own origin: `http://localhost`/`http://127.0.0.1` (any port, exact
+hostname match, `http` only — never a substring/subdomain trick). This
+exists because a Confirm Signup email's link always executes on Supabase's
+Site URL (one global setting) regardless of where signup started, so a
+signup begun on localhost against the shared dev/prod project still has
+its token exchange happen on production. The exception only gets the
+browser back to the right origin — it does NOT restore the session there
+(cookies never cross domains); a normal password login re-establishes a
+real local session from that point. Never widen this beyond loopback.
+
 The real resolved clinic role (never name/avatar) is also bridged into
 the legacy mock `src/features/auth/session.ts` / `RoleContext` store
 (`src/features/session/role-bridge.ts`), so the small set of screens
@@ -588,6 +610,27 @@ yet — nothing in the schema links a specific atención to a specific sede
 deliberate architectural gap (the export blocks rather than guessing the
 sede), not an oversight — do not silently pick the primary location if
 this is ever revisited.
+
+Clinic/sede-level RIPS configuration (NIT, `codPrestador`) has one
+dedicated UI home: "Configuración RIPS" (`src/features/clinic/
+rips-config-section.tsx`, anchored at `/clinica#rips`) — NIT is edited in
+"Información general" and shown there read-only; `codPrestador` is edited
+directly in this block, never anywhere else. `/rips`'s own readiness
+"Corregir" links for clinic/location blockers point at this anchor, never
+a bare `/clinica`. Reuse `getRipsExportReadiness()` (via
+`getRipsClinicConfigStatus()`) for any future "is clinic/sede config
+complete" check — never a second set of rules that could disagree with
+`/rips` itself about what "ready" means.
+
+Automatic SISPRO/MUV submission is not implemented and not currently
+buildable without new infrastructure: both official mechanisms (the
+Cliente-Servidor desktop app and the API-Docker REST solution) require
+running Ministry-provided software reachable only via `localhost` — see
+PROJECT_STATUS.md's "RIPS #6A" for the full audit before attempting this
+again. The productive flow stays fully manual: generate → download → the
+odontóloga uploads the file herself → she reports the MUV result back
+into Odentia (`rips_export_log.result_status`), never inferred from
+Odentia's own internal validation passing.
 
 See `docs/rips-json-mapping.md` for the full field-by-field JSON mapping
 and PROJECT_STATUS.md's own "RIPS" section for current scope and gaps.

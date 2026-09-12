@@ -55,7 +55,7 @@ const FLOW_STEPS = [
 export default function LandingPage() {
   return (
     <div className="flex min-h-dvh flex-col bg-surface text-foreground">
-      <LandingHeader />
+      <LandingHeader showAuthWhenSignedIn />
 
       <main className="flex-1">
         {/* Hero */}

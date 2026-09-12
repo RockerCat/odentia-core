@@ -36,10 +36,16 @@ function resolveOnce(): Promise<ClinicContext> {
   return inFlight;
 }
 
-export function useCurrentUserContext(): ClinicContext | null {
+// `enabled` (default true) lets a caller that only sometimes needs this —
+// the public landing header, gated on a prop, see landing-header.tsx —
+// skip the resolution entirely without breaking the rules of hooks (the
+// hook itself is always called; only the effect's work is conditional).
+// Every existing caller passes no argument and is unaffected.
+export function useCurrentUserContext(enabled = true): ClinicContext | null {
   const [context, setContext] = useState<ClinicContext | null>(null);
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
 
     resolveOnce()
@@ -53,7 +59,7 @@ export function useCurrentUserContext(): ClinicContext | null {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [enabled]);
 
   return context;
 }

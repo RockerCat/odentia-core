@@ -2,7 +2,7 @@
 
 # Odentia Core
 
-**Last Updated:** 2026-09-10
+**Last Updated:** 2026-09-11
 
 ---
 
@@ -374,6 +374,23 @@ touched; if code and this section ever disagree, the code wins (see CLAUDE.md).
   dashboard, `/registro`, `/invitacion/[token]`, and `/portal/invitacion/[token]`
   all preserve their real destination through a real confirmation email,
   verified live with real accounts. See "REAL E2E STABILIZATION" above.
+  **Follow-up (2026-09-11):** a signup started on `localhost` while
+  pointed at the shared dev/prod Supabase project still had its
+  confirmation email land the browser on production — Supabase always
+  runs the token exchange on Site URL's own host (a single, global
+  setting), regardless of where signup began. `resolveSafeNext()` now
+  trusts one narrow exception beyond same-origin: a loopback destination
+  (`http://localhost`/`http://127.0.0.1`, any port, exact hostname match,
+  `http` only). This gets the browser back to the right environment but
+  does NOT restore the session there (cookies never cross domains) — a
+  normal password login re-establishes a real local session from that
+  point. A separate hypothesis — making `emailRedirectTo` itself point at
+  `/auth/confirm?next=...` so `.RedirectTo` could be used as the callback
+  base directly — was investigated and rejected: it would reintroduce a
+  regression already hit once in production (a Redirect-URL-rejected
+  `.RedirectTo` collapsing to a bare Site URL, which breaks the entire
+  link when it's the href's own prefix, not just a query value). Covered
+  by new cases in `resolve-safe-next.test.ts`.
 - **F001 fix** — `proxy.ts`'s clinic-path gate (`decideClinicRedirect`)
   distinguishes a genuinely new, unlinked account from an authenticated,
   linked Patient: a Patient with no staff clinic membership hitting a
@@ -405,8 +422,49 @@ touched; if code and this section ever disagree, the code wins (see CLAUDE.md).
   Supabase Auth user, a real `clinics` row (name, slug, sede principal with a real
   Leaflet/Nominatim map picker + geocoding, logo upload to a public Storage
   bucket), and the founding `clinic_admin` membership via a `SECURITY DEFINER`
-  bootstrap RPC (`bootstrap_clinic`). Handles "already onboarded" and
-  email-confirmation-pending states.
+  bootstrap RPC (`bootstrap_clinic`). Handles email-confirmation-pending and
+  mid-onboarding-reentry states.
+- **Real bugs found and fixed in production this pass (2026-09-11):**
+  - **NIT (tax_id) rejected by `clinics_tax_id_format`** — `bootstrap_clinic()`
+    (Paso 3) sent the NIT exactly as typed, while `updateClinicInfo()` (the
+    `/clinica` settings path) already stripped non-digits. A real NIT typed
+    with its customary "-DV" check-digit suffix made the RPC's own `clinics`
+    INSERT fail the RIPS #3 format CHECK, surfaced only as the generic "No
+    pudimos crear tu clínica." Fixed at two layers: `sanitizeTaxId()` (now
+    shared, `src/features/onboarding/api.ts`) applied before the RPC call,
+    plus `isValidTaxIdLength()` — a frontend check on Paso 2 (`clinic-step.tsx`)
+    that blocks "Continuar" with a clear message before ever reaching the RPC
+    if the sanitized value is outside the DB's own 4-12 digit bound. Covered
+    by `api.test.ts`.
+  - **`/registro` loop for an already-onboarded user** — landing on
+    `/registro` with a real, active clinic membership showed a static
+    "ya tienes una clínica" screen whose only ways forward were signing out
+    (back to Paso 1, no visible clinic) or a link to the public marketing
+    page — never into the app. The only real way in was to sign out and log
+    back in through `/login`. Fixed: `decideRegistroReentry()` now redirects
+    that case straight to `/agenda` (same destination
+    `decideAuthenticatedRedirect()` already uses at `/login` for the
+    identical condition); the old static screen/component was removed.
+    `/registro` also gained its own "Cerrar sesión" (`decideAfterSignOut()`)
+    for the case a session with NO membership simply belongs to the wrong
+    account — unlike the app shell's own "Salir", a failed sign-out here
+    surfaces an error and does not navigate, since there's nowhere else on
+    this screen to retry from. Covered by new cases in `api.test.ts`.
+  - **Success screen still pointed at the old demo flow** — "Volver al
+    inicio" (→ `/`) plus "Muy pronto podrás iniciar sesión con tu cuenta
+    real..." — both stale now that Auth is fully real. Now: "Ir a mi
+    agenda" (→ `/agenda`, real session preserved), disclaimer text removed
+    with no replacement.
+- A real login for a user with NO clinic membership at all (never
+  onboarded, or a genuinely different account than the one that owns a
+  clinic) correctly lands on `/registro` — confirmed, during this same
+  pass, to be `resolveClinicContext()` working exactly as designed, not a
+  bug: it independently re-queries `clinic_memberships` and only ever
+  reports `"ok"` for a real active row. A temporary debug instrumentation
+  (`[resolveClinicContext:debug]`) was added to `resolve-clinic-context.ts`
+  to trace a specific report of this, confirmed the account genuinely had
+  no membership, and was fully removed afterward (the file is
+  byte-identical to before the instrumentation).
 
 ## Clínica (real, Clinic Admin)
 
@@ -797,8 +855,9 @@ sync (`supabase migration list --linked`).
     no manual JSON editor.
 - **Full field-by-field mapping**: `docs/rips-json-mapping.md` — every JSON
   field, its Odentia source, the rule, and the exact DT1 v003 citation.
-- **Tests** — 76 RIPS-specific tests (readiness, generator golden fixture +
-  determinism, runtime schema validation), part of the full suite (272/278
+- **Tests** — 100 RIPS-specific tests (readiness, generator golden fixture +
+  determinism, runtime schema validation, content-hash determinism, period
+  selector, generate-state), part of the full suite (322/328
   passing project-wide, 6 skipped integration tests needing real
   credentials).
 - **Known gaps (real, documented, not silently hidden)**:
@@ -861,6 +920,61 @@ sync (`supabase migration list --linked`).
     this table.
   - Full procedure for the actual pilot run (not yet executed): `docs/
     rips-pilot-validation.md`.
+  - **Concurrency fix (2026-09-11):** `record_rips_export_result()` locks
+    the target row with `SELECT ... FOR UPDATE` before checking
+    `result_status`, closing a real check-then-act race — two concurrent
+    calls against the same export could otherwise both read `generated`
+    and both attempt to resolve it. The losing call now blocks until the
+    winner commits, then correctly sees the already-resolved row and is
+    rejected (`55000`).
+  - **Remote smoke test (2026-09-11):** confirmed live that `service_role`
+    and `anon` both get `permission denied` (no `GRANT`) on
+    `rips_export_log` and on every other clinical table probed
+    (`clinics`, `patients`, `clinic_memberships`, `profiles`) — real,
+    verified defense-in-depth (not even a leaked service-role key could
+    read this data directly), but it also means **no QA script in this
+    dev environment can read/write real clinic data** — only a genuine
+    `authenticated` session can. `RIPS Piloto #1` (a preflight to check
+    whether the pilot clinic could generate a real August 2026 RIPS) was
+    blocked by exactly this for the same reason — real credentials for a
+    `clinic_admin` session are required to run it, not available to an
+    automated script in this repo.
+- **RIPS #6C — dedicated "Configuración RIPS" block in `/clinica`
+  (real).** `codPrestador` used to be buried at the end of "Ubicación de
+  la sede principal" inside "Información general" — functionally correct
+  but hard to find for a setting that blocks RIPS generation. Now a
+  separate card (`src/features/clinic/rips-config-section.tsx`, anchored
+  `id="rips"`) shows a live ready/incomplete banner computed by
+  `getRipsClinicConfigStatus()` — a thin wrapper reusing the exact same
+  `getRipsExportReadiness()` `/rips` itself calls (patients/encounters
+  always empty — this block is scoped to clinic/location structure only,
+  never patient/atención concerns), so it can never say "lista" while
+  `/rips` still shows a blocker. NIT stays editable only in "Información
+  general" (shown here read-only, driven by the same lifted state) —
+  `codPrestador` is now edited only in this new block.
+  `/rips`'s own `fixHref` for `CLINIC_TAX_ID_MISSING`/`LOCATION_MISSING`/
+  `LOCATION_COD_PRESTADOR_MISSING` now points at `/clinica#rips` (a
+  `scroll-mt-24` CSS anchor, no JS scroll handling) instead of a bare
+  `/clinica`. Readiness copy was also cleaned up to remove internal DT1
+  jargon from user-facing text — `"codPrestador"`/`"numDocumentoIdObligado"`
+  no longer appear in messages, and a sede literally named "Sede
+  principal" no longer renders as "Sede Sede principal". Covered by
+  `rips-config-status.test.ts` and new cases in `export-readiness.test.ts`.
+- **RIPS UX — período selector + "Listo para generar" accuracy
+  (2026-09-11).** Chrome's native `<input type="month">` rendered its
+  calendar chrome in the browser's own language (English), inconsistent
+  with the rest of Odentia — replaced with two `<select>`s (Mes in
+  Spanish, Año from a dynamic `[año+1 … año-3]` window), both still only
+  ever producing the same `"YYYY-MM"` string the existing period-change
+  handler expected — no change to the pipeline itself. Separately, fixed
+  a real UI inconsistency: a period with 0 blockers but 0 atenciones
+  showed "Listo para generar" while the button stayed correctly disabled
+  (it already required `encounterCount > 0`). `getRipsGenerateState()` is
+  now the one function both the banner and the button read
+  (`"blockers" | "empty-period" | "ready"`) — "empty-period" shows
+  "Configuración RIPS completa" + "No hay atenciones para generar RIPS en
+  este período.", never an invented blocker. Covered by
+  `rips-screen-period.test.ts`/`rips-screen-generate-state.test.ts`.
 - **Explicitly not built yet (future phase)**: MUV integration, CUV
   generation/inference, ProcesoId auto-capture, submission states beyond
   a manually-recorded result, retries/polling, FEV/DIAN, glosas, SIIFA.
