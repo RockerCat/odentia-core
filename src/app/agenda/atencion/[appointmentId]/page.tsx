@@ -14,6 +14,13 @@ import { canEditClinicalData } from "@/features/patients/clinical-permissions";
 import { fetchPatients } from "@/features/patients/data";
 import { fetchPatientToothFindings } from "@/features/patients/tooth-findings-data";
 import { getActiveReferenceValues } from "@/features/rips/catalog-data";
+import {
+  fetchClinicalConcepts,
+  fetchClinicalConceptVariants,
+  fetchClinicalCupsMappings,
+  fetchClinicSpecialtyRipsServices,
+  fetchProfessionalSpecialty,
+} from "@/features/rips/clinical-concept-data";
 import { fetchActiveTreatmentNames } from "@/features/treatments/data";
 import { fetchActiveRoomNames } from "@/features/rooms/data";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
@@ -98,6 +105,11 @@ export default async function ClinicalEncounterPage({ params }: { params: Promis
     finalidadOptions,
     causaMotivoOptions,
     conceptoRecaudoOptions,
+    clinicalConcepts,
+    clinicalConceptVariants,
+    clinicalCupsMappings,
+    clinicSpecialtyRipsServices,
+    professionalSpecialty,
   ] =
     await Promise.all([
       fetchClinicalProfessionals(supabase, clinicId),
@@ -124,6 +136,14 @@ export default async function ClinicalEncounterPage({ params }: { params: Promis
       getActiveReferenceValues("RIPSFinalidadConsultaVersion2"),
       getActiveReferenceValues("RIPSCausaExternaVersion2"),
       getActiveReferenceValues("conceptoRecaudo"),
+      // RIPS #A3 — catálogo clínico natural (A1) + configuración RIPS
+      // confirmada de la clínica (A2) + la especialidad del profesional
+      // atendiendo, para el picker "¿Qué realizaste?".
+      fetchClinicalConcepts(),
+      fetchClinicalConceptVariants(),
+      fetchClinicalCupsMappings(),
+      fetchClinicSpecialtyRipsServices(clinicId),
+      fetchProfessionalSpecialty(clinicId, appointment.professionalProfileId),
     ]);
 
   // Only fetch once we know an encounter (draft or finalized) actually
@@ -164,6 +184,12 @@ export default async function ClinicalEncounterPage({ params }: { params: Promis
       finalidadOptions={finalidadOptions}
       causaMotivoOptions={causaMotivoOptions}
       conceptoRecaudoOptions={conceptoRecaudoOptions}
+      clinicalConcepts={clinicalConcepts}
+      clinicalConceptVariants={clinicalConceptVariants}
+      clinicalCupsMappings={clinicalCupsMappings}
+      clinicSpecialtyRipsServices={clinicSpecialtyRipsServices}
+      professionalSpecialtyId={professionalSpecialty?.id ?? null}
+      professionalSpecialtyName={professionalSpecialty?.name ?? null}
     />
   );
 }

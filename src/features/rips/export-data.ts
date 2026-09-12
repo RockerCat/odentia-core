@@ -31,7 +31,7 @@ export type RipsExportRawData = {
     incapacityCode: string | null;
     dateLabel: string;
     diagnoses: GeneratorDiagnosis[];
-    services: (GeneratorService & { professionalProfileId: string })[];
+    services: (GeneratorService & { professionalProfileId: string; clinicalConceptId: string | null; mappingStatus: "resolved" | "unresolved" | null })[];
   }[];
 };
 
@@ -75,7 +75,7 @@ export async function fetchRipsExportRawData(supabase: SupabaseClient, clinicId:
         supabase
           .from("encounter_services")
           .select(
-            "id, encounter_id, professional_profile_id, cups_code, rips_service_type, performed_at, service_value, via_ingreso_code, modalidad_code, grupo_servicios_code, cod_servicio_code, finalidad_code, causa_motivo_code, concepto_recaudo_code, valor_pago_moderador, sequence",
+            "id, encounter_id, professional_profile_id, cups_code, rips_service_type, performed_at, service_value, via_ingreso_code, modalidad_code, grupo_servicios_code, cod_servicio_code, finalidad_code, causa_motivo_code, concepto_recaudo_code, valor_pago_moderador, sequence, clinical_concept_id, mapping_status",
           )
           .eq("clinic_id", clinicId)
           .in("encounter_id", encounterIds),
@@ -97,7 +97,10 @@ export async function fetchRipsExportRawData(supabase: SupabaseClient, clinicId:
     diagnosesByEncounter.set(row.encounter_id, list);
   }
 
-  const servicesByEncounter = new Map<string, (GeneratorService & { professionalProfileId: string })[]>();
+  const servicesByEncounter = new Map<
+    string,
+    (GeneratorService & { professionalProfileId: string; clinicalConceptId: string | null; mappingStatus: "resolved" | "unresolved" | null })[]
+  >();
   const professionalProfileIds = new Set<string>();
   for (const row of servicesResult.data ?? []) {
     professionalProfileIds.add(row.professional_profile_id);
@@ -118,6 +121,10 @@ export async function fetchRipsExportRawData(supabase: SupabaseClient, clinicId:
       valorPagoModerador: row.valor_pago_moderador,
       sequence: row.sequence,
       professionalProfileId: row.professional_profile_id,
+      // RIPS #A3 — only used by readiness's own new checks below; never
+      // read by export-generator.ts's JSON builder.
+      clinicalConceptId: row.clinical_concept_id,
+      mappingStatus: row.mapping_status,
     });
     servicesByEncounter.set(row.encounter_id, list);
   }
@@ -214,6 +221,8 @@ export function toEncounterReadinessInputs(raw: RipsExportRawData): EncounterRea
     const services: EncounterReadinessService[] = e.services.map((s) => ({
       ...s,
       professionalHasDocumentIdentity: raw.professionals.get(s.professionalProfileId)?.hasDocumentIdentity ?? false,
+      clinicalConceptId: s.clinicalConceptId,
+      mappingStatus: s.mappingStatus,
     }));
     return {
       encounterId: e.encounterId,

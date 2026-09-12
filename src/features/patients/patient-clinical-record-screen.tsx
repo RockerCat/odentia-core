@@ -169,7 +169,16 @@ export function PatientClinicalRecordScreen({
           relatedDiagnosisLabels: related.map((d, i) =>
             relatedResolved[i] ? `${d.cie10Code} — ${relatedResolved[i]!.description}` : d.cie10Code,
           ),
+          // RIPS #A3 — mismo criterio que atenciones-tab.tsx's own
+          // serviceLabel: el concepto clínico natural (si existe) es la
+          // etiqueta principal, el CUPS queda secundario.
           serviceLabels: clinicalData.services.map((s, i) => {
+            if (s.clinicalConceptNameSnapshot) {
+              const conceptLabel = s.clinicalVariantNameSnapshot
+                ? `${s.clinicalConceptNameSnapshot} (${s.clinicalVariantNameSnapshot})`
+                : s.clinicalConceptNameSnapshot;
+              return `${conceptLabel} — CUPS ${s.cupsCode}`;
+            }
             const typeLabel = s.ripsServiceType === "consultation" ? "Consulta" : s.ripsServiceType === "procedure" ? "Procedimiento" : "Servicio";
             return servicesResolved[i] ? `${typeLabel}: ${s.cupsCode} — ${servicesResolved[i]!.description}` : `${typeLabel}: ${s.cupsCode}`;
           }),

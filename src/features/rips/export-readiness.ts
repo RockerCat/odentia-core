@@ -36,7 +36,9 @@ export type RipsReadinessErrorCode =
   | "ENCOUNTER_INCAPACITY_MISSING"
   | "SERVICE_CUPS_UNCLASSIFIED"
   | "SERVICE_VALUE_MISSING"
-  | "CONSULTATION_DIAGNOSIS_TYPE_MISSING";
+  | "CONSULTATION_DIAGNOSIS_TYPE_MISSING"
+  | "CLINICAL_SERVICE_MAPPING_UNRESOLVED"
+  | "RIPS_SERVICE_CONFIGURATION_MISSING";
 
 export type RipsReadinessError = {
   code: RipsReadinessErrorCode;
@@ -67,6 +69,14 @@ function buildResult(errors: RipsReadinessError[]): RipsReadinessResult {
 // ---------------------------------------------------------------------
 export type EncounterReadinessService = GeneratorService & {
   professionalHasDocumentIdentity: boolean;
+  // RIPS #A3 — set only for a service captured via the "¿Qué realizaste?"
+  // clinical concept picker (clinical-service-resolution.ts); null for any
+  // service added via the manual CUPS search, including every row that
+  // predates this phase — those never trigger the two checks below, which
+  // is what keeps existing finalized encounters' readiness unchanged (see
+  // this task's own Compatibilidad section).
+  clinicalConceptId: string | null;
+  mappingStatus: "resolved" | "unresolved" | null;
 };
 
 export type EncounterReadinessInput = {
@@ -100,12 +110,50 @@ export function getEncounterRipsReadiness(input: EncounterReadinessInput): RipsR
       code: "ENCOUNTER_INCAPACITY_MISSING",
       scope: "encounter",
       message: `${encounterLabel} — falta indicar si hubo incapacidad.`,
-      fixHref: null,
+      // Narrow correction screen (see encounter-correction-actions.ts) —
+      // never the full clinical encounter screen: a finalized atención's
+      // historia clínica stays immutable, only this specific RIPS gap is
+      // editable there.
+      fixHref: `/rips/atencion/${input.encounterId}`,
     });
   }
 
   for (const service of input.services) {
     const serviceBase = { ...base, serviceId: service.id };
+
+    // RIPS #A3 — two distinct causes, never mixed into one message (see
+    // this task's own instruction): a concept the picker couldn't map to
+    // any active CUPS ("unresolved" — a future-phase state; this phase's
+    // UI never lets it happen, but readiness still recognizes it) is a
+    // DIFFERENT problem from a resolved concept whose specialty has no
+    // Servicio RIPS confirmed yet by the clinic. Both are scoped to
+    // "service" (not "clinic"): fixing LOCATION_AMBIGUOUS-style clinic
+    // config doesn't fix a specific service's missing mapping. Neither
+    // check ever fires for a service with clinicalConceptId === null (a
+    // manual-CUPS row, including every row that predates this phase) —
+    // see EncounterReadinessService's own comment.
+    if (service.mappingStatus === "unresolved") {
+      errors.push({
+        ...serviceBase,
+        code: "CLINICAL_SERVICE_MAPPING_UNRESOLVED",
+        scope: "service",
+        message: `${encounterLabel} — el concepto clínico seleccionado no tiene un CUPS resuelto todavía.`,
+        fixHref: null,
+      });
+    }
+
+    if (service.clinicalConceptId && !service.codServicioCode) {
+      errors.push({
+        ...serviceBase,
+        code: "RIPS_SERVICE_CONFIGURATION_MISSING",
+        scope: "service",
+        message: `${encounterLabel} — la clínica todavía no ha confirmado el Servicio RIPS para la especialidad de este servicio.`,
+        // Closest existing route (Configuración RIPS de la clínica) — no
+        // UI to confirm clinic_specialty_rips_services exists yet (that's
+        // A4's own scope); never inventing one here.
+        fixHref: "/clinica#rips",
+      });
+    }
 
     if (service.ripsServiceType === "unknown") {
       errors.push({
@@ -152,7 +200,10 @@ export function getEncounterRipsReadiness(input: EncounterReadinessInput): RipsR
         code: "SERVICE_VALUE_MISSING",
         scope: "service",
         message: `${encounterLabel} — falta el valor cobrado por la consulta ${service.cupsCode}.`,
-        fixHref: null,
+        // Same narrow correction screen as ENCOUNTER_INCAPACITY_MISSING
+        // above — one screen per encounter handles every RIPS gap that
+        // encounter has, never one screen per individual field.
+        fixHref: `/rips/atencion/${input.encounterId}`,
       });
     }
 

@@ -37,9 +37,18 @@ import { toOdontogramData, type ToothFindingRecord } from "@/features/patients/t
 import { CodeSearchAutocomplete } from "@/features/rips/code-search-autocomplete";
 import { findCupsByCodeAction, findDiagnosisByCodeAction, searchCupsAction, searchDiagnosesAction } from "@/features/rips/actions";
 import type { ReferenceValue } from "@/features/rips/catalog-data";
+import {
+  getAvailableClinicalConcepts,
+  resolveClinicalService,
+  type ClinicalConceptOption,
+  type ClinicalConceptVariantOption,
+  type ClinicalCupsMappingOption,
+  type ClinicSpecialtyRipsServiceOption,
+} from "@/features/rips/clinical-service-resolution";
 import { FIELD_CLASS } from "./appointment-detail-modal";
 import { updateAppointment } from "./appointments-actions";
 import { fetchAppointmentsForPatient, type Appointment } from "./appointments-data";
+import { getEncounterFinalizeBlockers } from "./encounter-finalize-readiness";
 import { OdontogramPreview } from "./odontogram-teeth";
 import type { BoardProfessional } from "./real-appointments-board";
 import { endTimeIso, formatDateLabel, formatTimeLabel, initialsOf } from "./real-format";
@@ -123,6 +132,14 @@ type ServiceRow = {
   conceptoRecaudoCode: string;
   valorPagoModerador: string;
   detailsOpen: boolean;
+  // RIPS #A3 — snapshot del concepto clínico natural ("¿Qué realizaste?")
+  // que originó esta fila, si vino de ahí — null en una fila agregada por
+  // CUPS manual. Ver clinical-service-resolution.ts.
+  clinicalConceptId: string | null;
+  clinicalConceptVariantId: string | null;
+  clinicalConceptNameSnapshot: string | null;
+  clinicalVariantNameSnapshot: string | null;
+  mappingStatus: "resolved" | "unresolved" | null;
 };
 
 const HISTORY_LIMIT = 3;
@@ -150,6 +167,12 @@ export function RealClinicalEncounterScreen({
   finalidadOptions,
   causaMotivoOptions,
   conceptoRecaudoOptions,
+  clinicalConcepts,
+  clinicalConceptVariants,
+  clinicalCupsMappings,
+  clinicSpecialtyRipsServices,
+  professionalSpecialtyId,
+  professionalSpecialtyName,
 }: {
   appointment: Appointment;
   professional: BoardProfessional | null;
@@ -173,6 +196,17 @@ export function RealClinicalEncounterScreen({
   finalidadOptions: ReferenceValue[];
   causaMotivoOptions: ReferenceValue[];
   conceptoRecaudoOptions: ReferenceValue[];
+  // RIPS #A3 — catálogo clínico natural (A1) + configuración RIPS
+  // confirmada de la clínica (A2, nunca specialty_rips_service_defaults)
+  // + la especialidad primaria del profesional atendiendo (usada como
+  // contexto único para todo el picker "¿Qué realizaste?" — simplificación
+  // V0 explícita, ver el reporte de esta fase).
+  clinicalConcepts: ClinicalConceptOption[];
+  clinicalConceptVariants: ClinicalConceptVariantOption[];
+  clinicalCupsMappings: ClinicalCupsMappingOption[];
+  clinicSpecialtyRipsServices: ClinicSpecialtyRipsServiceOption[];
+  professionalSpecialtyId: string | null;
+  professionalSpecialtyName: string | null;
 }) {
   const router = useRouter();
   // Clinical action — never Assistant (see CLAUDE.md's Roles: Assistant
@@ -224,8 +258,22 @@ export function RealClinicalEncounterScreen({
       conceptoRecaudoCode: s.conceptoRecaudoCode ?? "",
       valorPagoModerador: s.valorPagoModerador != null ? String(s.valorPagoModerador) : "",
       detailsOpen: false,
+      clinicalConceptId: s.clinicalConceptId,
+      clinicalConceptVariantId: s.clinicalConceptVariantId,
+      clinicalConceptNameSnapshot: s.clinicalConceptNameSnapshot,
+      clinicalVariantNameSnapshot: s.clinicalVariantNameSnapshot,
+      mappingStatus: s.mappingStatus,
     })),
   );
+  const [conceptPickerError, setConceptPickerError] = useState<string | null>(null);
+  const [expandedConceptId, setExpandedConceptId] = useState<string | null>(null);
+  const availableClinicalConcepts = getAvailableClinicalConcepts({
+    concepts: clinicalConcepts,
+    variants: clinicalConceptVariants,
+    mappings: clinicalCupsMappings,
+    professionalSpecialtyId,
+    professionalSpecialtyName,
+  });
   const nextDiagnosisId = useRef(0);
   const nextServiceId = useRef(0);
 
@@ -299,8 +347,69 @@ export function RealClinicalEncounterScreen({
         conceptoRecaudoCode: "",
         valorPagoModerador: "",
         detailsOpen: false,
+        clinicalConceptId: null,
+        clinicalConceptVariantId: null,
+        clinicalConceptNameSnapshot: null,
+        clinicalVariantNameSnapshot: null,
+        mappingStatus: null,
       },
     ]);
+  };
+
+  // RIPS #A3 — "¿Qué realizaste?": agrega un servicio ya resuelto a partir
+  // de un concepto clínico natural [+ variante]. Nunca inventa un CUPS —
+  // si resolveClinicalService no encuentra un mapping activo (no debería
+  // pasar con los conceptos que availableClinicalConcepts ofrece hoy, pero
+  // el picker solo puede ofrecer lo que el catálogo YA confirma, nunca
+  // garantizarlo en el futuro), la fila simplemente no se agrega y se
+  // muestra un aviso — esto es lo que bloquea guardar ESE servicio cuando
+  // falta una decisión clínica necesaria, sin bloquear el resto de la
+  // atención.
+  const addConceptService = (concept: ClinicalConceptOption, variant: ClinicalConceptVariantOption | null) => {
+    const resolved = resolveClinicalService({
+      conceptId: concept.id,
+      variantId: variant?.id ?? null,
+      professionalSpecialtyId,
+      mappings: clinicalCupsMappings,
+      clinicServices: clinicSpecialtyRipsServices,
+    });
+    if (!resolved) {
+      setConceptPickerError(
+        `No fue posible resolver "${concept.name}${variant ? ` — ${variant.name}` : ""}" a un código CUPS confirmado.`,
+      );
+      return;
+    }
+    setConceptPickerError(null);
+    nextServiceId.current += 1;
+    setServices((prev) => [
+      ...prev,
+      {
+        id: `svc-${nextServiceId.current}`,
+        cupsCode: resolved.cupsCode,
+        description: "",
+        ripsServiceType: resolved.ripsServiceType,
+        professionalProfileId: appointment.professionalProfileId,
+        serviceValue: "",
+        viaIngresoCode: "",
+        modalidadCode: "",
+        // Prellenado desde la configuración RIPS CONFIRMADA de la clínica
+        // cuando existe — nunca desde specialty_rips_service_defaults.
+        // Sigue siendo editable en "Detalles RIPS" caso a caso.
+        grupoServiciosCode: resolved.grupoServiciosCode ?? "",
+        codServicioCode: resolved.codServicioCode ?? "",
+        finalidadCode: "",
+        causaMotivoCode: "",
+        conceptoRecaudoCode: "",
+        valorPagoModerador: "",
+        detailsOpen: false,
+        clinicalConceptId: concept.id,
+        clinicalConceptVariantId: variant?.id ?? null,
+        clinicalConceptNameSnapshot: concept.name,
+        clinicalVariantNameSnapshot: variant?.name ?? null,
+        mappingStatus: resolved.mappingStatus,
+      },
+    ]);
+    setExpandedConceptId(null);
   };
 
   const updateService = (id: string, patch: Partial<ServiceRow>) => {
@@ -345,6 +454,11 @@ export function RealClinicalEncounterScreen({
         causaMotivoCode: s.causaMotivoCode || null,
         conceptoRecaudoCode: s.conceptoRecaudoCode || null,
         valorPagoModerador: s.valorPagoModerador.trim() === "" ? null : Number(s.valorPagoModerador),
+        clinicalConceptId: s.clinicalConceptId,
+        clinicalConceptVariantId: s.clinicalConceptVariantId,
+        clinicalConceptNameSnapshot: s.clinicalConceptNameSnapshot,
+        clinicalVariantNameSnapshot: s.clinicalVariantNameSnapshot,
+        mappingStatus: s.mappingStatus,
       }));
 
   const [needsNextAppointment, setNeedsNextAppointment] = useState<boolean | null>(null);
@@ -453,6 +567,16 @@ export function RealClinicalEncounterScreen({
       return;
     }
     setInfoMessage("Borrador guardado.");
+  };
+
+  const handleFinalizeClick = () => {
+    const blockers = getEncounterFinalizeBlockers({ incapacityCode, services });
+    if (blockers.length > 0) {
+      setFinalizeError(blockers.join(" "));
+      return;
+    }
+    setFinalizeError(null);
+    setShowFinalizeConfirm(true);
   };
 
   const handleFinalize = async () => {
@@ -728,6 +852,61 @@ export function RealClinicalEncounterScreen({
 
               <Section title="Servicios realizados" icon={CheckCircleIcon}>
                 <div className="flex flex-col gap-2.5">
+                  {/* RIPS #A3 — "¿Qué realizaste?": vocabulario clínico
+                      natural como interacción PRINCIPAL. CUPS/Servicio RIPS
+                      son una consecuencia técnica resuelta internamente,
+                      nunca una decisión del odontólogo aquí. */}
+                  <div className="rounded-lg border border-border bg-surface p-3">
+                    <p className="text-xs font-semibold text-foreground/80">¿Qué realizaste?</p>
+                    {conceptPickerError && (
+                      <p className="mt-1.5 text-xs text-warning">{conceptPickerError}</p>
+                    )}
+                    <div className="mt-2 flex flex-col gap-1.5">
+                      {availableClinicalConcepts.map(({ concept, variants }) => (
+                        <div key={concept.id}>
+                          {variants.length === 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => addConceptService(concept, null)}
+                              className="flex w-full items-center justify-between rounded-lg border border-dashed border-border px-3 py-1.5 text-left text-xs font-medium text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                            >
+                              {concept.name}
+                              <PlusIcon className="size-3.5 shrink-0" />
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setExpandedConceptId((prev) => (prev === concept.id ? null : concept.id))}
+                                className="flex w-full items-center justify-between rounded-lg border border-dashed border-border px-3 py-1.5 text-left text-xs font-medium text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                              >
+                                {concept.name}
+                                <ChevronIcon
+                                  className={`size-3.5 shrink-0 transition-transform ${expandedConceptId === concept.id ? "rotate-90" : ""}`}
+                                />
+                              </button>
+                              {expandedConceptId === concept.id && (
+                                <div className="mt-1 ml-3 flex flex-col gap-1 border-l border-border pl-3">
+                                  {variants.map((variant) => (
+                                    <button
+                                      key={variant.id}
+                                      type="button"
+                                      onClick={() => addConceptService(concept, variant)}
+                                      className="flex items-center justify-between rounded-lg px-3 py-1.5 text-left text-xs text-foreground/70 transition-colors hover:bg-primary/5 hover:text-primary"
+                                    >
+                                      {variant.name}
+                                      <PlusIcon className="size-3.5 shrink-0" />
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   {services.length === 0 && (
                     <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
                       Aún no se han registrado servicios realizados.
@@ -741,20 +920,30 @@ export function RealClinicalEncounterScreen({
                       <div key={s.id} className="rounded-lg border border-border p-2.5">
                         <div className="flex items-start gap-2">
                           <div className="grid flex-1 gap-2 sm:grid-cols-2">
-                            <CodeSearchAutocomplete
-                              value={s.cupsCode}
-                              displayDescription={s.cupsCode ? `${s.cupsCode} — ${s.description}` : ""}
-                              search={searchCupsAction}
-                              onChange={(picked) =>
-                                updateService(
-                                  s.id,
-                                  picked
-                                    ? { cupsCode: picked.code, description: picked.description, ripsServiceType: picked.ripsServiceType }
-                                    : { cupsCode: "", description: "", ripsServiceType: "unknown" },
-                                )
-                              }
-                              placeholder="Buscar por código o descripción…"
-                            />
+                            {s.clinicalConceptId ? (
+                              <div className="flex flex-col justify-center">
+                                <p className="text-sm font-medium text-foreground">
+                                  {s.clinicalConceptNameSnapshot}
+                                  {s.clinicalVariantNameSnapshot ? ` — ${s.clinicalVariantNameSnapshot}` : ""}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground">CUPS {s.cupsCode}</p>
+                              </div>
+                            ) : (
+                              <CodeSearchAutocomplete
+                                value={s.cupsCode}
+                                displayDescription={s.cupsCode ? `${s.cupsCode} — ${s.description}` : ""}
+                                search={searchCupsAction}
+                                onChange={(picked) =>
+                                  updateService(
+                                    s.id,
+                                    picked
+                                      ? { cupsCode: picked.code, description: picked.description, ripsServiceType: picked.ripsServiceType }
+                                      : { cupsCode: "", description: "", ripsServiceType: "unknown" },
+                                  )
+                                }
+                                placeholder="Buscar por código o descripción…"
+                              />
+                            )}
                             {professionals.length > 1 ? (
                               <select
                                 value={s.professionalProfileId}
@@ -803,15 +992,20 @@ export function RealClinicalEncounterScreen({
                             </span>
 
                             {s.ripsServiceType === "consultation" && (
-                              <input
-                                type="number"
-                                min={0}
-                                step="0.01"
-                                value={s.serviceValue}
-                                onChange={(e) => updateService(s.id, { serviceValue: e.target.value })}
-                                placeholder="Valor cobrado al paciente"
-                                className={`${FIELD_CLASS} w-44`}
-                              />
+                              <div className="flex flex-col gap-1">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={s.serviceValue}
+                                  onChange={(e) => updateService(s.id, { serviceValue: e.target.value })}
+                                  placeholder="Valor cobrado al paciente"
+                                  className={`${FIELD_CLASS} w-44`}
+                                />
+                                {s.serviceValue.trim() === "" && (
+                                  <span className="text-xs text-warning">Obligatorio para RIPS antes de finalizar.</span>
+                                )}
+                              </div>
                             )}
                             {s.ripsServiceType === "procedure" && (
                               <span className="text-xs text-muted-foreground">Valor: $0 (sin factura, según normativa)</span>
@@ -822,6 +1016,17 @@ export function RealClinicalEncounterScreen({
                               </span>
                             )}
                           </div>
+                        )}
+
+                        {/* RIPS #A3 — nunca bloquea guardar/finalizar (ver
+                            getEncounterFinalizeBlockers, que no depende de
+                            esto): la verdad clínica ya quedó registrada vía
+                            el concepto; solo falta que la clínica confirme
+                            su propia configuración administrativa. */}
+                        {s.clinicalConceptId && !s.codServicioCode && (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Servicio RIPS pendiente de confirmación en Configuración RIPS de la clínica.
+                          </p>
                         )}
 
                         <button
@@ -941,14 +1146,24 @@ export function RealClinicalEncounterScreen({
                   <button
                     type="button"
                     onClick={addService}
-                    className="flex items-center justify-center gap-1.5 self-start rounded-lg border border-dashed border-border px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                    className="flex items-center justify-center gap-1.5 self-start rounded-lg px-3 py-1.5 text-xs font-medium text-foreground/50 transition-colors hover:text-foreground/80"
                   >
                     <PlusIcon className="size-3.5" />
-                    Agregar servicio
+                    Agregar servicio manual (CUPS)
                   </button>
                 </div>
               </Section>
 
+              {/* RIPS #A3 — duplicidad pendiente conocida, no resuelta en
+                  esta fase: este bloque (free-text, patient_clinical_encounter_procedures,
+                  nunca CUPS-coded — ver ProcedureRow's own comment) y
+                  "Servicios realizados" arriba ahora pueden describir la
+                  misma acción dos veces (p.ej. "Limpieza dental" elegida
+                  arriba vía el picker, y otra vez tecleada aquí). Fusionar
+                  ambos modelos es un refactor amplio del modelo legacy,
+                  fuera de este alcance (ver este task's own scope) —
+                  queda documentado para una fase posterior, manteniendo
+                  ambos bloques funcionando exactamente como antes. */}
               <Section title="Procedimientos realizados" icon={ClipboardIcon}>
                 <div className="flex flex-col gap-2.5">
                   {procedures.length === 0 && (
@@ -1045,6 +1260,13 @@ export function RealClinicalEncounterScreen({
                     </button>
                   ))}
                 </div>
+                {/* Never a default — an explicit Sí/No is required before
+                    "Finalizar atención" (see getFinalizeBlockers above);
+                    "sin responder" (incapacityCode === null) still saves
+                    fine as a draft. */}
+                {incapacityCode === null && (
+                  <p className="mt-2 text-xs text-warning">Selecciona Sí o No — es obligatorio para poder finalizar la atención.</p>
+                )}
               </Section>
 
               <Section title="Próxima cita" icon={CalendarIcon}>
@@ -1250,7 +1472,7 @@ export function RealClinicalEncounterScreen({
           </button>
           <button
             type="button"
-            onClick={() => setShowFinalizeConfirm(true)}
+            onClick={handleFinalizeClick}
             disabled={savingDraft || finalizing}
             className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60 sm:px-6"
           >

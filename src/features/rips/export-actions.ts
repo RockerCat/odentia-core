@@ -29,7 +29,11 @@ export type RipsPeriodSummary = {
 
 export type RipsPeriodSummaryOutcome = { status: "ok"; summary: RipsPeriodSummary } | { status: "error"; message: string };
 
-async function requireClinicAdminContext(): Promise<{ status: "ok"; clinicId: string } | { status: "error"; message: string }> {
+// Exported for encounter-correction-actions.ts (the RIPS "Corregir" flow
+// for a finalized encounter's own incapacidad/valor cobrado gaps) — same
+// clinic_admin-only gate every other RIPS action already re-checks
+// server-side, never duplicated.
+export async function requireClinicAdminContext(): Promise<{ status: "ok"; clinicId: string } | { status: "error"; message: string }> {
   const supabase = await createClient();
   const context = await resolveClinicContext(supabase);
   if (context.status !== "ok") {

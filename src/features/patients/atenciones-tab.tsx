@@ -147,7 +147,23 @@ export function AtencionesTab({
     return description ? `${d.cie10Code} — ${description}` : d.cie10Code;
   };
 
-  const serviceLabel = (s: { cupsCode: string; performedAt: string; ripsServiceType: "consultation" | "procedure" | "unknown" }) => {
+  const serviceLabel = (s: {
+    cupsCode: string;
+    performedAt: string;
+    ripsServiceType: "consultation" | "procedure" | "unknown";
+    clinicalConceptNameSnapshot: string | null;
+    clinicalVariantNameSnapshot: string | null;
+  }) => {
+    // RIPS #A3 — el concepto clínico natural (si el servicio vino del
+    // picker "¿Qué realizaste?") es la etiqueta principal; el CUPS queda
+    // secundario. Un servicio sin snapshot (CUPS manual, o cualquier fila
+    // anterior a A3) conserva exactamente el comportamiento anterior.
+    if (s.clinicalConceptNameSnapshot) {
+      const conceptLabel = s.clinicalVariantNameSnapshot
+        ? `${s.clinicalConceptNameSnapshot} (${s.clinicalVariantNameSnapshot})`
+        : s.clinicalConceptNameSnapshot;
+      return `${conceptLabel} — CUPS ${s.cupsCode}`;
+    }
     const description = codeDescriptions.get(`cups:${s.cupsCode}:${s.performedAt}`);
     const typeLabel = s.ripsServiceType === "consultation" ? "Consulta" : s.ripsServiceType === "procedure" ? "Procedimiento" : "Servicio";
     return description ? `${typeLabel}: ${s.cupsCode} — ${description}` : `${typeLabel}: ${s.cupsCode}`;

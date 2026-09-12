@@ -117,6 +117,28 @@ export async function fetchClinicalEncounterByAppointmentId(
   return data ? mapClinicalEncounterRow(data) : null;
 }
 
+// RIPS #6 — encounter correction screen's own lookup (see
+// src/app/rips/atencion/[encounterId]/page.tsx): finds a specific
+// FINALIZED encounter by its own id, scoped to the caller's clinic. Never
+// used to reopen a draft — the correction RPC itself
+// (correct_finalized_encounter_rips_gaps) rejects a non-finalized row too,
+// this is just the read-side mirror so the page can 404 early instead of
+// rendering a form that would fail on submit.
+export async function fetchClinicalEncounterById(
+  supabase: SupabaseClient,
+  clinicId: string,
+  encounterId: string,
+): Promise<ClinicalEncounterRecord | null> {
+  const { data, error } = await supabase
+    .from("patient_clinical_encounters")
+    .select(CLINICAL_ENCOUNTER_COLUMNS)
+    .eq("clinic_id", clinicId)
+    .eq("id", encounterId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapClinicalEncounterRow(data) : null;
+}
+
 export type ClinicalEncounterProcedureRecord = {
   id: string;
   encounterId: string;
@@ -231,6 +253,16 @@ export type EncounterServiceRecord = {
   conceptoRecaudoCode: string | null;
   valorPagoModerador: number | null;
   sequence: number;
+  // RIPS #A3 — snapshot del concepto clínico natural ("¿Qué realizaste?")
+  // que originó este servicio, si vino de ahí. Un servicio agregado por
+  // CUPS manual (o cualquier fila histórica anterior a A3) sigue siendo
+  // válido con estos cinco campos en null — nunca un estado a
+  // reinterpretar.
+  clinicalConceptId: string | null;
+  clinicalConceptVariantId: string | null;
+  clinicalConceptNameSnapshot: string | null;
+  clinicalVariantNameSnapshot: string | null;
+  mappingStatus: "resolved" | "unresolved" | null;
 };
 
 function mapEncounterServiceRow(row: {
@@ -250,6 +282,11 @@ function mapEncounterServiceRow(row: {
   concepto_recaudo_code: string | null;
   valor_pago_moderador: number | null;
   sequence: number;
+  clinical_concept_id: string | null;
+  clinical_concept_variant_id: string | null;
+  clinical_concept_name_snapshot: string | null;
+  clinical_variant_name_snapshot: string | null;
+  mapping_status: "resolved" | "unresolved" | null;
 }): EncounterServiceRecord {
   return {
     id: row.id,
@@ -268,11 +305,16 @@ function mapEncounterServiceRow(row: {
     conceptoRecaudoCode: row.concepto_recaudo_code,
     valorPagoModerador: row.valor_pago_moderador,
     sequence: row.sequence,
+    clinicalConceptId: row.clinical_concept_id,
+    clinicalConceptVariantId: row.clinical_concept_variant_id,
+    clinicalConceptNameSnapshot: row.clinical_concept_name_snapshot,
+    clinicalVariantNameSnapshot: row.clinical_variant_name_snapshot,
+    mappingStatus: row.mapping_status,
   };
 }
 
 const ENCOUNTER_SERVICE_COLUMNS =
-  "id, encounter_id, professional_profile_id, cups_code, rips_service_type, performed_at, service_value, via_ingreso_code, modalidad_code, grupo_servicios_code, cod_servicio_code, finalidad_code, causa_motivo_code, concepto_recaudo_code, valor_pago_moderador, sequence";
+  "id, encounter_id, professional_profile_id, cups_code, rips_service_type, performed_at, service_value, via_ingreso_code, modalidad_code, grupo_servicios_code, cod_servicio_code, finalidad_code, causa_motivo_code, concepto_recaudo_code, valor_pago_moderador, sequence, clinical_concept_id, clinical_concept_variant_id, clinical_concept_name_snapshot, clinical_variant_name_snapshot, mapping_status";
 
 export async function fetchEncounterServices(
   supabase: SupabaseClient,

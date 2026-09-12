@@ -29,6 +29,8 @@ function baseService(overrides: Partial<EncounterReadinessInput["services"][numb
     sequence: 0,
     professionalProfileId: "prof-1",
     professionalHasDocumentIdentity: true,
+    clinicalConceptId: null,
+    mappingStatus: null,
     ...overrides,
   };
 }
@@ -89,6 +91,49 @@ describe("getEncounterRipsReadiness", () => {
     expect(result.errors.map((e) => e.code)).toContain("ENCOUNTER_INCAPACITY_MISSING");
   });
 
+  // RIPS #A3 — CLINICAL_SERVICE_MAPPING_UNRESOLVED vs
+  // RIPS_SERVICE_CONFIGURATION_MISSING must stay two distinct,
+  // diagnosable causes, and neither may fire for a service that predates
+  // this phase (clinicalConceptId null) — see this task's own
+  // Compatibilidad section.
+  it("flags CLINICAL_SERVICE_MAPPING_UNRESOLVED when a concept-based service has no resolved CUPS mapping", () => {
+    const result = getEncounterRipsReadiness(
+      baseEncounter({ services: [baseService({ clinicalConceptId: "concept-1", mappingStatus: "unresolved" })] }),
+    );
+    expect(result.errors.map((e) => e.code)).toContain("CLINICAL_SERVICE_MAPPING_UNRESOLVED");
+  });
+
+  it("flags RIPS_SERVICE_CONFIGURATION_MISSING when a concept-based service has a resolved CUPS but no confirmed Servicio RIPS", () => {
+    const result = getEncounterRipsReadiness(
+      baseEncounter({
+        services: [baseService({ clinicalConceptId: "concept-1", mappingStatus: "resolved", codServicioCode: null })],
+      }),
+    );
+    const codes = result.errors.map((e) => e.code);
+    expect(codes).toContain("RIPS_SERVICE_CONFIGURATION_MISSING");
+    expect(codes).not.toContain("CLINICAL_SERVICE_MAPPING_UNRESOLVED");
+  });
+
+  it("is ready (regarding these two checks) once the clinic confirms the Servicio RIPS for a concept-based service", () => {
+    const result = getEncounterRipsReadiness(
+      baseEncounter({
+        services: [baseService({ clinicalConceptId: "concept-1", mappingStatus: "resolved", codServicioCode: "334" })],
+      }),
+    );
+    const codes = result.errors.map((e) => e.code);
+    expect(codes).not.toContain("RIPS_SERVICE_CONFIGURATION_MISSING");
+    expect(codes).not.toContain("CLINICAL_SERVICE_MAPPING_UNRESOLVED");
+  });
+
+  it("never flags a legacy, manual-CUPS service (clinicalConceptId null) for either new check, even without a Servicio RIPS", () => {
+    const result = getEncounterRipsReadiness(
+      baseEncounter({ services: [baseService({ clinicalConceptId: null, mappingStatus: null, codServicioCode: null })] }),
+    );
+    const codes = result.errors.map((e) => e.code);
+    expect(codes).not.toContain("RIPS_SERVICE_CONFIGURATION_MISSING");
+    expect(codes).not.toContain("CLINICAL_SERVICE_MAPPING_UNRESOLVED");
+  });
+
   it("resolves a service-scoped principal diagnosis, not just the encounter-wide one", () => {
     const result = getEncounterRipsReadiness(
       baseEncounter({
@@ -123,6 +168,53 @@ describe("getEncounterRipsReadiness", () => {
     const result = getEncounterRipsReadiness(baseEncounter({ diagnoses: [] }));
     expect(result.errors.map((e) => e.code)).not.toContain("CONSULTATION_DIAGNOSIS_TYPE_MISSING");
     expect(result.errors.map((e) => e.code)).toContain("ENCOUNTER_PRINCIPAL_DIAGNOSIS_MISSING");
+  });
+
+  // Regression for this task's own report: "incapacidad" and "valor
+  // cobrado" pendientes must offer a real "Corregir" route to the new
+  // narrow correction screen (src/app/rips/atencion/[encounterId]),
+  // never fixHref: null — that's exactly what left the admin with no
+  // safe way to resolve either one.
+  it("ENCOUNTER_INCAPACITY_MISSING points 'Corregir' at the encounter's own correction screen", () => {
+    const result = getEncounterRipsReadiness(baseEncounter({ incapacityCode: null }));
+    const error = result.errors.find((e) => e.code === "ENCOUNTER_INCAPACITY_MISSING");
+    expect(error?.fixHref).toBe("/rips/atencion/enc-1");
+  });
+
+  it("SERVICE_VALUE_MISSING points 'Corregir' at the same encounter correction screen", () => {
+    const result = getEncounterRipsReadiness(baseEncounter({ services: [baseService({ serviceValue: null })] }));
+    const error = result.errors.find((e) => e.code === "SERVICE_VALUE_MISSING");
+    expect(error?.fixHref).toBe("/rips/atencion/enc-1");
+  });
+
+  it("incapacidad = No (a real, explicit answer) is ready — never confused with 'sin responder'", () => {
+    const result = getEncounterRipsReadiness(baseEncounter({ incapacityCode: "02" }));
+    expect(result.errors.map((e) => e.code)).not.toContain("ENCOUNTER_INCAPACITY_MISSING");
+  });
+
+  // The exact real-world mistake this task's report describes: 50000 was
+  // typed into "Valor pago moderador" instead of "Valor cobrado al
+  // paciente" — valorPagoModerador being present must never satisfy (or
+  // even look related to) the serviceValue requirement.
+  it("a filled valorPagoModerador never substitutes for a missing serviceValue (different RIPS concepts)", () => {
+    const result = getEncounterRipsReadiness(
+      baseEncounter({ services: [baseService({ serviceValue: null, valorPagoModerador: 50000 })] }),
+    );
+    expect(result.errors.map((e) => e.code)).toContain("SERVICE_VALUE_MISSING");
+  });
+
+  it("correcting both incapacidad and serviceValue clears both pendientes on the next readiness computation", () => {
+    const before = getEncounterRipsReadiness(baseEncounter({ incapacityCode: null, services: [baseService({ serviceValue: null })] }));
+    expect(before.errors.map((e) => e.code)).toEqual(
+      expect.arrayContaining(["ENCOUNTER_INCAPACITY_MISSING", "SERVICE_VALUE_MISSING"]),
+    );
+
+    // Same shape correct_finalized_encounter_rips_gaps produces: incapacity_code
+    // filled, encounter_services.service_value filled — readiness is a pure
+    // function of the (now corrected) data, so simply recomputing it is
+    // exactly what happens when RIPS is revisited/refreshed after saving.
+    const after = getEncounterRipsReadiness(baseEncounter({ incapacityCode: "02", services: [baseService({ serviceValue: 50000 })] }));
+    expect(after).toEqual({ ready: true, errors: [] });
   });
 });
 

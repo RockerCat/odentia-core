@@ -117,6 +117,12 @@ export default function ClinicalEncounterPreviewPage() {
       finalidadOptions={[]}
       causaMotivoOptions={[]}
       conceptoRecaudoOptions={[]}
+      clinicalConcepts={[]}
+      clinicalConceptVariants={[]}
+      clinicalCupsMappings={[]}
+      clinicSpecialtyRipsServices={[]}
+      professionalSpecialtyId={null}
+      professionalSpecialtyName={null}
     />
   );
 }

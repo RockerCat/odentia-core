@@ -56,6 +56,14 @@ export type UpsertClinicalEncounterServiceInput = {
   causaMotivoCode?: string | null;
   conceptoRecaudoCode?: string | null;
   valorPagoModerador?: number | null;
+  // RIPS #A3 — snapshot del concepto clínico natural que originó este
+  // servicio (ver clinical-service-resolution.ts). Undefined/null en un
+  // servicio agregado por CUPS manual — nunca inventado.
+  clinicalConceptId?: string | null;
+  clinicalConceptVariantId?: string | null;
+  clinicalConceptNameSnapshot?: string | null;
+  clinicalVariantNameSnapshot?: string | null;
+  mappingStatus?: "resolved" | "unresolved" | null;
 };
 
 export type UpsertClinicalEncounterInput = {
@@ -103,6 +111,9 @@ function mapEncounterValidationError(message: string): string | null {
   if (message.includes("causa_motivo_code")) return "Selecciona una causa de motivo de atención válida.";
   if (message.includes("concepto_recaudo_code")) return "Selecciona un concepto de recaudo válido.";
   if (message.includes("incapacity_code")) return "Selecciona un valor válido para incapacidad.";
+  if (message.includes("clinical_concept_variant_id")) return "El concepto clínico seleccionado no es válido. Intenta de nuevo.";
+  if (message.includes("mapping_status")) return "Hubo un problema resolviendo el concepto clínico seleccionado. Intenta de nuevo.";
+  if (message.includes("clinical_concept_id")) return "El concepto clínico seleccionado no es válido. Intenta de nuevo.";
   return null;
 }
 
@@ -139,6 +150,11 @@ export async function upsertPatientClinicalEncounter(input: UpsertClinicalEncoun
       causa_motivo_code: s.causaMotivoCode ?? null,
       concepto_recaudo_code: s.conceptoRecaudoCode ?? null,
       valor_pago_moderador: s.valorPagoModerador ?? null,
+      clinical_concept_id: s.clinicalConceptId ?? null,
+      clinical_concept_variant_id: s.clinicalConceptVariantId ?? null,
+      clinical_concept_name_snapshot: s.clinicalConceptNameSnapshot ?? null,
+      clinical_variant_name_snapshot: s.clinicalVariantNameSnapshot ?? null,
+      mapping_status: s.mappingStatus ?? null,
     })),
   });
 
