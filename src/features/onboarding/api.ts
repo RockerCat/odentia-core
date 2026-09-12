@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
 import { uploadClinicLogo as uploadClinicLogoFile } from "@/features/clinic/logo";
+import type { SignOutOutcome } from "@/features/session/sign-out";
 import { slugCandidate, slugifyClinicName } from "./slug";
 import type { AccountFormData, ClinicFormData, ClinicLocationData, ClinicLogo, RoleFormData } from "./types";
 
@@ -45,6 +46,22 @@ export function decideRegistroReentry(hasSession: boolean, hasActiveMembership: 
   if (!hasSession) return "account";
   if (hasActiveMembership) return "redirect-to-product";
   return "clinic";
+}
+
+export type AfterSignOutAction = "navigate-to-login" | "show-error";
+
+// PROMPT NINJA "Retirar debug temporal y permitir cerrar sesión desde
+// onboarding" — the same "pure decide-what-the-UI-does-next" convention as
+// decideRegistroReentry above, so "success navigates, failure shows an
+// error and never navigates" is independently testable without rendering
+// onboarding-wizard.tsx. signOutSupabase() (src/features/session/
+// sign-out.ts) already degrades safely on a transient server-side error
+// (auth-js clears the local session regardless) for the app shell's own
+// "Salir" — but a user stuck on /registro with the WRONG account has no
+// other screen to retry from, so this call site deliberately does NOT
+// navigate on error and surfaces it instead, rather than assuming success.
+export function decideAfterSignOut(outcome: SignOutOutcome): AfterSignOutAction {
+  return outcome.status === "ok" ? "navigate-to-login" : "show-error";
 }
 
 // Paso 1 — real Supabase Auth signup. first_name/last_name travel in

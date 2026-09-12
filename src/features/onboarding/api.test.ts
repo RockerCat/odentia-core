@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSignUpRedirectTo, decideRegistroReentry, isValidTaxIdLength, sanitizeTaxId } from "./api";
+import { buildSignUpRedirectTo, decideAfterSignOut, decideRegistroReentry, isValidTaxIdLength, sanitizeTaxId } from "./api";
 
 // Regression coverage for "PROMPT NINJA — Fix Supabase Auth email
 // RedirectTo / Confirm Signup": proves signUpAccount()'s own
@@ -112,5 +112,18 @@ describe("isValidTaxIdLength", () => {
 
   it("rejects a value that's too long even after sanitizing — e.g. a phone number pasted by mistake", () => {
     expect(isValidTaxIdLength(sanitizeTaxId("1234567890123"))).toBe(false);
+  });
+});
+
+// Regression coverage for "PROMPT NINJA — Retirar debug temporal y
+// permitir cerrar sesión desde onboarding": a successful sign-out
+// navigates away; a failed one must never navigate as if it had worked.
+describe("decideAfterSignOut", () => {
+  it("navigates to /login when signOut succeeds", () => {
+    expect(decideAfterSignOut({ status: "ok" })).toBe("navigate-to-login");
+  });
+
+  it("shows an error and never navigates when signOut fails", () => {
+    expect(decideAfterSignOut({ status: "error" })).toBe("show-error");
   });
 });

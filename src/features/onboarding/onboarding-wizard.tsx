@@ -4,9 +4,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/shell/logo";
+import { signOutSupabase } from "@/features/session/sign-out";
 import { createClient } from "@/lib/supabase/client";
 import { AccountStep } from "./account-step";
-import { bootstrapClinic, decideRegistroReentry, findActiveMembership, friendlyBootstrapError, signUpAccount, uploadClinicLogo } from "./api";
+import {
+  bootstrapClinic,
+  decideAfterSignOut,
+  decideRegistroReentry,
+  findActiveMembership,
+  friendlyBootstrapError,
+  signUpAccount,
+  uploadClinicLogo,
+} from "./api";
 import { ClinicStep } from "./clinic-step";
 import { EmailConfirmationPending } from "./email-confirmation-pending";
 import { ProgressSteps } from "./progress-steps";
@@ -56,6 +65,8 @@ export function OnboardingWizard() {
   const [role, setRole] = useState<RoleFormData>(EMPTY_ROLE);
   const [bootstrapping, setBootstrapping] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<{ logoUrl: string | null; logoWarning: boolean }>({
     logoUrl: null,
     logoWarning: false,
@@ -134,6 +145,32 @@ export function OnboardingWizard() {
     // router is stable across renders (Next.js App Router) — safe to
     // include without causing extra re-runs.
   }, [retryToken, router]);
+
+  // PROMPT NINJA "permitir cerrar sesión desde onboarding" — the account
+  // that ends up on Paso 2/3 (an authenticated session with no active
+  // clinic_membership) might simply be the wrong account (e.g. a stale
+  // browser session for a different email than the one that actually owns
+  // a clinic) — this is the only way out of that without a hard page
+  // reload. Deliberately does NOT reuse the app shell's "always proceed
+  // regardless of signOut()'s own outcome" convention (see sign-out.ts's
+  // own comment): there, a transient server-side hiccup is fine to ignore
+  // because the user is already leaving a real, working session behind;
+  // here, someone stuck on the WRONG account has nowhere else to retry
+  // from, so a failure must be visible, never assumed away.
+  const handleSignOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    setSignOutError(null);
+
+    const outcome = await signOutSupabase();
+    const decision = decideAfterSignOut(outcome);
+    if (decision === "show-error") {
+      setSigningOut(false);
+      setSignOutError("No pudimos cerrar tu sesión. Intenta de nuevo.");
+      return;
+    }
+    router.replace("/login");
+  };
 
   // Phase already starts at "loading" for the initial mount check; the
   // "Reintentar" button (see the check-failed screen below) is the only
@@ -283,12 +320,20 @@ export function OnboardingWizard() {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-surface px-4 py-10">
       <div className={`w-full ${wrapperMaxWidthClass}`}>
-        <Link
-          href="/"
-          className="mb-4 inline-flex items-center text-xs font-medium text-muted-foreground hover:text-foreground"
-        >
-          ← Volver al inicio
-        </Link>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <Link href="/" className="inline-flex items-center text-xs font-medium text-muted-foreground hover:text-foreground">
+            ← Volver al inicio
+          </Link>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-60"
+          >
+            {signingOut ? "Cerrando sesión…" : "Cerrar sesión"}
+          </button>
+        </div>
+        {signOutError && <p className="mb-4 text-right text-xs text-danger">{signOutError}</p>}
 
         <div className="flex flex-col items-center gap-3 text-center">
           <Link href="/" aria-label="Ir al inicio de Odentia">
