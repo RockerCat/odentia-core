@@ -243,11 +243,7 @@ export function getRipsExportReadiness(input: RipsExportReadinessInput): RipsRea
     errors.push({
       code: "CLINIC_TAX_ID_MISSING",
       scope: "clinic",
-      message: "La clínica no tiene NIT (numDocumentoIdObligado) registrado.",
-      // Points at the dedicated "Configuración RIPS" block (PROMPT NINJA
-      // "Crear bloque dedicado Configuración RIPS en Clínica") — a stable
-      // anchor on /clinica, never a bare route the user has to hunt
-      // through "Información general" for.
+      message: "La clínica no tiene NIT registrado.",
       fixHref: "/clinica#rips",
     });
   }
@@ -275,7 +271,7 @@ export function getRipsExportReadiness(input: RipsExportReadinessInput): RipsRea
         code: "LOCATION_COD_PRESTADOR_MISSING",
         scope: "location",
         locationId: location.id,
-        message: `Sede ${location.name} — falta el código de prestador (codPrestador).`,
+        message: `${location.name} — falta el código de habilitación (REPS).`,
         fixHref: "/clinica#rips",
       });
     }

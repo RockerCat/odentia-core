@@ -170,6 +170,40 @@ describe("getRipsExportReadiness", () => {
     expect(result.errors.map((e) => e.code)).toContain("LOCATION_COD_PRESTADOR_MISSING");
   });
 
+  // Regression coverage for "PROMPT NINJA — Mejorar selector de período
+  // RIPS y mantener UI completamente en español": user-facing readiness
+  // copy must never leak DT1's own internal field names, and must never
+  // double a sede's own name (e.g. "Sede Sede principal").
+  it("never exposes the internal 'codPrestador' field name in the location message", () => {
+    const result = getRipsExportReadiness({
+      clinicTaxId: "900123456",
+      locations: [{ ...readyLocation, codPrestador: null }],
+      patients: [],
+      encounters: [],
+    });
+    const error = result.errors.find((e) => e.code === "LOCATION_COD_PRESTADOR_MISSING");
+    expect(error?.message).not.toContain("codPrestador");
+    expect(error?.message).toContain("código de habilitación (REPS)");
+  });
+
+  it("never doubles the sede's own name when it's literally called 'Sede principal'", () => {
+    const result = getRipsExportReadiness({
+      clinicTaxId: "900123456",
+      locations: [{ id: "loc-1", name: "Sede principal", codPrestador: null }],
+      patients: [],
+      encounters: [],
+    });
+    const error = result.errors.find((e) => e.code === "LOCATION_COD_PRESTADOR_MISSING");
+    expect(error?.message).not.toContain("Sede Sede principal");
+    expect(error?.message).toBe("Sede principal — falta el código de habilitación (REPS).");
+  });
+
+  it("never exposes the internal 'numDocumentoIdObligado' field name in the clinic tax id message", () => {
+    const result = getRipsExportReadiness({ clinicTaxId: null, locations: [readyLocation], patients: [], encounters: [] });
+    const error = result.errors.find((e) => e.code === "CLINIC_TAX_ID_MISSING");
+    expect(error?.message).not.toContain("numDocumentoIdObligado");
+  });
+
   // Regression coverage for "PROMPT NINJA — Crear bloque dedicado
   // Configuración RIPS en Clínica": clinic/location blockers must land the
   // user directly on the new anchored block, never a bare /clinica the
