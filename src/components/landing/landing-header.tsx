@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthenticatedUserMenu } from "@/components/shell/authenticated-user-menu";
+import { LandingCtaLink } from "@/components/landing/landing-cta-link";
 import { Logo } from "@/components/shell/logo";
 import { useShellLogout } from "@/components/shell/use-shell-logout";
-import { useCurrentUserContext } from "@/features/session/use-current-user-context";
+import type { ClinicContext } from "@/features/session/types";
 
 // Shared public-site navbar — used by the landing page (src/app/page.tsx)
 // and every other public marketing page (e.g. /planes) so nav links and
@@ -14,33 +15,30 @@ import { useCurrentUserContext } from "@/features/session/use-current-user-conte
 // through "/" from any other page. "Registra tu clínica" opens the real
 // onboarding wizard at /registro (see src/features/onboarding).
 //
-// `showAuthWhenSignedIn` opts a page into replacing those CTAs with the
-// real authenticated header block (avatar/clinic/menu, same as the
-// authenticated app shell's Header) whenever the visitor already has a
-// valid session AND an active clinic membership — see
-// useCurrentUserContext()/ClinicContext. Only "/" passes this; /planes
-// keeps the plain public header unconditionally, unchanged.
+// `authContext` opts a page into replacing those CTAs with the real
+// authenticated header block (avatar/clinic/menu, same as the
+// authenticated app shell's Header) whenever it's an active clinic
+// membership's ClinicContext (status "ok"). Only "/" passes this,
+// resolved server-side (see src/app/page.tsx) via the same
+// resolveClinicContext() every other real feature uses, so the
+// authenticated header is already correct in the FIRST render — no
+// client-side fetch, no flash of the public CTAs for a signed-in visitor.
+// /planes keeps the plain public header unconditionally, unchanged, by
+// simply never passing this prop.
 type LandingHeaderProps = {
   active?: "planes";
-  showAuthWhenSignedIn?: boolean;
+  authContext?: ClinicContext | null;
 };
 
-export function LandingHeader({ active, showAuthWhenSignedIn = false }: LandingHeaderProps) {
+export function LandingHeader({ active, authContext = null }: LandingHeaderProps) {
   const router = useRouter();
-  // Deliberately does NOT use useShellIdentity() — that hook falls back to
-  // the mock identity whenever there's no resolved real context yet, which
-  // would flash fake clinic data ("María Gómez"/mock clinic name) to a
-  // signed-out visitor. Here we only ever render identity fields once
-  // context.status === "ok" below, built straight from the real
-  // ClinicContext instead.
-  const context = useCurrentUserContext(showAuthWhenSignedIn);
   // redirectTo="/" — signing out from the public landing must stay/return
   // there, never the app shell's own "/login" default (see
   // use-shell-logout.ts).
   const { signOut, signingOut } = useShellLogout("/");
 
-  if (context?.status === "ok") {
-    const { profile, clinic, professionalProfile } = context;
+  if (authContext?.status === "ok") {
+    const { profile, clinic, professionalProfile } = authContext;
     const identity = {
       name: `${profile.firstName} ${profile.lastName}`.trim(),
       initials: `${profile.firstName[0] ?? ""}${profile.lastName[0] ?? ""}`.toUpperCase(),
@@ -54,12 +52,12 @@ export function LandingHeader({ active, showAuthWhenSignedIn = false }: LandingH
           <Logo className="h-7 w-auto sm:h-8" />
 
           <div className="flex items-center gap-1.5 sm:gap-3">
-            <Link
+            <LandingCtaLink
               href="/agenda"
               className="rounded-lg bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 sm:px-4 sm:py-2 sm:text-sm"
             >
-              Ir a mi agenda
-            </Link>
+              Ir a mi clínica
+            </LandingCtaLink>
             <AuthenticatedUserMenu
               identity={identity}
               // A real profile page only exists for a practicing Dentist
@@ -99,18 +97,18 @@ export function LandingHeader({ active, showAuthWhenSignedIn = false }: LandingH
         </nav>
 
         <div className="flex items-center gap-1.5 sm:gap-3">
-          <Link
+          <LandingCtaLink
             href="/login"
             className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-foreground/5 sm:border sm:border-border sm:px-4 sm:py-2 sm:text-sm"
           >
             Iniciar sesión
-          </Link>
-          <Link
+          </LandingCtaLink>
+          <LandingCtaLink
             href="/registro"
             className="rounded-lg bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 sm:px-4 sm:py-2 sm:text-sm"
           >
             Registra tu clínica
-          </Link>
+          </LandingCtaLink>
         </div>
       </div>
     </header>

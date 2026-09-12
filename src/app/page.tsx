@@ -1,6 +1,6 @@
 import Image from "next/image";
-import Link from "next/link";
 import { Fragment } from "react";
+import { LandingCtaLink } from "@/components/landing/landing-cta-link";
 import { LandingFooter } from "@/components/landing/landing-footer";
 import { LandingHeader } from "@/components/landing/landing-header";
 import {
@@ -18,6 +18,8 @@ import {
   UserIcon,
   UsersIcon,
 } from "@/components/shell/icons";
+import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
+import { createClient } from "@/lib/supabase/server";
 
 // Public marketing landing — reuses the same branding/tokens/icons as the
 // authenticated app. "Registra tu clínica" opens the real onboarding
@@ -25,6 +27,15 @@ import {
 // The hero/marketplace "product mockups" below are plain HTML/CSS built
 // from the same visual language as the real Agenda (see mock-data.ts's
 // STATUS_STYLES) — not screenshots or generated assets.
+//
+// Resolves the real ClinicContext server-side (same resolveClinicContext()
+// every other real feature uses, see CLAUDE.md) so the header/hero/closing
+// CTA all render the correct authenticated-vs-public state on the FIRST
+// paint — never the client-side useCurrentUserContext() hook, whose
+// resolve-on-mount would flash the public "Iniciar sesión"/"Registra tu
+// clínica" CTAs to an already-signed-in visitor for as long as it takes to
+// resolve. A failed resolution (e.g. Supabase unreachable) falls back to
+// the public CTAs rather than blocking the whole landing page.
 
 const CLINIC_FEATURES = [
   { icon: CalendarIcon, title: "Agenda", description: "Citas y disponibilidad en tiempo real." },
@@ -52,10 +63,19 @@ const FLOW_STEPS = [
   { icon: CreditCardIcon, label: "Beneficios" },
 ];
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const supabase = await createClient();
+  let context = null;
+  try {
+    context = await resolveClinicContext(supabase);
+  } catch (error) {
+    console.error("[/] resolveClinicContext failed", error);
+  }
+  const isAuthenticated = context?.status === "ok";
+
   return (
     <div className="flex min-h-dvh flex-col bg-surface text-foreground">
-      <LandingHeader showAuthWhenSignedIn />
+      <LandingHeader authContext={context} />
 
       <main className="flex-1">
         {/* Hero */}
@@ -90,18 +110,29 @@ export default function LandingPage() {
                 />
               </div>
               <div className="mt-8 flex items-center gap-2 sm:gap-3">
-                <Link
-                  href="/registro"
-                  className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium whitespace-nowrap text-primary-foreground hover:opacity-90 sm:px-6 sm:py-3"
-                >
-                  Registra tu clínica
-                </Link>
-                <Link
-                  href="/login"
-                  className="rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-medium whitespace-nowrap text-foreground hover:bg-foreground/5 sm:px-6 sm:py-3"
-                >
-                  Iniciar sesión
-                </Link>
+                {isAuthenticated ? (
+                  <LandingCtaLink
+                    href="/agenda"
+                    className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium whitespace-nowrap text-primary-foreground hover:opacity-90 sm:px-6 sm:py-3"
+                  >
+                    Ir a mi clínica
+                  </LandingCtaLink>
+                ) : (
+                  <>
+                    <LandingCtaLink
+                      href="/registro"
+                      className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium whitespace-nowrap text-primary-foreground hover:opacity-90 sm:px-6 sm:py-3"
+                    >
+                      Registra tu clínica
+                    </LandingCtaLink>
+                    <LandingCtaLink
+                      href="/login"
+                      className="rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-medium whitespace-nowrap text-foreground hover:bg-foreground/5 sm:px-6 sm:py-3"
+                    >
+                      Iniciar sesión
+                    </LandingCtaLink>
+                  </>
+                )}
               </div>
             </div>
 
@@ -362,12 +393,12 @@ export default function LandingPage() {
               <p className="mx-auto mt-3 max-w-lg text-sm text-muted-foreground sm:text-base">
                 Empieza a gestionar tu clínica y descubre un ecosistema creado para odontología.
               </p>
-              <Link
-                href="/registro"
+              <LandingCtaLink
+                href={isAuthenticated ? "/agenda" : "/registro"}
                 className="mt-6 inline-block rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90"
               >
-                Registra tu clínica
-              </Link>
+                {isAuthenticated ? "Ir a mi clínica" : "Registra tu clínica"}
+              </LandingCtaLink>
             </div>
           </div>
         </section>

@@ -49,7 +49,7 @@ export function SuccessStep({
             href="/agenda"
             className="mt-6 block w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
           >
-            Ir a mi agenda
+            Ir a mi Clínica
           </Link>
         </div>
       </div>
