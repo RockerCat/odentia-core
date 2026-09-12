@@ -146,6 +146,64 @@ describe("canStartClinicalEncounter", () => {
     expect(canStartClinicalEncounter(apt830("confirmed"), at("06:00:00"))).toBe(false);
   });
 
+  it("more than 30 minutes before startsAt is never startable for scheduled/confirmed/patient_arrived either, same as any other non-waiting_room status", () => {
+    for (const status of ["scheduled", "confirmed", "patient_arrived"] as const) {
+      expect(canStartClinicalEncounter(apt830(status), at("07:00:00"))).toBe(false);
+    }
+  });
+
+  it("waiting_room, same calendar day as startsAt, is startable even hours before startsAt — the patient is already at the clinic", () => {
+    expect(canStartClinicalEncounter(apt830("waiting_room"), at("07:00:00"))).toBe(true);
+    expect(canStartClinicalEncounter(apt830("waiting_room"), at("06:00:00"))).toBe(true);
+  });
+
+  it("waiting_room does NOT bypass the window on a different calendar day than startsAt", () => {
+    const TOMORROW_EIGHT_AM_WAITING: MinimalAppointment = { status: "waiting_room", startsAt: "2026-01-16T08:00:00.000Z", durationMinutes: 30 };
+    // "now" is still 2026-01-15 — a day before the Cita's own date — so this
+    // must stay false: the waiting_room exception only ever applies to a
+    // Cita scheduled for TODAY, never a future day.
+    expect(canStartClinicalEncounter(TOMORROW_EIGHT_AM_WAITING, at("07:00:00"))).toBe(false);
+  });
+
+  // Regression for the 2026-09-12 field report: startsAt 15:00, now 15:13,
+  // status waiting_room, both America/Bogota. Written with explicit -05:00
+  // offsets (never relying on the test process's own TZ) so this can't give
+  // a false pass/fail depending on where it runs — it pins the ABSOLUTE
+  // instants the bug report described, not their local wall-clock spelling.
+  it("2026-09-12 field report: waiting_room, startsAt 15:00 -05:00, now 15:13 -05:00 — already true from the plain post-start rule alone, no waiting_room exception needed", () => {
+    const appointment: MinimalAppointment = { status: "waiting_room", startsAt: "2026-09-12T15:00:00-05:00", durationMinutes: 30 };
+    const now = new Date("2026-09-12T15:13:00-05:00");
+    expect(canStartClinicalEncounter(appointment, now)).toBe(true);
+  });
+
+  // The helper above is proven correct for the exact reported instants — so
+  // if "Iniciar atención" was genuinely missing for that Cita, the real
+  // gate is showStartEncounter's OTHER two operands in
+  // real-appointment-detail-modal.tsx ("const showStartEncounter =
+  // !isAssistant && canAttendPatients && canStartClinicalEncounter(...)"),
+  // never this function. This pins that composition itself (not a render
+  // test — no React/RTL infra exists for this component yet) so a future
+  // "the button disappeared again" report can be triaged by checking THIS
+  // truth table before ever suspecting the temporal rule again.
+  describe("showStartEncounter's full composition (real-appointment-detail-modal.tsx) — not just canStartClinicalEncounter", () => {
+    const appointment: MinimalAppointment = { status: "waiting_room", startsAt: "2026-09-12T15:00:00-05:00", durationMinutes: 30 };
+    const now = new Date("2026-09-12T15:13:00-05:00");
+    const showStartEncounter = (isAssistant: boolean, canAttendPatients: boolean) =>
+      !isAssistant && canAttendPatients && canStartClinicalEncounter(appointment, now);
+
+    it("shows when the viewer is a clinically-active dentist/clinic_admin — the temporal rule was never the blocker", () => {
+      expect(showStartEncounter(false, true)).toBe(true);
+    });
+
+    it("stays hidden for Assistant regardless of the valid time window — a permissions gate, not a temporal one", () => {
+      expect(showStartEncounter(true, true)).toBe(false);
+    });
+
+    it("stays hidden when the viewer has no active professional_profile (canAttendPatients false) regardless of the valid time window — this, not the 30-minute window or the waiting_room exception, is what a 'button missing despite being on time' report should check first", () => {
+      expect(showStartEncounter(false, false)).toBe(false);
+    });
+  });
+
   describe("a date change (viewing across calendar days)", () => {
     const TOMORROW_EIGHT_AM = "2026-01-16T08:00:00.000Z";
     const aptTomorrow = (status: AppointmentStatus): MinimalAppointment => ({ status, startsAt: TOMORROW_EIGHT_AM, durationMinutes: 30 });

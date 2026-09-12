@@ -776,7 +776,7 @@ function ViewDetails({
 
       <FieldRow
         icon={FlagIcon}
-        label="Tratamiento"
+        label="Tratamiento propuesto"
         value={appointment.reason ?? "Sin definir"}
         editing={editingField === "reason"}
         onEdit={() => onStartEdit("reason")}

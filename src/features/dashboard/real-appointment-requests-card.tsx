@@ -401,7 +401,7 @@ function AppointmentRequestModal({
               />
             </Field>
 
-            <Field icon={FlagIcon} label="Tratamiento">
+            <Field icon={FlagIcon} label="Tratamiento propuesto">
               <select value={reason} onChange={(e) => setReason(e.target.value)} className={FIELD_CLASS}>
                 <option value="">Sin definir</option>
                 {treatmentOptions.map((option) => (

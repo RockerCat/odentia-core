@@ -139,6 +139,14 @@ export const START_ENCOUNTER_WINDOW_MINUTES = 30;
 //     "Sin cerrar" Cita that never started attention must stay startable
 //     until something else resolves it, per CLAUDE.md's Appointment
 //     Lifecycle).
+//   - waiting_room specifically, same calendar day as `now`: startable
+//     regardless of how far before startsAt — the patient is physically
+//     already at the clinic (front desk put her there via "Enviar a sala
+//     de espera"), so the professional running ahead of schedule
+//     shouldn't be blocked by a window meant for "don't show this hours
+//     before anyone is even here." Scoped to today only — a waiting_room
+//     Cita for a future day (impossible today, but never assume that)
+//     still waits for its own window like everything else.
 export function canStartClinicalEncounter(
   appointment: Pick<Appointment, "status" | "startsAt">,
   now: Date = new Date(),
@@ -146,7 +154,12 @@ export function canStartClinicalEncounter(
   if (isTerminalStatus(appointment.status)) return false;
   if (appointment.status === "in_progress") return true;
   const startMs = new Date(appointment.startsAt).getTime();
-  return now.getTime() >= startMs - START_ENCOUNTER_WINDOW_MINUTES * 60_000;
+  if (now.getTime() >= startMs - START_ENCOUNTER_WINDOW_MINUTES * 60_000) return true;
+  return appointment.status === "waiting_room" && isSameCalendarDay(new Date(appointment.startsAt), now);
+}
+
+function isSameCalendarDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
 // Real double-booking is possible today — nothing in createAppointment/
