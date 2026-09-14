@@ -6,13 +6,13 @@ import { useToast } from "@/components/toast";
 import { UserAvatar } from "@/components/user-avatar";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
 import { updateClinicInfo } from "@/features/clinic/actions";
-import type { ClinicDetail, PrimaryLocation, Specialty, TeamMember } from "@/features/clinic/data";
+import type { ClinicDetail, PendingInvitation, PrimaryLocation, Specialty, TeamMember } from "@/features/clinic/data";
 import { CLINIC_LOGO_ACCEPTED_TYPES, CLINIC_LOGO_MAX_BYTES, removeClinicLogo, uploadClinicLogo } from "@/features/clinic/logo";
 import { InviteMemberModal } from "@/features/clinic/invite-member-modal";
 import { MyProfessionalProfileSection, StatusBadge } from "@/features/clinic/my-professional-profile-section";
 import { PrimaryLocationSection } from "@/features/clinic/primary-location-section";
 import { RipsConfigSection } from "@/features/clinic/rips-config-section";
-import { setClinicMemberStatus } from "@/features/clinic/team-actions";
+import { regenerateClinicInvitation, setClinicMemberStatus, type InvitationRecord } from "@/features/clinic/team-actions";
 import { createRoom, renameRoom, setRoomActive } from "@/features/rooms/actions";
 import type { Room } from "@/features/rooms/data";
 import type { ReferenceValue } from "@/features/rips/catalog-data";
@@ -39,6 +39,7 @@ export function ClinicSettingsScreen({
   location,
   members: initialMembers,
   selfMember: initialSelfMember,
+  pendingInvitations: initialPendingInvitations,
   rooms,
   specialties,
   documentTypes,
@@ -47,6 +48,7 @@ export function ClinicSettingsScreen({
   location: PrimaryLocation | null;
   members: TeamMember[];
   selfMember: TeamMember | null;
+  pendingInvitations: PendingInvitation[];
   rooms: Room[];
   specialties: Specialty[];
   documentTypes: ReferenceValue[];
@@ -74,7 +76,7 @@ export function ClinicSettingsScreen({
     <div className="flex flex-col gap-6">
       <InformacionGeneralSection clinic={clinic} location={location} taxId={taxId} onTaxIdChange={setTaxId} />
       <RipsConfigSection taxId={taxId} location={location} codPrestador={codPrestador} onCodPrestadorSaved={setCodPrestador} />
-      <EquipoSection members={members} onMembersChange={setMembers} />
+      <EquipoSection members={members} onMembersChange={setMembers} initialPendingInvitations={initialPendingInvitations} />
       <MyProfessionalProfileSection
         selfMember={selfMember}
         specialties={specialties}
@@ -449,14 +451,36 @@ function InfoField({
 function EquipoSection({
   members,
   onMembersChange,
+  initialPendingInvitations,
 }: {
   members: TeamMember[];
   onMembersChange: (updater: (prev: TeamMember[]) => TeamMember[]) => void;
+  initialPendingInvitations: PendingInvitation[];
 }) {
   const { showToast } = useToast();
   const [inviting, setInviting] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Invitaciones pendientes — a separate list/state from members above (see
+  // PendingInvitation's own comment in data.ts: a clinic_invitations row is
+  // never a TeamMember until accepted). copyableLinkById only ever holds a
+  // link for an invitation created/regenerated IN THIS BROWSER SESSION —
+  // the raw token behind any invitation fetched from the server on load is
+  // gone forever (only its hash is persisted), so "Copiar link" for those
+  // stays disabled until the admin uses "Regenerar link" to get a fresh
+  // one (see this task's own rule: never reconstruct a token).
+  const [pendingInvitations, setPendingInvitations] = useState(initialPendingInvitations);
+  const [copyableLinkById, setCopyableLinkById] = useState<Record<string, string>>({});
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [pendingError, setPendingError] = useState<string | null>(null);
+  // Computed once at mount (same lazy-initializer pattern as
+  // real-appointment-detail-modal.tsx's own `now`) rather than calling
+  // Date.now() directly in render — this is only a "vencida"/"vence"
+  // display label, not a live countdown, so a value pinned for the life of
+  // this section is accurate enough.
+  const [nowMs] = useState(() => Date.now());
 
   const roleLabel = (member: TeamMember): string => {
     const specialty = member.professionalProfile?.specialtyName;
@@ -482,6 +506,44 @@ function EquipoSection({
       prev.map((m) => (m.membershipId === member.membershipId ? { ...m, status: outcome.memberStatus } : m)),
     );
     showToast(nextActive ? "Miembro reactivado correctamente" : "Miembro desactivado correctamente");
+  };
+
+  const invitationLink = (invitation: InvitationRecord) => `${window.location.origin}/invitacion/${invitation.rawToken}`;
+
+  const handleInvited = (invitation: InvitationRecord) => {
+    setPendingInvitations((prev) => [
+      { id: invitation.id, email: invitation.email, role: invitation.role, status: "pending", expiresAt: invitation.expiresAt },
+      ...prev,
+    ]);
+    setCopyableLinkById((prev) => ({ ...prev, [invitation.id]: invitationLink(invitation) }));
+  };
+
+  const handleRegenerate = async (invitation: PendingInvitation) => {
+    setRegeneratingId(invitation.id);
+    setPendingError(null);
+    const outcome = await regenerateClinicInvitation(invitation.id);
+    setRegeneratingId(null);
+    if (outcome.status === "error") {
+      setPendingError(outcome.message);
+      return;
+    }
+    setPendingInvitations((prev) =>
+      prev.map((p) => (p.id === invitation.id ? { ...p, expiresAt: outcome.invitation.expiresAt } : p)),
+    );
+    setCopyableLinkById((prev) => ({ ...prev, [invitation.id]: invitationLink(outcome.invitation) }));
+    showToast("Enlace regenerado correctamente");
+  };
+
+  const handleCopyPending = async (invitationId: string, link: string) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedId(invitationId);
+      setTimeout(() => setCopiedId((cur) => (cur === invitationId ? null : cur)), 2000);
+    } catch {
+      // Same as InviteMemberModal's own handleCopy — clipboard access can
+      // fail (permissions, insecure context); the link stays available in
+      // this invitation's own state either way, nothing to recover from here.
+    }
   };
 
   return (
@@ -546,9 +608,60 @@ function EquipoSection({
         </ul>
       )}
 
-      {/* invitations aren't part of this list until accepted — the modal's
-          own success state is where the admin sees/copies the link. */}
-      {inviting && <InviteMemberModal onClose={() => setInviting(false)} />}
+      {/* Invitaciones pendientes — visually separate from the active-members
+          list above, never mixed into it (see this task's own UX rule). A
+          clinic_invitations row only ever joins the list above once
+          accept_clinic_invitation() actually creates the membership. */}
+      <div className="mt-6 border-t border-border pt-5">
+        <h3 className="text-sm font-semibold">Invitaciones pendientes</h3>
+
+        {pendingError && <p className="mt-2 text-xs text-danger">{pendingError}</p>}
+
+        {pendingInvitations.length === 0 ? (
+          <p className="mt-3 text-xs text-muted-foreground">No hay invitaciones pendientes por aceptar.</p>
+        ) : (
+          <ul className="mt-3 divide-y divide-border overflow-hidden rounded-xl border border-border">
+            {pendingInvitations.map((invitation) => {
+              const link = copyableLinkById[invitation.id] ?? null;
+              const isRegenerating = regeneratingId === invitation.id;
+              const expired = new Date(invitation.expiresAt).getTime() < nowMs;
+              return (
+                <li key={invitation.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{invitation.email}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {invitation.role === "dentist" ? "Odontólogo" : "Asistente"} · Pendiente ·{" "}
+                      {expired ? "Venció" : "Vence"} el{" "}
+                      {new Date(invitation.expiresAt).toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" })}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={!link}
+                      title={link ? undefined : 'Usa "Regenerar link" para obtener un enlace que puedas copiar'}
+                      onClick={() => link && handleCopyPending(invitation.id, link)}
+                      className="text-xs font-medium text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {copiedId === invitation.id ? "Copiado" : "Copiar link"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isRegenerating}
+                      onClick={() => handleRegenerate(invitation)}
+                      className="text-xs font-medium text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isRegenerating ? "Regenerando…" : "Regenerar link"}
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {inviting && <InviteMemberModal onClose={() => setInviting(false)} onInvited={handleInvited} />}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import { CheckCircleIcon, ClipboardIcon, CloseIcon } from "@/components/shell/icons";
 import { useToast } from "@/components/toast";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
-import { inviteClinicMember } from "./team-actions";
+import { inviteClinicMember, type InvitationRecord } from "./team-actions";
 
 // "Agregar miembro" — creates a real, persisted clinic_invitations row via
 // invite_clinic_member() (see the team-invitation-rpcs migration). There is
@@ -16,7 +16,17 @@ import { inviteClinicMember } from "./team-actions";
 // one honest way to close this loop with the infrastructure that actually
 // exists right now. That link/token is never shown again after this modal
 // closes (only its hash is persisted) — the confirmation copy says so.
-export function InviteMemberModal({ onClose }: { onClose: () => void }) {
+export function InviteMemberModal({
+  onClose,
+  onInvited,
+}: {
+  onClose: () => void;
+  // Optional: lets the caller (EquipoSection) add this brand-new invitation
+  // straight into its own "Invitaciones pendientes" list, with a working
+  // "Copiar link" right away — the raw token is only ever available in
+  // THIS response, never again after this modal closes.
+  onInvited?: (invitation: InvitationRecord) => void;
+}) {
   const { showToast } = useToast();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"dentist" | "assistant">("dentist");
@@ -42,6 +52,7 @@ export function InviteMemberModal({ onClose }: { onClose: () => void }) {
       return;
     }
     setLink(`${window.location.origin}/invitacion/${outcome.invitation.rawToken}`);
+    onInvited?.(outcome.invitation);
     showToast("Invitación creada correctamente");
   };
 

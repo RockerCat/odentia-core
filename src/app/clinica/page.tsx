@@ -2,9 +2,11 @@ import { AppShell } from "@/components/shell/app-shell";
 import {
   fetchActiveSpecialties,
   fetchClinicDetail,
+  fetchPendingInvitations,
   fetchPrimaryLocation,
   fetchTeamMembers,
   type ClinicDetail,
+  type PendingInvitation,
   type PrimaryLocation,
   type Specialty,
   type TeamMember,
@@ -60,6 +62,7 @@ export default async function ClinicaPage() {
   let clinic: ClinicDetail | null = null;
   let location: PrimaryLocation | null = null;
   let members: TeamMember[] = [];
+  let pendingInvitations: PendingInvitation[] = [];
   let rooms: Room[] = [];
   let specialties: Specialty[] = [];
   let documentTypes: ReferenceValue[] = [];
@@ -90,6 +93,15 @@ export default async function ClinicaPage() {
       // Already logged inside fetchTeamMembers, per sub-query. Equipo is
       // optional for the page as a whole — members stays [], which the
       // screen already renders as its empty state.
+    }
+
+    try {
+      pendingInvitations = await fetchPendingInvitations(supabase, clinicId);
+    } catch {
+      // Already logged inside fetchPendingInvitations. Same "optional
+      // section, honest empty state" handling as members/rooms above —
+      // pendingInvitations stays [], which EquipoSection already renders
+      // as its own discrete empty state.
     }
 
     try {
@@ -138,6 +150,7 @@ export default async function ClinicaPage() {
           location={location}
           members={members}
           selfMember={selfMember}
+          pendingInvitations={pendingInvitations}
           rooms={rooms}
           specialties={specialties}
           documentTypes={documentTypes}

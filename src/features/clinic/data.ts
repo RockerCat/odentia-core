@@ -223,6 +223,44 @@ export async function fetchTeamMembers(supabase: SupabaseClient, clinicId: strin
   });
 }
 
+// Invitaciones pendientes — a SEPARATE list from TeamMember above: a
+// clinic_invitations row never becomes a TeamMember until
+// accept_clinic_invitation() actually creates the clinic_membership (see
+// that RPC). Deliberately selects only non-sensitive columns — never
+// token_hash, which must never reach the client (see regenerate-invitation
+// migration's own comments and team-actions.ts's own rule on this).
+// status is always 'pending' here (query-filtered), same explicit column
+// invite_clinic_member/accept_clinic_invitation already use as the single
+// source of truth for invitation state — never a derived/reinterpreted
+// value.
+export type PendingInvitation = {
+  id: string;
+  email: string;
+  role: TeamMemberRole;
+  status: "pending";
+  expiresAt: string;
+};
+
+export async function fetchPendingInvitations(supabase: SupabaseClient, clinicId: string): Promise<PendingInvitation[]> {
+  const result = await supabase
+    .from("clinic_invitations")
+    .select("id, email, role, status, expires_at")
+    .eq("clinic_id", clinicId)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+  if (result.error) {
+    logStepFailed("fetchPendingInvitations", result.error);
+    throw result.error;
+  }
+  return result.data.map((row) => ({
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    status: "pending" as const,
+    expiresAt: row.expires_at,
+  }));
+}
+
 export type Specialty = { id: string; name: string };
 
 // The global catalog (specialties is NOT clinic-scoped — see the

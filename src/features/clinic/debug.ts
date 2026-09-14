@@ -36,5 +36,12 @@ export function serializeQueryError(operation: string, error: unknown): Serializ
 }
 
 export function logStepFailed(operation: string, error: unknown): void {
-  console.error(`[/clinica] ${operation} failed`, serializeQueryError(operation, error));
+  // JSON.stringify'd straight into the FIRST (string) console.error argument
+  // — not passed as a second object argument — so code/message/details/hint
+  // survive as plain visible text through any downstream console-forwarding
+  // step (e.g. Next.js relaying a Server Component's server-side
+  // console.error to the browser's dev overlay), which is exactly what was
+  // collapsing a perfectly-populated serializeQueryError() result down to
+  // an empty-looking `{}` before this fix.
+  console.error(`[/clinica] ${operation} failed: ${JSON.stringify(serializeQueryError(operation, error))}`);
 }

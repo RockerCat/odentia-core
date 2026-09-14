@@ -88,6 +88,60 @@ export async function setClinicMemberStatus(membershipId: string, active: boolea
   return { status: "ok", memberStatus: row.status };
 }
 
+export type RegenerateInvitationOutcome =
+  | { status: "ok"; invitation: InvitationRecord }
+  | { status: "error"; message: string };
+
+// Gives a still-pending invitation a fresh token/link — the only way to
+// recover a lost/expired one, since the raw token itself was never stored.
+// The raw token is returned only at regeneration time and is not persisted.
+export async function regenerateClinicInvitation(
+  invitationId: string,
+): Promise<RegenerateInvitationOutcome> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase.rpc("regenerate_clinic_invitation", {
+    p_invitation_id: invitationId,
+  });
+
+  if (error) {
+    if (error.code === "42501") {
+      return {
+        status: "error",
+        message: "Solo un administrador activo de esta clínica puede regenerar este enlace.",
+      };
+    }
+
+    if (error.message.includes("invitation not found")) {
+      return { status: "error", message: "No encontramos esa invitación." };
+    }
+
+    if (error.message.includes("only a pending invitation")) {
+      return {
+        status: "error",
+        message: "Solo se pueden regenerar invitaciones pendientes.",
+      };
+    }
+
+    return { status: "error", message: GENERIC_ERROR };
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+
+  return {
+    status: "ok",
+    invitation: {
+      id: row.id,
+      clinicId: row.clinic_id,
+      email: row.email,
+      role: row.role,
+      status: row.status,
+      expiresAt: row.expires_at,
+      rawToken: row.raw_token,
+    },
+  };
+}
+
 export type AcceptInvitationOutcome =
   | { status: "ok"; clinicId: string; role: TeamMemberRole }
   | { status: "error"; message: string };
