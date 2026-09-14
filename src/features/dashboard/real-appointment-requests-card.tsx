@@ -12,7 +12,8 @@ import type { AppointmentRequest } from "./appointment-requests-data";
 import { dateKeyOf, formatDateLabel, formatTimeLabel, isPastSlot, slotStartIso, type BoardProfessional } from "./real-format";
 import { getWeekDaysContaining } from "./real-week";
 import { WeekDayPickerContent } from "./real-week-day-picker";
-import { DEFAULT_APPOINTMENT_DURATION, TIME_SLOTS } from "./schedule-config";
+import { DEFAULT_APPOINTMENT_DURATION } from "./schedule-config";
+import { hasAvailableFutureSlotForDay, isoWeekdayOfDayKey, resolveAgendaSlotsForDay, type AgendaAvailabilityBlock } from "./agenda-hours";
 
 // Real clinic-side "Solicitudes de cita" — the Agenda's own work queue for
 // the Solicitud lifecycle (Pendiente → Aceptada / Rechazada), deliberately
@@ -36,12 +37,18 @@ import { DEFAULT_APPOINTMENT_DURATION, TIME_SLOTS } from "./schedule-config";
 export function RealAppointmentRequestsCard({
   requests: initialRequests,
   professionals,
+  availability,
   treatmentOptions,
   roomOptions,
   onAppointmentCreated,
 }: {
   requests: AppointmentRequest[];
   professionals: BoardProfessional[];
+  // Real professional_availability rows for the whole clinic — see
+  // agenda-hours.ts. Bug fix: this card's Horario picker used to always
+  // offer the hardcoded TIME_SLOTS default regardless of the requested
+  // professional's real configured hours.
+  availability: AgendaAvailabilityBlock[];
   treatmentOptions: string[];
   roomOptions: string[];
   onAppointmentCreated: (created: Appointment) => void;
@@ -104,6 +111,7 @@ export function RealAppointmentRequestsCard({
         <AppointmentRequestModal
           request={selectedRequest}
           professionals={professionals}
+          availability={availability}
           treatmentOptions={treatmentOptions}
           roomOptions={roomOptions}
           onClose={() => setSelectedRequestId(null)}
@@ -116,14 +124,15 @@ export function RealAppointmentRequestsCard({
 }
 
 // Resolves the patient's preferred instant back to the (dayKey, slot) pair
-// the Agenda's own pickers speak. The Portal only ever offers TIME_SLOTS,
-// so this normally matches exactly; anything that doesn't (a preference
-// whose slot no longer exists in the clinic's configured hours) falls back
+// the Agenda's own pickers speak. `slots` is the REAL bookable slot list
+// for the requested professional/day (resolveAgendaSlotsForDay) — a
+// preference that doesn't land on one of those (a slot that no longer
+// exists in the professional's real configured availability) falls back
 // to "unset" rather than silently snapping to a different time.
-function preferredSlot(preferredStartsAt: string): { dayKey: string; time: string } {
+function preferredSlot(preferredStartsAt: string, slots: string[]): { dayKey: string; time: string } {
   const dayKey = dateKeyOf(preferredStartsAt);
   const time = formatTimeLabel(preferredStartsAt);
-  return { dayKey, time: TIME_SLOTS.includes(time) ? time : "" };
+  return { dayKey, time: slots.includes(time) ? time : "" };
 }
 
 function addWeeks(dayKey: string, weeks: number): string {
@@ -135,6 +144,7 @@ function addWeeks(dayKey: string, weeks: number): string {
 function AppointmentRequestModal({
   request,
   professionals,
+  availability,
   treatmentOptions,
   roomOptions,
   onClose,
@@ -143,6 +153,7 @@ function AppointmentRequestModal({
 }: {
   request: AppointmentRequest;
   professionals: BoardProfessional[];
+  availability: AgendaAvailabilityBlock[];
   treatmentOptions: string[];
   roomOptions: string[];
   onClose: () => void;
@@ -150,7 +161,13 @@ function AppointmentRequestModal({
   onAppointmentCreated: (created: Appointment) => void;
 }) {
   const { showToast } = useToast();
-  const preferred = preferredSlot(request.preferredStartsAt);
+  const preferredDayKey = dateKeyOf(request.preferredStartsAt);
+  const preferredSlots = resolveAgendaSlotsForDay({
+    dayOfWeek: isoWeekdayOfDayKey(preferredDayKey),
+    professionalProfileIds: [request.professionalProfileId],
+    availability,
+  });
+  const preferred = preferredSlot(request.preferredStartsAt, preferredSlots);
   const preferredProfessional = professionals.find((p) => p.professionalProfileId === request.professionalProfileId) ?? null;
   // Pre-filled with what the patient asked for — but every field stays the
   // clinic's decision, and the request's own preferred_starts_at is never
@@ -177,6 +194,22 @@ function AppointmentRequestModal({
   const dayEntry = weekDays.find((d) => d.key === dayKey);
   const dayLabel = dayEntry ? `${dayEntry.label}, ${dayEntry.dateLabel}` : "Selecciona una fecha";
   const timeLabel = time ? `${time} (${durationMinutes} min)` : "Selecciona un horario";
+
+  // Real availability for whichever professional is CURRENTLY selected
+  // (the clinic may reassign the request to someone other than who the
+  // patient originally requested) — recomputed on every professional/day
+  // change, never a static snapshot taken once at open time.
+  const relevantProfessionalIds = professionalId ? [professionalId] : professionals.map((p) => p.professionalProfileId);
+  const timeSlotsForSelectedDay = dayKey
+    ? resolveAgendaSlotsForDay({ dayOfWeek: isoWeekdayOfDayKey(dayKey), professionalProfileIds: relevantProfessionalIds, availability })
+    : [];
+  const isDaySelectable = (candidateDayKey: string) =>
+    hasAvailableFutureSlotForDay({
+      dayKey: candidateDayKey,
+      dayOfWeek: isoWeekdayOfDayKey(candidateDayKey),
+      professionalProfileIds: relevantProfessionalIds,
+      availability,
+    });
 
   // Same stale-slot guard RealNewAppointmentModal has: Fecha and Horario
   // are edited independently, so a time chosen for a later day can be past
@@ -352,6 +385,7 @@ function AppointmentRequestModal({
                 <WeekDayPickerContent
                   weekDays={weekDays}
                   currentDayKey={dayKey}
+                  isDaySelectable={isDaySelectable}
                   onSelect={(key) => {
                     setDayKey(key);
                     setEditingField(null);
@@ -370,8 +404,9 @@ function AppointmentRequestModal({
               onClose={() => setEditingField(null)}
             >
               <TimePopoverContent
-                time={time || TIME_SLOTS[0]}
+                time={time || timeSlotsForSelectedDay[0] || ""}
                 durationMinutes={durationMinutes}
+                slots={timeSlotsForSelectedDay}
                 isSlotDisabled={dayKey ? (slot) => isPastSlot(dayKey, slot) : undefined}
                 onSave={async (patch) => {
                   setTime(patch.time);

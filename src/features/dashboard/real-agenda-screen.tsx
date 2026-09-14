@@ -7,6 +7,7 @@ import type { PatientIdentityCatalogs } from "@/features/patients/patients-scree
 import { createClient } from "@/lib/supabase/client";
 import { fetchAppointmentsForRange, type Appointment, type ClinicalProfessional } from "./appointments-data";
 import type { AppointmentRequest } from "./appointment-requests-data";
+import type { AgendaAvailabilityBlock } from "./agenda-hours";
 import { RealAppointmentRequestsCard } from "./real-appointment-requests-card";
 import { RealAppointmentsBoard } from "./real-appointments-board";
 import { RealSummaryCards } from "./real-summary-cards";
@@ -27,6 +28,7 @@ export function RealAgendaScreen({
   role,
   ownProfessionalProfileId,
   initialProfessionals,
+  initialAvailability,
   initialAppointments,
   initialPatients,
   initialAppointmentRequests,
@@ -42,6 +44,10 @@ export function RealAgendaScreen({
   role: MembershipRole;
   ownProfessionalProfileId: string | null;
   initialProfessionals: ClinicalProfessional[];
+  // A recurring weekly schedule (day_of_week + start/end time), never
+  // week-specific — unlike appointments, this never needs refetching on
+  // week navigation.
+  initialAvailability: AgendaAvailabilityBlock[];
   initialAppointments: Appointment[];
   initialPatients: Patient[];
   initialAppointmentRequests: AppointmentRequest[];
@@ -150,6 +156,7 @@ export function RealAgendaScreen({
           role={role}
           ownProfessionalProfileId={ownProfessionalProfileId}
           professionals={initialProfessionals}
+          availability={initialAvailability}
           weekDays={weekDays}
           weekLabel={weekLabel}
           weekOffset={weekOffset}
@@ -190,6 +197,7 @@ export function RealAgendaScreen({
         <RealAppointmentRequestsCard
           requests={initialAppointmentRequests}
           professionals={initialProfessionals.map(toBoardProfessional)}
+          availability={initialAvailability}
           treatmentOptions={treatmentOptions}
           roomOptions={roomOptions}
           onAppointmentCreated={applyCreate}

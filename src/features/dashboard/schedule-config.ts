@@ -14,12 +14,22 @@ export const CLINIC_HOURS: ClinicHours = {
   intervalMinutes: 30,
 };
 
-function formatSlot(totalMinutes: number): string {
+// Exported (was private) so agenda-hours.ts can format real
+// professional_availability-derived minute values into the same "H:MM
+// AM/PM" labels this grid has always used — those can land on ANY minute
+// (an availability block's start/end time is a plain <input type="time">,
+// see horario-editor.tsx, with no `step` restricting it to :00/:30), not
+// just the :00/:30 values this function only ever received before. Fixed
+// the zero-pad bug this exposed: `minute === 0 ? "00" : minute` rendered
+// "9:7 AM" instead of "9:07 AM" for any single-digit minute — never
+// reachable before (every past caller only ever fed :00/:30), reachable
+// now.
+export function formatSlotMinutes(totalMinutes: number): string {
   const hour24 = Math.floor(totalMinutes / 60);
   const minute = totalMinutes % 60;
   const period = hour24 >= 12 ? "PM" : "AM";
   const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
-  return `${hour12}:${minute === 0 ? "00" : minute} ${period}`;
+  return `${hour12}:${minute.toString().padStart(2, "0")} ${period}`;
 }
 
 // Parses a "H:MM AM/PM" slot label (as produced by formatSlot) back into
@@ -35,7 +45,7 @@ function parseSlotToMinutes(slot: string): number {
 }
 
 export function addMinutesToSlot(slot: string, minutesToAdd: number): string {
-  return formatSlot(parseSlotToMinutes(slot) + minutesToAdd);
+  return formatSlotMinutes(parseSlotToMinutes(slot) + minutesToAdd);
 }
 
 // Default appointment length when one hasn't been set explicitly.
@@ -48,7 +58,7 @@ export function generateTimeSlots(hours: ClinicHours = CLINIC_HOURS): string[] {
     minutes < hours.endHour * 60;
     minutes += hours.intervalMinutes
   ) {
-    slots.push(formatSlot(minutes));
+    slots.push(formatSlotMinutes(minutes));
   }
   return slots;
 }

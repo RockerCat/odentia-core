@@ -14,7 +14,7 @@ import type { Appointment, AppointmentStatus, ClinicalProfessional } from "./app
 import { getDisplayStatus, getStatusStyle, pickSlotAppointment, REAL_STATUS_LABELS } from "./real-status";
 import { dateKeyOf, isPastSlot, toBoardProfessional, type BoardProfessional } from "./real-format";
 import type { WeekDay } from "./real-week";
-import { TIME_SLOTS } from "./schedule-config";
+import { isoWeekdayOfDayKey, mergeOccupiedSlotMinutes, resolveAgendaSlotMinutesForDay, type AgendaAvailabilityBlock } from "./agenda-hours";
 import { RealAppointmentDetailModal } from "./real-appointment-detail-modal";
 import { RealNewAppointmentModal } from "./real-new-appointment-modal";
 
@@ -228,6 +228,7 @@ export function RealAppointmentsBoard({
   role,
   ownProfessionalProfileId,
   professionals: rawProfessionals,
+  availability,
   weekDays,
   weekLabel,
   weekOffset,
@@ -249,6 +250,10 @@ export function RealAppointmentsBoard({
   role: MembershipRole;
   ownProfessionalProfileId: string | null;
   professionals: ClinicalProfessional[];
+  // Real professional_availability rows for the whole clinic — see
+  // agenda-hours.ts. Drives the grid's actual time-slot range instead of
+  // schedule-config.ts's hardcoded default.
+  availability: AgendaAvailabilityBlock[];
   weekDays: WeekDay[];
   weekLabel: string;
   weekOffset: number;
@@ -343,6 +348,21 @@ export function RealAppointmentsBoard({
 
   const statusFilteredDayAppointments = dayAppointments.filter((a) => statusFilter === "all" || a.status === statusFilter);
   const hasActiveFilters = professionalFilter.length > 0 || statusFilter !== "all";
+
+  // Bug fix: this used to be the module-level TIME_SLOTS constant
+  // (schedule-config.ts's hardcoded 08:00–18:00), so a professional's real
+  // availability past 18:00 (or narrower/gapped) never showed up here at
+  // all. Real availability per block (gaps preserved, no rounding — see
+  // agenda-hours.ts), merged with whatever slot(s) already have an
+  // appointment today so an existing Cita is never hidden just because it
+  // now falls outside a since-changed schedule.
+  const availableSlotMinutes = resolveAgendaSlotMinutesForDay({
+    dayOfWeek: isoWeekdayOfDayKey(selectedDay),
+    professionalProfileIds: scopedProfessionals.map((p) => p.professionalProfileId),
+    availability,
+  });
+  const occupiedSlotMinutes = statusFilteredDayAppointments.map((a) => startMinutesLocal(a.startsAt));
+  const agendaTimeSlots = mergeOccupiedSlotMinutes(availableSlotMinutes, occupiedSlotMinutes);
 
   const sortedProfessionals = [...scopedProfessionals].sort(
     (a, b) =>
@@ -491,12 +511,12 @@ export function RealAppointmentsBoard({
                     <p className="truncate text-xs text-muted-foreground">{professional.specialty}</p>
                   </div>
                   <span className="shrink-0 text-xs font-medium text-muted-foreground">
-                    {occupied}/{TIME_SLOTS.length}
+                    {occupied}/{agendaTimeSlots.length}
                   </span>
                 </div>
 
                 <div className={`grid ${slotGridColsClass} gap-1.5 p-3`}>
-                  {TIME_SLOTS.map((slot) => {
+                  {agendaTimeSlots.map((slot) => {
                     const appointment = pickSlotAppointment(
                       professionalAppointments.filter((a) => startMinutesLocal(a.startsAt) === slotToMinutes(slot)),
                     );
@@ -579,6 +599,7 @@ export function RealAppointmentsBoard({
           canAttendPatients={canAttendPatients}
           treatmentOptions={treatmentOptions}
           roomOptions={roomOptions}
+          availability={availability}
           onClose={() => setSelectedAppointmentId(null)}
           onUpdated={(updated) => {
             // Only a reschedule (startsAt actually changed) needs to
@@ -616,6 +637,7 @@ export function RealAppointmentsBoard({
           weekDays={weekDays}
           treatmentOptions={treatmentOptions}
           roomOptions={roomOptions}
+          availability={availability}
           prefill={newAppointmentPrefill}
           onClose={closeNewAppointment}
           onCreated={(created) => {

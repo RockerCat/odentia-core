@@ -931,6 +931,7 @@ export function TimePopoverContent({
   time,
   durationMinutes,
   isSlotDisabled,
+  slots = TIME_SLOTS,
   onSave,
   onCancel,
 }: {
@@ -944,6 +945,13 @@ export function TimePopoverContent({
   // real-format.ts's isPastSlot/isPastDayKey) without a second copy of
   // this picker's markup.
   isSlotDisabled?: (slot: string) => boolean;
+  // Optional, additive — defaults to the hardcoded TIME_SLOTS, so every
+  // mock/demo consumer renders byte-for-byte unchanged. Only the real
+  // Agenda screens pass the professional's ACTUAL configured hours for the
+  // day in question (agenda-hours.ts's resolveAgendaHoursForDay), fixing
+  // the bug where a professional_availability block past 18:00 never
+  // showed up as a selectable time here.
+  slots?: string[];
   onSave: (patch: { time: string; durationMinutes: number }) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -984,7 +992,7 @@ export function TimePopoverContent({
           onChange={(e) => setLocalTime(e.target.value)}
           className={`${FIELD_CLASS} mt-1`}
         >
-          {TIME_SLOTS.map((slot) => (
+          {slots.map((slot) => (
             <option key={slot} value={slot} disabled={isSlotDisabled?.(slot)}>
               {slot}
             </option>

@@ -19,6 +19,7 @@ export function WeekDayPickerContent({
   currentDayKey,
   onSelect,
   disabled,
+  isDaySelectable,
 }: {
   weekDays: WeekDay[];
   currentDayKey: string;
@@ -33,6 +34,17 @@ export function WeekDayPickerContent({
   // pending action in this codebase (see qa-loading-feedback-check.mjs's
   // own "immediate pending feedback" convention).
   disabled?: boolean;
+  // Optional, additive — defaults to real-format.ts's own
+  // hasAvailableFutureSlot (hardcoded-TIME_SLOTS-based), so the Patient
+  // Portal's own usage of this component (if any) and anything else that
+  // doesn't pass it keeps its current behavior unchanged. Every real
+  // Agenda caller (RealNewAppointmentModal, RealAppointmentDetailModal,
+  // RealAppointmentRequestsCard) passes agenda-hours.ts's
+  // hasAvailableFutureSlotForDay bound to the currently selected
+  // professional(s) and real professional_availability — fixing the bug
+  // where "hoy" stayed selectable/unselectable based on the hardcoded
+  // 08:00–18:00 default regardless of real configured hours.
+  isDaySelectable?: (dayKey: string) => boolean;
 }) {
   return (
     <div className="grid grid-cols-4 gap-1.5">
@@ -44,7 +56,8 @@ export function WeekDayPickerContent({
         // check would still let "today" be picked with zero selectable
         // hours left (e.g. 5:25 PM, clinic closes 6 PM but every slot up
         // to then already passed) — see that helper's own comment.
-        const past = !hasAvailableFutureSlot(day.key) || disabled;
+        const selectable = isDaySelectable ? isDaySelectable(day.key) : hasAvailableFutureSlot(day.key);
+        const past = !selectable || disabled;
         return (
           <button
             key={day.key}

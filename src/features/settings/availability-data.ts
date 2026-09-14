@@ -63,6 +63,20 @@ export async function fetchWeeklyAvailability(
   return (data ?? []).map(mapRow);
 }
 
+// Every professional's schedule for the whole clinic, in ONE query — used
+// by /agenda (real-appointments-board.tsx) to build its actual slot grid
+// instead of a hardcoded default range, for however many professionals are
+// shown at once. RLS (professional_availability_select_member) already
+// permits any active clinic member to read every row scoped to clinic_id —
+// same policy fetchWeeklyAvailability's own per-professional query relies
+// on, just without the extra professional_profile_id filter — so this
+// needs no new grant/policy.
+export async function fetchClinicWeeklyAvailability(supabase: SupabaseClient, clinicId: string): Promise<WeeklyAvailabilityBlock[]> {
+  const { data, error } = await supabase.from("professional_availability").select(AVAILABILITY_COLUMNS).eq("clinic_id", clinicId);
+  if (error) throw error;
+  return (data ?? []).map(mapRow);
+}
+
 export type ActionOutcome = { status: "ok" } | { status: "error"; message: string };
 export type CreateBlockOutcome = { status: "ok"; block: WeeklyAvailabilityBlock } | { status: "error"; message: string };
 

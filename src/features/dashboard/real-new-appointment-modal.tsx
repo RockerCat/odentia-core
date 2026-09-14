@@ -7,7 +7,8 @@ import { UserAvatar } from "@/components/user-avatar";
 import { CalendarIcon, ClockIcon, CloseIcon, FlagIcon, MapPinIcon, NoteIcon } from "@/components/shell/icons";
 import { FIELD_CLASS, PopoverFieldRow, TimePopoverContent } from "./appointment-detail-modal";
 import { isPastSlot, slotStartIso } from "./real-format";
-import { DEFAULT_APPOINTMENT_DURATION, TIME_SLOTS } from "./schedule-config";
+import { DEFAULT_APPOINTMENT_DURATION } from "./schedule-config";
+import { hasAvailableFutureSlotForDay, isoWeekdayOfDayKey, resolveAgendaSlotsForDay, type AgendaAvailabilityBlock } from "./agenda-hours";
 import { WeekDayPickerContent } from "./real-week-day-picker";
 import type { WeekDay } from "./real-week";
 import type { Patient } from "@/features/patients/data";
@@ -63,6 +64,7 @@ export function RealNewAppointmentModal({
   weekDays,
   treatmentOptions,
   roomOptions,
+  availability = [],
   prefill,
   onClose,
   onCreated,
@@ -74,6 +76,14 @@ export function RealNewAppointmentModal({
   weekDays: WeekDay[];
   treatmentOptions: string[];
   roomOptions: string[];
+  // Optional, additive — defaults to [] (agenda-hours.ts's own "zero rows
+  // = legacy unrestricted" rule then applies the same CLINIC_HOURS
+  // default this modal always used before), so the one other caller with
+  // no availability data (real-clinical-encounter-screen.tsx's "Agendar
+  // próxima cita") keeps its current behavior unchanged.
+  // real-appointments-board.tsx passes the clinic's real
+  // professional_availability rows — see agenda-hours.ts.
+  availability?: AgendaAvailabilityBlock[];
   prefill?: { professionalProfileId?: string; dayKey?: string; time?: string; patientId?: string; reason?: string } | null;
   onClose: () => void;
   onCreated: (created: Appointment) => void;
@@ -110,6 +120,22 @@ export function RealNewAppointmentModal({
   const dayEntry = weekDays.find((d) => d.key === dayKey);
   const dayLabel = dayEntry ? `${dayEntry.label}, ${dayEntry.dateLabel}` : "Selecciona una fecha";
   const timeLabel = time ? `${time} (${durationMinutes} min)` : "Selecciona un horario";
+
+  // Real availability for whichever professional is currently selected —
+  // before one is chosen, falls back to the union of every professional
+  // shown here (same policy real-appointments-board.tsx's own grid
+  // uses), so Fecha/Horario aren't empty before a Profesional pick.
+  const relevantProfessionalIds = professionalId ? [professionalId] : professionals.map((p) => p.professionalProfileId);
+  const timeSlotsForSelectedDay = dayKey
+    ? resolveAgendaSlotsForDay({ dayOfWeek: isoWeekdayOfDayKey(dayKey), professionalProfileIds: relevantProfessionalIds, availability })
+    : [];
+  const isDaySelectable = (candidateDayKey: string) =>
+    hasAvailableFutureSlotForDay({
+      dayKey: candidateDayKey,
+      dayOfWeek: isoWeekdayOfDayKey(candidateDayKey),
+      professionalProfileIds: relevantProfessionalIds,
+      availability,
+    });
 
   // isPastSlot re-checked here too, not just as TimePopoverContent's
   // isSlotDisabled — Fecha and Horario are edited independently (each its
@@ -284,6 +310,7 @@ export function RealNewAppointmentModal({
                 <WeekDayPickerContent
                   weekDays={weekDays}
                   currentDayKey={dayKey}
+                  isDaySelectable={isDaySelectable}
                   onSelect={(key) => {
                     setDayKey(key);
                     setDateFromCalendar(false);
@@ -303,8 +330,9 @@ export function RealNewAppointmentModal({
                 onClose={() => setEditingField(null)}
               >
                 <TimePopoverContent
-                  time={time || TIME_SLOTS[0]}
+                  time={time || timeSlotsForSelectedDay[0] || ""}
                   durationMinutes={durationMinutes}
+                  slots={timeSlotsForSelectedDay}
                   isSlotDisabled={dayKey ? (slot) => isPastSlot(dayKey, slot) : undefined}
                   onSave={async (patch) => {
                     setTime(patch.time);

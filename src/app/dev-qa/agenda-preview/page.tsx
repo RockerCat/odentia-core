@@ -55,6 +55,7 @@ export default async function AgendaPreviewPage({
         role={role}
         ownProfessionalProfileId={fixtureProfessionals[0]!.professionalProfileId}
         initialProfessionals={fixtureProfessionals}
+        initialAvailability={[]}
         initialAppointments={fixtureAppointments}
         initialPatients={fixturePatients}
         initialAppointmentRequests={[]}

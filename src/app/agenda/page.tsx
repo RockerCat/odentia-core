@@ -4,6 +4,7 @@ import { MarketplaceCard } from "@/features/dashboard/marketplace-card";
 import { RealAgendaScreen } from "@/features/dashboard/real-agenda-screen";
 import { fetchAppointmentsForRange, fetchClinicalProfessionals } from "@/features/dashboard/appointments-data";
 import { fetchPendingAppointmentRequests } from "@/features/dashboard/appointment-requests-data";
+import { fetchClinicWeeklyAvailability } from "@/features/settings/availability-data";
 import { getWeekRangeIso } from "@/features/dashboard/real-week";
 import { canEditClinicalData } from "@/features/patients/clinical-permissions";
 import { EMPTY_PATIENT_IDENTITY_CATALOGS, fetchPatients, type PatientIdentityCatalogs } from "@/features/patients/data";
@@ -47,6 +48,7 @@ export default async function AgendaPage() {
   const clinicId = context.clinic.id;
   let loadFailed = false;
   let professionals: Awaited<ReturnType<typeof fetchClinicalProfessionals>> = [];
+  let availability: Awaited<ReturnType<typeof fetchClinicWeeklyAvailability>> = [];
   let appointments: Awaited<ReturnType<typeof fetchAppointmentsForRange>> = [];
   let patients: Awaited<ReturnType<typeof fetchPatients>> = [];
   let treatmentOptions: string[] = [];
@@ -55,18 +57,49 @@ export default async function AgendaPage() {
   // act on (clinic-wide for Clinic Admin/Assistant, own-professional only
   // for a Dentist), never filtered client-side.
   let appointmentRequests: Awaited<ReturnType<typeof fetchPendingAppointmentRequests>> = [];
+  // TEMP DIAGNOSTIC (remove once root cause is confirmed) — the plain
+  // `console.error("[/agenda] load failed", error)` below serializes to
+  // `{}` in the dev overlay for a native Error (message/stack are
+  // non-enumerable, so JSON-ish serialization drops them) and gives no
+  // way to tell which of these 6 parallel fetches actually threw. Each
+  // promise is tagged so a failure logs its own operation name + only
+  // code/message/details/hint — extracted into a fresh plain object so it
+  // survives serialization regardless of whether the underlying error is
+  // a PostgrestError or a native Error. No tokens/cookies/PII/clinical
+  // payload.
+  function logAgendaLoadFailure(operation: string, err: unknown) {
+    const e = err as { code?: unknown; message?: unknown; details?: unknown; hint?: unknown } | null;
+    console.error("[/agenda] load failed", {
+      operation,
+      code: e?.code ?? null,
+      message: typeof e?.message === "string" ? e.message : String(err),
+      details: e?.details ?? null,
+      hint: e?.hint ?? null,
+    });
+  }
+  function tag<T>(operation: string, p: Promise<T>): Promise<T> {
+    return p.catch((err) => {
+      logAgendaLoadFailure(operation, err);
+      throw err;
+    });
+  }
   try {
     const { startIso, endIsoExclusive } = getWeekRangeIso(0);
-    [professionals, appointments, patients, treatmentOptions, roomOptions, appointmentRequests] = await Promise.all([
-      fetchClinicalProfessionals(supabase, clinicId),
-      fetchAppointmentsForRange(supabase, clinicId, startIso, endIsoExclusive),
-      fetchPatients(supabase, clinicId),
-      fetchActiveTreatmentNames(supabase, clinicId),
-      fetchActiveRoomNames(supabase, clinicId),
-      fetchPendingAppointmentRequests(supabase, clinicId),
+    [professionals, availability, appointments, patients, treatmentOptions, roomOptions, appointmentRequests] = await Promise.all([
+      tag("fetchClinicalProfessionals", fetchClinicalProfessionals(supabase, clinicId)),
+      // Bug fix: real-appointments-board.tsx used to always render
+      // schedule-config.ts's hardcoded 08:00–18:00 range regardless of the
+      // professional's actual professional_availability — see
+      // agenda-hours.ts.
+      tag("fetchClinicWeeklyAvailability", fetchClinicWeeklyAvailability(supabase, clinicId)),
+      tag("fetchAppointmentsForRange", fetchAppointmentsForRange(supabase, clinicId, startIso, endIsoExclusive)),
+      tag("fetchPatients", fetchPatients(supabase, clinicId)),
+      tag("fetchActiveTreatmentNames", fetchActiveTreatmentNames(supabase, clinicId)),
+      tag("fetchActiveRoomNames", fetchActiveRoomNames(supabase, clinicId)),
+      tag("fetchPendingAppointmentRequests", fetchPendingAppointmentRequests(supabase, clinicId)),
     ]);
   } catch (error) {
-    console.error("[/agenda] load failed", error);
+    console.error("[/agenda] load failed (outer)", error);
     loadFailed = true;
   }
 
@@ -101,6 +134,7 @@ export default async function AgendaPage() {
           role={context.membership.role}
           ownProfessionalProfileId={context.professionalProfile?.id ?? null}
           initialProfessionals={professionals}
+          initialAvailability={availability}
           initialAppointments={appointments}
           initialPatients={patients}
           initialAppointmentRequests={appointmentRequests}

@@ -34,6 +34,7 @@ import {
 } from "./appointments-actions";
 import { fetchAppointmentsForPatient, type Appointment, type AppointmentStatus } from "./appointments-data";
 import { dateKeyOf, endTimeIso, formatDateLabel, formatTimeLabel, isPastSlot } from "./real-format";
+import { hasAvailableFutureSlotForDay, isoWeekdayOfDayKey, resolveAgendaSlotsForDay, type AgendaAvailabilityBlock } from "./agenda-hours";
 import {
   canStartClinicalEncounter,
   CHANGEABLE_STATUSES,
@@ -101,6 +102,7 @@ export function RealAppointmentDetailModal({
   canAttendPatients,
   treatmentOptions,
   roomOptions,
+  availability = [],
   onClose,
   onUpdated,
   onViewPatient,
@@ -119,6 +121,12 @@ export function RealAppointmentDetailModal({
   canAttendPatients: boolean;
   treatmentOptions: string[];
   roomOptions: string[];
+  // Optional, additive — defaults to [] (same "zero rows = legacy
+  // unrestricted" fallback, see agenda-hours.ts), so the other caller
+  // with no availability data (real-summary-cards.tsx's KPI drill-down)
+  // keeps its current behavior unchanged. real-appointments-board.tsx
+  // passes the clinic's real professional_availability rows.
+  availability?: AgendaAvailabilityBlock[];
   onClose: () => void;
   onUpdated: (updated: Appointment) => void;
   onViewPatient: (patientId: string) => void;
@@ -535,6 +543,7 @@ export function RealAppointmentDetailModal({
                   duration={duration}
                   treatmentOptions={treatmentOptions}
                   roomOptions={roomOptions}
+                  availability={availability}
                   editingField={editingField}
                   onStartEdit={setEditingField}
                   onCancelEdit={() => setEditingField(null)}
@@ -658,6 +667,7 @@ function ViewDetails({
   duration,
   treatmentOptions,
   roomOptions,
+  availability,
   editingField,
   onStartEdit,
   onCancelEdit,
@@ -672,6 +682,7 @@ function ViewDetails({
   duration: number;
   treatmentOptions: string[];
   roomOptions: string[];
+  availability: AgendaAvailabilityBlock[];
   editingField: FieldKey | null;
   onStartEdit: (field: FieldKey | null) => void;
   onCancelEdit: () => void;
@@ -687,6 +698,22 @@ function ViewDetails({
   // from firing a second save before the first one settles.
   const [savingDate, setSavingDate] = useState(false);
 
+  // This appointment's own professional is the only relevant scope here
+  // (never a union across multiple professionals — a Cita always belongs
+  // to exactly one).
+  const timeSlotsForDay = resolveAgendaSlotsForDay({
+    dayOfWeek: isoWeekdayOfDayKey(currentDayKey),
+    professionalProfileIds: [appointment.professionalProfileId],
+    availability,
+  });
+  const isDaySelectable = (candidateDayKey: string) =>
+    hasAvailableFutureSlotForDay({
+      dayKey: candidateDayKey,
+      dayOfWeek: isoWeekdayOfDayKey(candidateDayKey),
+      professionalProfileIds: [appointment.professionalProfileId],
+      availability,
+    });
+
   return (
     <div className="flex flex-col gap-3">
       <PopoverFieldRow
@@ -701,6 +728,7 @@ function ViewDetails({
         <WeekDayPickerContent
           weekDays={currentWeekDays}
           currentDayKey={currentDayKey}
+          isDaySelectable={isDaySelectable}
           disabled={savingDate}
           onSelect={(dayKey) => {
             if (savingDate) return;
@@ -739,6 +767,7 @@ function ViewDetails({
         <TimePopoverContent
           time={formatTimeLabel(appointment.startsAt)}
           durationMinutes={duration}
+          slots={timeSlotsForDay}
           isSlotDisabled={(slot) => isPastSlot(currentDayKey, slot)}
           onSave={async (patch) => {
             const [, hourStr, minuteStr, period] = /^(\d{1,2}):(\d{2}) (AM|PM)$/.exec(patch.time) ?? [];
