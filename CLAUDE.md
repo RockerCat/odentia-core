@@ -556,6 +556,22 @@ regression-prone, do not simplify or re-derive differently elsewhere:
   landing there. A pre-existing conflict is resolved manually by staff,
   never automatically.
 
+Agenda's own slot grid and time pickers (`src/features/dashboard/
+agenda-hours.ts`) must derive their bookable slots from these exact same
+real blocks, never a hardcoded default — regression-prone, same standing
+as the rules above:
+
+- Slots are generated **per block**, anchored at that block's own
+  `start_time` — never a continuous range spanning every block for the
+  day (a gap between two blocks, e.g. a lunch split, must stay
+  unbookable) and never rounded to a whole hour.
+- The "zero rows → unrestricted" fallback is evaluated **per
+  professional**, never per clinic: a professional with some
+  configuration who simply has no active block for one specific day
+  shows zero slots that day, never the unrestricted default — that
+  default is reserved for a professional who never configured anything
+  at all.
+
 ---
 
 ## Primary Use Case
@@ -621,6 +637,44 @@ a bare `/clinica`. Reuse `getRipsExportReadiness()` (via
 `getRipsClinicConfigStatus()`) for any future "is clinic/sede config
 complete" check — never a second set of rules that could disagree with
 `/rips` itself about what "ready" means.
+
+**Concepto clínico natural → CUPS.** The odontólogo never picks CUPS as
+her primary vocabulary — she picks a natural concept ("Limpieza dental",
+"Consulta de control", etc.). `clinical_concepts`/
+`clinical_concept_variants`/`clinical_cups_mappings` (global catalog,
+read-only from the app) resolve concept [+ variant] [+ the professional's
+own specialty] → a real CUPS row: a mapping specific to that specialty
+always wins over a generic one, never the reverse, and a mapping outside
+its own `valid_from`/`valid_to` is never applicable. `encounter_services`
+snapshots the chosen concept/variant's human name at save time (never
+re-resolved later, so a later catalog rename never rewrites history) —
+CUPS is always a derived consequence, never the decision itself. Extracción
+dental and Tratamiento de conductos have no confirmed V0 mapping yet —
+never invent one; those two stay manual-CUPS-search only until a future
+phase confirms them.
+
+**Especialidad → Servicio RIPS.** Two tables, never one — a global
+suggestion must never be mistaken for a clinic's own confirmed
+configuration:
+
+- `specialty_rips_service_defaults` — Odentia's own GLOBAL suggestion
+  (`specialty_id` → a `rips_reference_values` row, `catalog_key =
+  'Servicios'`). Read-only from every clinic; never an effective RIPS
+  value.
+- `clinic_specialty_rips_services` — ONE clinic's own CONFIRMED
+  configuration. The only table allowed to populate
+  `encounter_services.cod_servicio_code`/`grupo_servicios_code`. No row
+  for a given specialty means "this clinic hasn't confirmed it yet" —
+  never "use the default instead."
+
+**RIPS #6D — corrección de gaps en una atención finalizada.** A finalized
+encounter's historia clínica stays immutable except for exactly two RIPS
+gaps (`incapacity_code`, a consultation's `service_value`) —
+`correct_finalized_encounter_rips_gaps` (the only write path,
+`/rips/atencion/[encounterId]`) can only fill a currently-NULL value,
+never overwrite an already-set one. `clinic_admin`-only, same gate as
+every other `/rips` action — deliberately not
+`is_active_clinical_professional()`.
 
 Automatic SISPRO/MUV submission is not implemented and not currently
 buildable without new infrastructure: both official mechanisms (the

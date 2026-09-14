@@ -2,7 +2,7 @@
 
 # Odentia Core
 
-**Last Updated:** 2026-09-11
+**Last Updated:** 2026-09-14
 
 ---
 
@@ -189,7 +189,11 @@ Detailed per-vertical implementation notes are further below.
 - **Agenda** — real weekly board, KPIs, full Cita CRUD, arrival/waiting-room flow,
   "Marcar No asistió", Iniciar/Continuar/Finalizar atención, Solicitud de Cita
   (staff side). Overlap and availability/absences are enforced in Postgres
-  (constraint + trigger), not just app code.
+  (constraint + trigger), not just app code. The board's own slot grid and every
+  time picker (Nueva cita, Reprogramar, Aceptar solicitud) now derive their
+  bookable slots from each professional's real `professional_availability`,
+  never a hardcoded 08:00–18:00 default — see "Agenda — disponibilidad real"
+  below.
 - **Solicitud de Cita** — real, end to end, a genuinely separate entity from Cita
   (see CLAUDE.md's Appointment Lifecycle).
 - **Historia Clínica (staff)** — all five tabs real, plus Notas clínicas
@@ -210,8 +214,13 @@ Detailed per-vertical implementation notes are further below.
   clinics/sedes/professionals/patients, real structured clinical data per
   atención (`encounter_diagnoses`/`encounter_services`, CIE-10/CUPS validated
   against real SISPRO catalogs), real readiness checks, and a real, runtime-
-  validated RIPS sin factura JSON export with download. See "RIPS (Colombian
-  regulatory reporting)" below for the full detail.
+  validated RIPS sin factura JSON export with download. The odontólogo now
+  captures a natural clinical concept ("¿Qué realizaste?") in "Finalizar
+  atención" instead of picking CUPS directly — resolved server-side to a
+  real CUPS row and, when the clinic has confirmed one, a real Servicio
+  RIPS. A finalized encounter's own two RIPS gaps can be corrected narrowly
+  without reopening the clinical record. See "RIPS (Colombian regulatory
+  reporting)" below for the full detail.
 
 ---
 
@@ -415,6 +424,16 @@ touched; if code and this section ever disagree, the code wins (see CLAUDE.md).
 - Route guard (`proxy.ts`) enforces real auth on every private route, including
   `npm run dev` — no `NODE_ENV === 'development'` bypass. `/admin` is
   deliberately excluded from this real gate (see OUT OF SCOPE ACTUAL).
+- **Fixed (2026-09-12): public landing page flashed the signed-out CTAs to an
+  already-authenticated visitor.** `/` (`src/app/page.tsx`) resolved
+  `ClinicContext` only client-side, after mount — an already-signed-in
+  visitor briefly saw "Registra tu clínica"/"Iniciar sesión" before the real
+  state resolved. `LandingPage` is now `async` and calls
+  `resolveClinicContext()` server-side (same one every real feature uses),
+  so the header/hero/closing CTA render the correct state on the first
+  paint; a failed resolution falls back to the public CTAs rather than
+  blocking the page. `LandingHeader` takes the resolved `authContext`
+  directly instead of a client-only `showAuthWhenSignedIn` flag.
 
 ## Onboarding (real)
 
@@ -583,6 +602,57 @@ touched; if code and this section ever disagree, the code wins (see CLAUDE.md).
   to this professional." `clinic_id` is the only mandatory isolation boundary.
 - Known gap (tracked, not blocking): "¿Necesita próxima cita?"'s Sí/No toggle in
   `RealClinicalEncounterScreen` is UI-only, never persisted.
+- **Fixed (2026-09-14): a `waiting_room` Cita can start attention regardless
+  of `startsAt`, same calendar day.** `canStartClinicalEncounter`
+  (`real-status.ts`) used to gate every non-`in_progress` Cita on the same
+  30-minute pre-start window — a professional running ahead of schedule
+  couldn't start attention on a patient already sitting in the waiting room
+  (front desk already ran "Enviar a sala de espera") until that window
+  opened. Now a `waiting_room` Cita is always startable the same day,
+  regardless of how far before `startsAt` it still is. Regression:
+  `real-status.test.ts`.
+- **Agenda — disponibilidad real (2026-09-12/14, two-pass fix).**
+  `src/features/dashboard/agenda-hours.ts` (new) is now the single source of
+  truth turning a professional's real `professional_availability` rows into
+  the actual bookable slots the board's grid and every time picker
+  (`RealNewAppointmentModal`, `RealAppointmentDetailModal`,
+  `RealAppointmentRequestsCard`) render — replacing
+  `schedule-config.ts`'s hardcoded `CLINIC_HOURS` (08:00–18:00), which they
+  all rendered unconditionally before, regardless of what a professional had
+  actually configured.
+  - **First pass** caught the headline symptom (a professional configured
+    Sábado hasta las 22:00; Agenda still cut the grid off at 17:30) by
+    computing one continuous `[earliest start, latest end]` range from the
+    day's active blocks.
+  - **Second pass** found that first fix itself wrong on two counts: (1) two
+    blocks the same day (e.g. a lunch-split 08:00–12:00 + 14:00–18:00) must
+    never collapse into one continuous range — the gap between them must
+    stay unbookable, so slots are now generated **per block**, unioned, never
+    from an envelope; (2) a block's own `start_time`/`end_time` was being
+    rounded to a whole hour — `<input type="time">` (`horario-editor.tsx`)
+    has no `step` restricting it to :00/:30, so a real 08:30–17:30 block must
+    yield slots anchored exactly at 08:30 through 17:00, never an invented
+    08:00 or an extended 17:30. Also fixed, same pass: the fallback
+    ("zero rows → legacy-unrestricted 08:00–18:00") is now evaluated **per
+    professional**, never per clinic — a professional with real
+    configuration who simply left one day unconfigured now shows zero slots
+    that day, never the default; and `hasAvailableFutureSlot`'s own
+    hardcoded-`TIME_SLOTS` day-selectability check (which decides whether
+    "hoy" is even pickable in every Fecha popover) was replaced, for every
+    real Agenda picker, by `hasAvailableFutureSlotForDay` — real,
+    per-professional availability, same as the grid.
+  - An existing Cita's own slot is always preserved on the board even if a
+    later availability change would otherwise make it fall outside the
+    professional's real configured hours (`mergeOccupiedSlotMinutes`) — an
+    appointment is never hidden by a schedule edited after it was booked.
+  - The Patient Portal's own "Solicitar cita" (`request-appointment-scheduler.tsx`)
+    deliberately keeps the OLD hardcoded-default `hasAvailableFutureSlot` —
+    it has no professional/availability context yet (a request doesn't
+    reserve a slot or run these rules at all, see Appointment Lifecycle in
+    CLAUDE.md), so this was left untouched rather than widening scope.
+  - Regression: `agenda-hours.test.ts` (new, 16 focused tests) plus
+    `real-status.test.ts` unchanged/still green (slot-occupancy matching was
+    never touched).
 - **Fixed during the pre-release QA Master (P1):** `showStartEncounter` in
   `RealAppointmentDetailModal` used to be gated on `!showMarkArrived &&
   !showSendToWaitingRoom` — since `showMarkArrived` is true for ANY non-
@@ -631,6 +701,11 @@ semantics — regression-prone, do not simplify:
 - Creating an absence never auto-cancels appointments that already exist inside
   its date range — it only blocks NEW/rescheduled Citas from landing there.
   Resolving a pre-existing conflict is a manual staff action, not automatic.
+- **Display side now matches the write side exactly** — see "Agenda —
+  disponibilidad real" under Agenda above: the board's grid and every time
+  picker derive their bookable slots from these same real rows
+  (`agenda-hours.ts`), never a hardcoded default, with gaps between blocks
+  preserved and no rounding.
 
 ## Reportes (real)
 
@@ -766,8 +841,13 @@ campos de datos y las reglas de validación del RIPS como soporte de la FEV en
 salud", Versión 003 (15 de julio de 2026)**, Resolución 948 de 2026. Scope for
 this phase: **RIPS sin Factura Electrónica de Venta** only — no FEV/XML DIAN,
 no MUV submission, no CUV, no batches/periods beyond a single calendar month.
-All migrations `20260910090000` through `20260910180000` are applied and in
-sync (`supabase migration list --linked`).
+Migrations `20260910090000` through `20260911090000` were confirmed
+`local` = `remote` during Real E2E Stabilization (see above). Migrations
+`20260912090000` through `20260912140000` (default treatments seed,
+finalized-encounter RIPS-gap correction, the clinical concept catalog, and
+Especialidad → Servicio RIPS — see "RIPS #7"/"RIPS #8" below) are committed
+in this codebase; their live-application status has not been independently
+re-verified in this update.
 
 - **Catalogs (real, imported from official SISPRO tables)** —
   `public.cups_catalog` (13,632 rows), `public.diagnosis_catalog` (12,634
@@ -855,11 +935,12 @@ sync (`supabase migration list --linked`).
     no manual JSON editor.
 - **Full field-by-field mapping**: `docs/rips-json-mapping.md` — every JSON
   field, its Odentia source, the rule, and the exact DT1 v003 citation.
-- **Tests** — 100 RIPS-specific tests (readiness, generator golden fixture +
+- **Tests** — RIPS-specific tests (readiness, generator golden fixture +
   determinism, runtime schema validation, content-hash determinism, period
-  selector, generate-state), part of the full suite (322/328
-  passing project-wide, 6 skipped integration tests needing real
-  credentials).
+  selector, generate-state, clinical concept resolution — see "RIPS #7"/
+  "RIPS #8" below), part of the full suite (**397/403 passing
+  project-wide as of 2026-09-14**, 6 skipped integration tests needing real
+  credentials; `tsc --noEmit` and ESLint both clean).
 - **Known gaps (real, documented, not silently hidden)**:
   - A clinic with more than one `clinic_location` cannot export — see
     CLAUDE.md's own RIPS section.
@@ -975,9 +1056,83 @@ sync (`supabase migration list --linked`).
   "Configuración RIPS completa" + "No hay atenciones para generar RIPS en
   este período.", never an invented blocker. Covered by
   `rips-screen-period.test.ts`/`rips-screen-generate-state.test.ts`.
+- **RIPS #6D — corrección de gaps en una atención finalizada (real).**
+  Historia Clínica stays immutable once an atención is finalized — except
+  for exactly two RIPS gaps `getEncounterRipsReadiness` can flag
+  (`incapacity_code`, and a consultation service's `service_value`), which
+  can now be corrected without reopening the full clinical encounter
+  screen: `/rips/atencion/[encounterId]`
+  (`encounter-rips-correction-screen.tsx`) → `correctFinalizedEncounterRipsGapsAction`
+  → `correct_finalized_encounter_rips_gaps` (`SECURITY DEFINER`,
+  migrations `20260912100000`/`20260912110000`). Deliberately narrow: the
+  RPC can only fill a currently-NULL value, structurally rejects
+  overwriting an already-set one, and is gated the same way every other
+  `/rips` action is (`requireClinicAdminContext`, `clinic_admin`-only —
+  not `is_active_clinical_professional()`, see the RPC's own comment on
+  why that would be the wrong gate here). `export-readiness.ts`'s own
+  `ENCOUNTER_INCAPACITY_MISSING`/`SERVICE_VALUE_MISSING` `fixHref`s point
+  here. **Loose end:** `encounter-correction-actions.ts` still has a
+  TEMPORARY server-side diagnostic `console.error` (code/message/details/
+  hint only, no PII) left in place pending root-cause confirmation of an
+  earlier "No pudimos guardar la corrección" report — remove once
+  confirmed fixed.
+- **RIPS #7 — catálogo clínico natural v0 (real, Fase A1).** The clinical
+  vocabulary layer under RIPS #8's own "¿Qué realizaste?" flow:
+  `clinical_concepts` (8 rows), `clinical_concept_variants` (10 rows), and
+  `clinical_cups_mappings` (17 rows — concept [+ variant] [+ specialty] →
+  a real `cups_catalog` row, never a bare code) — migration
+  `20260912120000`, global catalog, read-only from the app (deny-by-default
+  RLS, same pattern as `cups_catalog`/`diagnosis_catalog`). Deliberately
+  scope-limited: Extracción dental and Tratamiento de conductos have no
+  confirmed mapping (their real variants depend on clinical facts not yet
+  modeled — dentición/técnica/número de raíces — a later phase); Cirugía
+  oral y maxilofacial, Implantología, and Estética dental have no confirmed
+  Servicio RIPS default either (see RIPS #8) — none of these are silently
+  invented.
+- **RIPS #8 — Especialidad → Servicio RIPS + consumo real en
+  `encounter_services` (real, Fase A2/A3).** Two closely-related pieces,
+  shipped together:
+  - **A2 — Especialidad → Servicio RIPS**, two tables never conflated (see
+    CLAUDE.md's own RIPS section for the permanent rule):
+    `specialty_rips_service_defaults` (global suggestion, seeded with the
+    6 confirmed mappings — Odontología general→334, Endodoncia→311,
+    Ortodoncia→338, Periodoncia→343, Rehabilitación oral→347,
+    Odontopediatría→396 — migration `20260912130000`) and
+    `clinic_specialty_rips_services` (per-clinic CONFIRMED configuration,
+    same migration, currently select-only — no UI to write it yet; that's
+    a later phase). A generic mapping is never accepted as valid when a
+    specialty-specific one exists for that same combination.
+  - **A3 — "¿Qué realizaste?"** replaces most manual CUPS entry in
+    "Finalizar atención" (`RealClinicalEncounterScreen`) with a natural
+    concept/variant picker, filtered to only what RIPS #7 already confirms
+    (never offering Extracción/Conducto, never offering "Consulta por
+    especialidad" when the resolved CUPS would exactly duplicate a
+    dedicated Ortodoncia concept). Resolution is pure/testable
+    (`src/features/rips/clinical-service-resolution.ts`) and mirrored
+    structurally server-side inside `upsert_patient_clinical_encounter`
+    (migration `20260912140000`): the submitted CUPS must match exactly
+    what `clinical_cups_mappings` would resolve for that
+    concept/variant/specialty (specific-over-generic, respecting
+    `valid_from`/`valid_to`), and the submitted concept/variant name
+    snapshot must match the catalog's own current name at insert time —
+    never trusting the client alone for either. `encounter_services`
+    gained 5 new nullable columns (`clinical_concept_id`,
+    `clinical_concept_variant_id`, two name snapshots, `mapping_status`) —
+    every historical row (`clinical_concept_id IS NULL`) stays valid
+    unmodified, no backfill. Manual CUPS search remains available as a
+    secondary path for anything RIPS #7 doesn't cover yet (e.g. Extracción,
+    Conducto). A concept resolved to a CUPS but still missing the clinic's
+    own confirmed Servicio RIPS (A2) never blocks "Finalizar atención" —
+    clinical truth and RIPS export completeness are deliberately separate;
+    it only shows as a new, distinct readiness blocker
+    (`RIPS_SERVICE_CONFIGURATION_MISSING`, separate from
+    `CLINICAL_SERVICE_MAPPING_UNRESOLVED`) when generating the export.
 - **Explicitly not built yet (future phase)**: MUV integration, CUV
   generation/inference, ProcesoId auto-capture, submission states beyond
   a manually-recorded result, retries/polling, FEV/DIAN, glosas, SIIFA.
+  Also not built yet: any UI for a clinic to actually write to
+  `clinic_specialty_rips_services` (A2 is select-only today) — a clinic
+  admin cannot yet confirm/override a Servicio RIPS from the app itself.
 
 ---
 
