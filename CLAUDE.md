@@ -653,6 +653,17 @@ dental and Tratamiento de conductos have no confirmed V0 mapping yet —
 never invent one; those two stay manual-CUPS-search only until a future
 phase confirms them.
 
+**Profesional del servicio realizado.** Every `encounter_services` row
+inherits `professional_profile_id` automatically from the Cita/atención's
+own responsible professional (`appointment.professional_profile_id`) —
+the odontólogo never picks a professional per service in the normal
+"¿Qué realizaste?"/manual-CUPS flow, even in a clinic with several active
+professionals. The column stays on the model (still needed for RIPS/
+trazabilidad), but the UI only ever shows it read-only. Odentia does not
+support co-atención (more than one professional per atención) yet — that
+would be a distinct, separately-scoped flow, never silently inferred from
+this single-professional model.
+
 **Especialidad → Servicio RIPS.** Two tables, never one — a global
 suggestion must never be mistaken for a clinic's own confirmed
 configuration:

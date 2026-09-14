@@ -6,9 +6,15 @@ import { CloseIcon, PhoneIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { updatePatient } from "./actions";
 import { ClinicalAlerts } from "./clinical-alerts";
+import { fetchPatientClinicalEncounters, type ClinicalEncounterRecord } from "./clinical-encounters-data";
 import type { Patient } from "./data";
 import type { PatientIdentityCatalogs } from "./patients-screen";
+import { resolveUpdatedByProfessional } from "./resolve-updated-by";
+import { lastVisitLabelFrom, nextAppointmentLabelFrom } from "./resumen-tab";
+import { fetchAppointmentsForPatient, type Appointment } from "@/features/dashboard/appointments-data";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { formatDateLabel, formatTimeLabel } from "@/features/dashboard/real-format";
+import { getDisplayStatus, getHistoryStatusBadgeClass, getStatusLabel } from "@/features/dashboard/real-status";
 import { findReferenceValueByCodeAction } from "@/features/rips/actions";
 import { ReferenceValueAutocomplete } from "@/features/rips/reference-value-autocomplete";
 import type { ReferenceValue } from "@/features/rips/catalog-data";
@@ -53,6 +59,12 @@ function ageOf(patient: Patient): number | null {
 
 const PATIENT_SINCE_FORMATTER = new Intl.DateTimeFormat("es-CO", { month: "short", year: "numeric" });
 
+// "Historial de citas" below — a small, static slice, unlike
+// RealAppointmentDetailModal's own PatientHistoryPanel (which dynamically
+// measures available panel height to decide how many rows fit). This
+// modal has no such constraint, so a fixed, small number is enough.
+const APPOINTMENT_HISTORY_LIMIT = 5;
+
 // Real patient quick-profile — restores the approved demo's full 3-column
 // layout (clinical-record-screen.tsx's sibling, patient-detail-modal.tsx —
 // deliberately a SEPARATE component, not shared: that file is Agenda's own
@@ -60,11 +72,13 @@ const PATIENT_SINCE_FORMATTER = new Intl.DateTimeFormat("es-CO", { month: "short
 // Patient shape is no longer compatible with this real one). Left column:
 // identity + contact (real, editable). Center: Alertas clínicas (real,
 // same patient_medical_histories row Historia Clínica reads/writes),
-// Resumen clínico + KPIs de citas (honest empty states — no appointments
-// table yet), Acceso del paciente (real — see patient-portal-access-card.tsx:
-// create_patient_access_invitation(), the same clinic_admin/assistant-only
-// gate as Equipo's own invitations). Right: Próxima cita (honest empty
-// state).
+// Resumen clínico + KPIs de citas (real — appointments/patient_clinical_
+// encounters now exist; see the appointmentsSummary effect below for the
+// exact read paths reused from Agenda/Historia Clínica, never a second,
+// divergent implementation), Acceso del paciente (real — see
+// patient-portal-access-card.tsx: create_patient_access_invitation(), the
+// same clinic_admin/assistant-only gate as Equipo's own invitations).
+// Right: Próxima cita (real, same appointmentsSummary data).
 export function PatientRecordModal({
   patient,
   clinicId,
@@ -129,6 +143,68 @@ export function PatientRecordModal({
     };
   }, [clinicId, patient.id]);
 
+  // Resumen clínico + KPIs de citas — real data (see this task's own root
+  // cause report: these used to be literal hardcoded placeholders written
+  // before appointments/patient_clinical_encounters existed). Reuses the
+  // exact same real read paths/helpers Historia Clínica's own Resumen tab
+  // already uses — never a second, divergent implementation of "última
+  // atención"/"próxima cita":
+  //   - fetchAppointmentsForPatient (appointments-data.ts) — same query
+  //     Agenda itself uses, clinic+patient scoped;
+  //   - fetchPatientClinicalEncounters (clinical-encounters-data.ts) —
+  //     finalized_at IS NOT NULL only, same filter /rips's own export
+  //     read uses to decide "this atención counts" (see this task's own
+  //     root-cause investigation) — a draft never counts as "última
+  //     atención" here either;
+  //   - lastVisitLabelFrom/nextAppointmentLabelFrom (resumen-tab.tsx) —
+  //     the exact same label logic Historia Clínica already shows, so
+  //     this modal can never disagree with it;
+  //   - resolveUpdatedByProfessional (resolve-updated-by.ts) — resolves
+  //     the last finalized encounter's own attended_by (a profiles.id,
+  //     captured server-side as auth.uid() at save time — see that
+  //     column's migration) to a display name; "Sin asignar" if there is
+  //     no last encounter, or its author is no longer resolvable as a
+  //     current team member (same honest fallback that function's own
+  //     callers already rely on) — never an invented name.
+  const [appointmentsSummary, setAppointmentsSummary] = useState<{
+    appointments: Appointment[];
+    encounters: ClinicalEncounterRecord[];
+    usualDentistName: string | null;
+  } | null>(null);
+  // Starts "loading" only when there's actually something to fetch — no
+  // synchronous setState in the effect body below (same convention as the
+  // medicalHistory effect above it): the no-clinicId case is an honest
+  // empty state from the very first render, never a spinner with nothing
+  // to resolve it.
+  const [appointmentsSummaryLoading, setAppointmentsSummaryLoading] = useState(() => Boolean(clinicId));
+  useEffect(() => {
+    if (!clinicId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const supabase = createClient();
+        const [appointments, encounters] = await Promise.all([
+          fetchAppointmentsForPatient(supabase, clinicId, patient.id),
+          fetchPatientClinicalEncounters(supabase, clinicId, patient.id),
+        ]);
+        const lastEncounterAttendedBy = encounters[0]?.attendedBy ?? null;
+        const usualDentist = lastEncounterAttendedBy
+          ? await resolveUpdatedByProfessional(supabase, clinicId, lastEncounterAttendedBy)
+          : null;
+        if (!cancelled) {
+          setAppointmentsSummary({ appointments, encounters, usualDentistName: usualDentist?.name ?? null });
+        }
+      } catch {
+        if (!cancelled) setAppointmentsSummary(null);
+      } finally {
+        if (!cancelled) setAppointmentsSummaryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, patient.id]);
+
   // Municipio isn't in identityCatalogs (1,124 rows — see the Performance
   // section of this task) — resolve just this one saved code's label, if
   // any, so the view/edit UI never shows a raw "05001" to the user.
@@ -146,6 +222,16 @@ export function PatientRecordModal({
   }, [patient.municipalityOfResidenceCode]);
 
   const age = ageOf(patient);
+
+  // Computed once at mount (same lazy-initializer pattern already used
+  // elsewhere in this codebase for this exact eslint rule — no impure
+  // Date.now()/new Date() call directly in render) rather than a live
+  // countdown: "próxima cita" here is a static snapshot for the life of
+  // this modal, not a ticking clock.
+  const [nowMs] = useState(() => Date.now());
+  const completedCount = appointmentsSummary?.appointments.filter((a) => a.status === "completed").length ?? 0;
+  const cancelledOrNoShowCount =
+    appointmentsSummary?.appointments.filter((a) => a.status === "cancelled" || a.status === "no_show").length ?? 0;
 
   const startEditing = () => {
     setFirstNameDraft(patient.firstName);
@@ -533,22 +619,26 @@ export function PatientRecordModal({
                 <dl className="mt-3 flex flex-col gap-2.5 text-sm">
                   <div className="flex items-center justify-between gap-2">
                     <dt className="text-label-foreground">Última atención</dt>
-                    <dd className="text-right font-medium">Sin atenciones registradas</dd>
+                    <dd className="text-right font-medium">
+                      {appointmentsSummaryLoading ? "Cargando…" : lastVisitLabelFrom(appointmentsSummary?.encounters ?? [])}
+                    </dd>
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <dt className="text-label-foreground">Odontólogo habitual</dt>
-                    <dd className="font-medium">Sin asignar</dd>
+                    <dd className="font-medium">
+                      {appointmentsSummaryLoading ? "Cargando…" : (appointmentsSummary?.usualDentistName ?? "Sin asignar")}
+                    </dd>
                   </div>
                 </dl>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-border p-3 text-center">
-                  <p className="text-xl font-bold tracking-tight">0</p>
+                  <p className="text-xl font-bold tracking-tight">{appointmentsSummaryLoading ? "—" : completedCount}</p>
                   <p className="mt-0.5 text-[11px] text-label-foreground">Citas completadas</p>
                 </div>
                 <div className="rounded-lg border border-border p-3 text-center">
-                  <p className="text-xl font-bold tracking-tight">0</p>
+                  <p className="text-xl font-bold tracking-tight">{appointmentsSummaryLoading ? "—" : cancelledOrNoShowCount}</p>
                   <p className="mt-0.5 text-[11px] text-label-foreground">Canceladas / no asistió</p>
                 </div>
               </div>
@@ -561,11 +651,86 @@ export function PatientRecordModal({
               <PatientPortalAccessCard patientId={patient.id} canGrantAccess={canEditPatientData} />
             </div>
 
-            {/* Derecha — próxima cita. */}
+            {/* Derecha — próxima cita + historial de citas. */}
             <div className="flex flex-col gap-4">
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
                 <p className="text-xs font-semibold text-primary uppercase">Próxima cita</p>
-                <p className="mt-1 text-sm font-medium text-foreground">Sin cita programada</p>
+                <p className="mt-1 text-sm font-medium text-foreground">
+                  {appointmentsSummaryLoading
+                    ? "Cargando…"
+                    : nextAppointmentLabelFrom(appointmentsSummary?.appointments ?? [], new Date(nowMs))}
+                </p>
+              </div>
+
+              {/* Reutiliza el MISMO array de appointments ya cargado por el
+                  effect de arriba (fetchAppointmentsForPatient) — nunca un
+                  segundo fetch. Presentación mínima replicada del patrón
+                  "Historial de citas" de RealAppointmentDetailModal (misma
+                  fecha/hora + badge de estado, mismos helpers
+                  getDisplayStatus/getStatusLabel/getHistoryStatusBadgeClass/
+                  formatDateLabel/formatTimeLabel) — sin el timeline con
+                  tooltip ni la medición dinámica de alto de ese panel, que
+                  son específicos del espacio fijo del modal de Agenda y no
+                  aplican aquí. fetchAppointmentsForPatient ya ordena por
+                  starts_at desc server-side — nunca por created_at, y sin
+                  necesidad de volver a ordenar aquí. */}
+              {/* bg-surface — el mismo token que el contenedor REAL de
+                  Agenda (real-appointment-detail-modal.tsx: "border-t
+                  border-border bg-surface px-5 py-4 sm:border-t-0
+                  sm:border-l") usa para diferenciar visualmente este
+                  bloque como una sección secundaria, en vez del fondo
+                  blanco por defecto. Se conserva rounded-xl/border/p-4
+                  (el mismo lenguaje de tarjeta que ya usan sus vecinas
+                  "Próxima cita"/"Resumen clínico" en este modal) en vez
+                  del propio border-t/border-l de Agenda, que es un
+                  divisor de panel dividido en dos columnas — un layout
+                  distinto al de este modal (una pila de tarjetas), nunca
+                  aplicable aquí sin inventar una variante nueva. */}
+              <div className="rounded-xl border border-border bg-surface p-4">
+                <p className="text-sm font-semibold">Historial de citas</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Últimas citas del paciente</p>
+
+                <div className="mt-3">
+                  {appointmentsSummaryLoading ? (
+                    <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+                      Cargando historial…
+                    </p>
+                  ) : (appointmentsSummary?.appointments.length ?? 0) === 0 ? (
+                    <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+                      Sin citas registradas
+                    </p>
+                  ) : (
+                    <ol className="flex flex-col gap-2">
+                      {(appointmentsSummary?.appointments ?? []).slice(0, APPOINTMENT_HISTORY_LIMIT).map((item) => {
+                        const displayStatus = getDisplayStatus(item, new Date(nowMs));
+                        return (
+                          <li key={item.id} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1">
+                            <span className="text-[11px] font-medium text-label-foreground">
+                              {formatDateLabel(item.startsAt)} · {formatTimeLabel(item.startsAt)}
+                            </span>
+                            <span
+                              className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${getHistoryStatusBadgeClass(displayStatus)}`}
+                            >
+                              {getStatusLabel(displayStatus)}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  )}
+                </div>
+
+                {/* "Ver historial completo" — mismo destino real que ya usa
+                    RealAppointmentDetailModal's own PatientHistoryPanel
+                    (única fuente de verdad para el historial completo de
+                    este paciente, ver ese archivo/route.tsx propio). */}
+                <button
+                  type="button"
+                  onClick={() => router.push(`/pacientes/${patient.id}/historial-citas`)}
+                  className="mt-3 w-full rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-foreground/5"
+                >
+                  Ver historial completo
+                </button>
               </div>
             </div>
           </div>

@@ -50,6 +50,29 @@ not about refusing a distinct, explicitly-requested feature. See "RIPS
 (Colombian regulatory reporting)" under "Progress So Far" for the full detail;
 it does not change anything about the Functional Freeze/Manual QA status above.
 
+**Checkpoint 2026-09-14 — RIPS A3 smoke PASS, A4 is next.** RIPS #8's A3
+("¿Qué realizaste?" consuming into `encounter_services`) went through a real
+synthetic smoke (Muelitas7 / Alex Paciente) end to end — atención finalized,
+`/rips` correctly found it and its services, readiness correctly blocked only
+on the expected `RIPS_SERVICE_CONFIGURATION_MISSING` (this is the intended
+architecture, not a bug — see "RIPS #8" below). Three UX gaps found during
+that smoke were fixed and re-validated the same day: the per-service manual
+professional selector (removed — inherited from the Cita automatically now),
+"Servicios realizados"'s layout (responsive two-column), and CIE-10 diagnosis
+discoverability ("Usados en esta clínica", tenant-scoped real suggestions).
+See "RIPS #8" below for the full detail. **Next: A4 — Especialidad → Servicio
+RIPS write path for `clinic_admin`** (today, `clinic_specialty_rips_services`
+is select-only; nothing writes to it yet). Separately, and unrelated to RIPS:
+`PatientRecordModal`'s "Resumen clínico"/KPIs/"Próxima cita" were found to be
+hardcoded placeholders (predating the real `appointments`/
+`patient_clinical_encounters` tables) and were connected to real data the
+same day — see "Pacientes" below.
+
+There is also an independent, unrelated piece of WIP preserved in this repo's
+own git stash (`stash@{0}: "wip: invitation auth acceptance flow"`, a P1
+invitation/auth fix) — not part of RIPS, not touched during any of the above,
+intentionally left stashed for its own separate follow-up.
+
 ---
 
 # REAL E2E STABILIZATION — Functional Freeze Checkpoint (2026-09-09)
@@ -528,6 +551,25 @@ touched; if code and this section ever disagree, the code wins (see CLAUDE.md).
   silently superseded on regeneration (only `token_hash` is ever persisted, so
   the previous raw link can never be recovered or resent); an already-linked
   patient shows "Acceso al Portal activo" and can never be re-invited.
+- **`PatientRecordModal`'s "Resumen clínico" (real, fixed 2026-09-14)** —
+  Última atención/Odontólogo habitual/Citas completadas/Canceladas-no
+  asistió/Próxima cita/Historial de citas used to be literal hardcoded
+  placeholders ("Sin atenciones registradas", "0", "Sin cita programada")
+  left over from before `appointments`/`patient_clinical_encounters`
+  existed for this component — found during the RIPS A3 smoke (the
+  contradiction: `/rips` correctly found a just-finalized atención while
+  this modal still said "Sin atenciones registradas"). Now real: Última
+  atención/Odontólogo habitual read `fetchPatientClinicalEncounters`
+  (`finalized_at IS NOT NULL` only, same criterion `/rips` itself uses)
+  + `resolveUpdatedByProfessional` on the last encounter's `attended_by`;
+  the two KPI counts and Próxima cita/Historial de citas reuse the SAME
+  `fetchAppointmentsForPatient` array the modal already loads (no second
+  fetch) plus `lastVisitLabelFrom`/`nextAppointmentLabelFrom`, the exact
+  functions Historia Clínica's own Resumen tab already uses — never a
+  second, divergent implementation. Historial de citas' row/badge
+  presentation and its "Historial de citas" card background (`bg-surface`)
+  were matched to Agenda's own `RealAppointmentDetailModal` panel for
+  visual consistency. No DB/RPC/migration changes.
 - Tenant isolation and role-based permissions come from
   `resolveClinicContext()`/`clinical-permissions.ts` server-side — never the DEV
   role switcher.
@@ -937,10 +979,11 @@ re-verified in this update.
   field, its Odentia source, the rule, and the exact DT1 v003 citation.
 - **Tests** — RIPS-specific tests (readiness, generator golden fixture +
   determinism, runtime schema validation, content-hash determinism, period
-  selector, generate-state, clinical concept resolution — see "RIPS #7"/
-  "RIPS #8" below), part of the full suite (**397/403 passing
-  project-wide as of 2026-09-14**, 6 skipped integration tests needing real
-  credentials; `tsc --noEmit` and ESLint both clean).
+  selector, generate-state, clinical concept resolution, frequent-diagnosis
+  ranking — see "RIPS #7"/"RIPS #8"/"RIPS #9" below), part of the full
+  suite (**402/408 passing project-wide as of 2026-09-14**, 6 skipped
+  integration tests needing real credentials; `tsc --noEmit` and ESLint
+  both clean).
 - **Known gaps (real, documented, not silently hidden)**:
   - A clinic with more than one `clinic_location` cannot export — see
     CLAUDE.md's own RIPS section.
@@ -1127,12 +1170,109 @@ re-verified in this update.
     it only shows as a new, distinct readiness blocker
     (`RIPS_SERVICE_CONFIGURATION_MISSING`, separate from
     `CLINICAL_SERVICE_MAPPING_UNRESOLVED`) when generating the export.
+- **RIPS #9 — A3 smoke (real, 2026-09-14) + UX fixes found during it.**
+  Synthetic smoke: clinic Muelitas7, patient Alex Paciente, atención
+  14/09/2026, two `encounter_services` via "¿Qué realizaste?" — Consulta de
+  ortodoncia (CUPS `890222`, tipo Consulta, `service_value` 50000) and
+  Limpieza dental → Profilaxis/pulido (CUPS `997001`, tipo Procedimiento,
+  `service_value` auto-`0`, RIPS sin factura rule) — plus principal
+  diagnosis CIE-10 `K020` (`diagnosis_type_code` = "Confirmado nuevo", no
+  relacionados), incapacidad `No`, no próxima cita, no legacy
+  `patient_clinical_encounter_procedures` row. "Finalizar atención"
+  correctly persisted `patient_clinical_encounters.finalized_at` and
+  flipped `appointments.status` to `completed`. `/rips` then correctly
+  found the atención and its services, with exactly the expected pending
+  per service — "la clínica todavía no ha confirmado el Servicio RIPS para
+  la especialidad de este servicio" (`RIPS_SERVICE_CONFIGURATION_MISSING`).
+  **This is the intended architecture working correctly, not a bug**:
+  odontólogo finalizes → RIPS consumes the real services → generation
+  stays blocked on missing institutional config → that config is exactly
+  A4's own scope (below).
+
+  Three UX gaps surfaced during this smoke and were fixed/re-validated the
+  same day, all in `src/features/dashboard/real-clinical-encounter-screen.tsx`
+  unless noted:
+  - **Profesional del servicio** — see CLAUDE.md's own new permanent rule:
+    each `encounter_service` inherits `professional_profile_id` from the
+    Cita automatically; the per-service manual `<select>` (which used to
+    appear whenever a clinic had more than one active professional) is
+    gone. The column stays on the model; the UI shows it read-only. No
+    co-atención support.
+  - **"Servicios realizados" layout** — responsive two-column at `md+`
+    (`¿Qué realizaste?` left ≈40%, "Registrados en esta atención" right
+    ≈60%, single column below `md`), plus a teal/primary visual state for
+    an expanded concept in the accordion (vs. the neutral closed style).
+  - **CIE-10 diagnosis discoverability** — Diagnóstico principal/
+    relacionado's search-as-you-type used to show nothing until 2+
+    characters were typed, with no way to discover a code without already
+    knowing it. Focusing an empty field now also offers "Usados en esta
+    clínica": the clinic's own real, tenant-scoped usage history from
+    `encounter_diagnoses` (never a hardcoded clinical list, never
+    inference) — frequency desc, most-recent-use as the tiebreaker over a
+    bounded 500-row recent window, capped at 10, enriched against the
+    active `diagnosis_catalog`. No history → an honest hint to search by
+    code/description, never invented codes. Typed search is unchanged
+    (still the full active CIE-10 catalog, 2+ chars). CUPS's own
+    autocomplete is untouched. New files: `src/features/rips/
+    frequent-diagnoses-data.ts` (+ `.test.ts`, 5/5 passing — pure ranking
+    logic only, no Supabase mocking); extended `code-search-autocomplete.tsx`
+    (new opt-in `initialSuggestions` prop, CUPS never passes it),
+    `catalog-data.ts` (`findDiagnosesByCodes`), `actions.ts`
+    (`fetchFrequentDiagnosesAction`).
+- **Detalles RIPS — UX decision deferred to post-A4 (documented, not yet
+  acted on).** A read-only investigation of every field currently exposed
+  in a service's "Detalles RIPS" dropdown classified each one against its
+  real source/readiness/JSON path (see the investigation's own report for
+  full per-field traceability):
+  - **Debería venir de configuración institucional, no del odontólogo por
+    servicio** — Grupo de servicios / Servicio (`grupo_servicios_code`/
+    `cod_servicio_code`): this IS `clinic_specialty_rips_services` (A2),
+    already resolved automatically when available; the manual dropdown
+    here just lets someone override it per service today.
+  - **Económicamente derivable** — Valor pago moderador: the JSON
+    generator already resolves it to `0` when not captured
+    (`toMoneyNumber(valorPagoModerador ?? 0)`), distinct from "Valor
+    cobrado al paciente" (`service_value`) — never to be conflated with it.
+  - **Sin fuente segura todavía, no automatizar/ocultar sin una regla
+    explícita** — Causa externa, Vía de ingreso, Modalidad de atención,
+    Finalidad, Concepto de recaudo: none of these are required by
+    `completeness.ts`/`export-readiness.ts` today, and none has a code
+    path that could derive them safely — no default was invented for any
+    of them.
+  Once A4 ships, revisit whether "Detalles RIPS" becomes a read-only/
+  advanced view or shrinks to only the fields with no institutional/
+  derivable source. Not implemented in this pass.
+- **Legacy `Procedimientos realizados` vs. new `Servicios realizados` —
+  known, still-open duplication.** The clinical encounter screen still
+  shows both: the free-text, non-CUPS legacy list
+  (`patient_clinical_encounter_procedures`) and the real RIPS-backed
+  `encounter_services` list ("¿Qué realizaste?"/manual CUPS). The A3 smoke
+  deliberately did not add a legacy procedure row and did not attempt to
+  resolve this duplication — which one stays, which is deprecated, or how
+  they reconcile is still an open decision, not something today's work
+  touched.
+- **A4 — Especialidad → Servicio RIPS write path (next, not yet built).**
+  `specialty_rips_service_defaults` (global suggestion) and
+  `clinic_specialty_rips_services` (per-clinic confirmed config, currently
+  select-only) both already exist (migration `20260912130000`). Confirmed
+  global defaults seeded so far: Odontología general → 334, Endodoncia →
+  311, Ortodoncia → 338, Periodoncia → 343, Rehabilitación oral → 347,
+  Odontopediatría → 396. No safe default exists yet for Cirugía oral y
+  maxilofacial, Implantología, or Estética dental — do not invent one. The
+  permanent rule (CLAUDE.md, unchanged): `specialty_rips_service_defaults`
+  is only ever Odentia's own suggestion, never effective configuration on
+  its own — `clinic_admin` must explicitly confirm it into
+  `clinic_specialty_rips_services` before it becomes real. A4's own scope
+  is exactly that write/confirmation path; once a specialty is confirmed,
+  `RIPS_SERVICE_CONFIGURATION_MISSING` should stop appearing for encounters
+  using it.
 - **Explicitly not built yet (future phase)**: MUV integration, CUV
   generation/inference, ProcesoId auto-capture, submission states beyond
   a manually-recorded result, retries/polling, FEV/DIAN, glosas, SIIFA.
-  Also not built yet: any UI for a clinic to actually write to
+  Also not built yet: **A4** — any UI for a clinic to actually write to
   `clinic_specialty_rips_services` (A2 is select-only today) — a clinic
   admin cannot yet confirm/override a Servicio RIPS from the app itself.
+  This is the current next milestone (see "RIPS #9" above).
 
 ---
 
