@@ -11,6 +11,7 @@ import {
   type DiagnosisCode,
   type ReferenceValue,
 } from "./catalog-data";
+import { fetchFrequentDiagnosesForCurrentClinic, type FrequentDiagnosesResult } from "./frequent-diagnoses-data";
 
 // Resolves one already-known code (e.g. a patient's saved municipality)
 // to its label — the ReferenceValueAutocomplete's own initial-label
@@ -44,6 +45,17 @@ export async function searchCupsAction(query: string): Promise<CupsCode[]> {
 export async function searchDiagnosesAction(query: string): Promise<DiagnosisCode[]> {
   if (!query.trim()) return [];
   return searchDiagnoses("CIE10", query, 20);
+}
+
+// RIPS #A3 UX gap — discoverability for Diagnóstico principal/relacionado:
+// "diagnoses already used in the caller's OWN clinic", shown when the
+// field is focused/empty (before the odontólogo has typed anything).
+// clinicId is resolved entirely server-side inside
+// fetchFrequentDiagnosesForCurrentClinic() — this action takes NO
+// parameters, so there is nothing for a client to override. Never used by
+// the CUPS autocomplete (searchCupsAction, above) — this is diagnosis-only.
+export async function fetchFrequentDiagnosesAction(): Promise<FrequentDiagnosesResult> {
+  return fetchFrequentDiagnosesForCurrentClinic();
 }
 
 // Resolves one already-known CUPS/CIE-10 code to its full row (used to

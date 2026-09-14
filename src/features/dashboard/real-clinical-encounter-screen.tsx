@@ -35,7 +35,13 @@ import type {
 } from "@/features/patients/clinical-encounters-data";
 import { toOdontogramData, type ToothFindingRecord } from "@/features/patients/tooth-findings-data";
 import { CodeSearchAutocomplete } from "@/features/rips/code-search-autocomplete";
-import { findCupsByCodeAction, findDiagnosisByCodeAction, searchCupsAction, searchDiagnosesAction } from "@/features/rips/actions";
+import {
+  fetchFrequentDiagnosesAction,
+  findCupsByCodeAction,
+  findDiagnosisByCodeAction,
+  searchCupsAction,
+  searchDiagnosesAction,
+} from "@/features/rips/actions";
 import type { ReferenceValue } from "@/features/rips/catalog-data";
 import {
   getAvailableClinicalConcepts,
@@ -143,6 +149,26 @@ type ServiceRow = {
 };
 
 const HISTORY_LIMIT = 3;
+
+// RIPS #A3 UX gap — "Diagnóstico principal"/"Diagnósticos relacionados"'s
+// own CIE-10 search shows nothing until 2+ characters are typed, with no
+// way to discover a code without already knowing it. This is the one,
+// narrow, tenant-scoped exception (CodeSearchAutocomplete's own
+// `initialSuggestions` prop, opt-in — never used by the CUPS
+// autocomplete below, which is unaffected): diagnoses THIS clinic has
+// actually used, resolved entirely server-side by
+// fetchFrequentDiagnosesAction() (clinicId comes from the caller's own
+// session, never a parameter here). A "no-history"/"unauthorized" result
+// both fall back to the same empty list — the component's own emptyHint
+// covers "nothing to show yet", never an error state.
+const DIAGNOSIS_INITIAL_SUGGESTIONS = {
+  label: "Usados en esta clínica",
+  emptyHint: "Busca por código o descripción para consultar el catálogo CIE-10.",
+  fetch: async () => {
+    const result = await fetchFrequentDiagnosesAction();
+    return result.status === "ok" ? result.diagnoses : [];
+  },
+};
 
 export function RealClinicalEncounterScreen({
   appointment,
@@ -753,6 +779,7 @@ export function RealClinicalEncounterScreen({
                                 : ""
                             }
                             search={searchDiagnosesAction}
+                            initialSuggestions={DIAGNOSIS_INITIAL_SUGGESTIONS}
                             onChange={(picked) =>
                               updateDiagnosis(
                                 principalDiagnosis.id,
@@ -805,6 +832,7 @@ export function RealClinicalEncounterScreen({
                               value={d.cie10Code}
                               displayDescription={d.cie10Code ? `${d.cie10Code} — ${d.description}` : ""}
                               search={searchDiagnosesAction}
+                              initialSuggestions={DIAGNOSIS_INITIAL_SUGGESTIONS}
                               onChange={(picked) =>
                                 updateDiagnosis(
                                   d.id,
@@ -851,12 +879,18 @@ export function RealClinicalEncounterScreen({
               </Section>
 
               <Section title="Servicios realizados" icon={CheckCircleIcon}>
-                <div className="flex flex-col gap-2.5">
+                {/* Puramente de layout — dos columnas desde `md` (grid-cols-5,
+                    2/3 ≈ 40/60) para que leer varios servicios ya no sea un
+                    scroll vertical largo; por debajo de `md`, `grid` sin
+                    columnas explícitas ya apila todo en una sola columna, sin
+                    clases adicionales. Ninguna lógica/handler se movió — solo
+                    se reorganizó dónde vive cada bloque existente. */}
+                <div className="grid gap-2.5 md:grid-cols-5">
                   {/* RIPS #A3 — "¿Qué realizaste?": vocabulario clínico
                       natural como interacción PRINCIPAL. CUPS/Servicio RIPS
                       son una consecuencia técnica resuelta internamente,
                       nunca una decisión del odontólogo aquí. */}
-                  <div className="rounded-lg border border-border bg-surface p-3">
+                  <div className="rounded-lg border border-border bg-surface p-3 md:col-span-2">
                     <p className="text-xs font-semibold text-foreground/80">¿Qué realizaste?</p>
                     {conceptPickerError && (
                       <p className="mt-1.5 text-xs text-warning">{conceptPickerError}</p>
@@ -875,10 +909,21 @@ export function RealClinicalEncounterScreen({
                             </button>
                           ) : (
                             <>
+                              {/* Puramente visual — reutiliza el mismo tono
+                                  teal/verde suave (--primary, ya usado en el
+                                  :hover de este mismo botón) para que un
+                                  concepto expandido se distinga de uno
+                                  cerrado a simple vista; expandedConceptId
+                                  sigue siendo la única fuente de verdad para
+                                  qué está abierto, sin tocar esa lógica. */}
                               <button
                                 type="button"
                                 onClick={() => setExpandedConceptId((prev) => (prev === concept.id ? null : concept.id))}
-                                className="flex w-full items-center justify-between rounded-lg border border-dashed border-border px-3 py-1.5 text-left text-xs font-medium text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                                className={`flex w-full items-center justify-between rounded-lg border px-3 py-1.5 text-left text-xs font-medium transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary ${
+                                  expandedConceptId === concept.id
+                                    ? "border-primary/30 bg-primary/5 text-primary"
+                                    : "border-dashed border-border text-foreground/80"
+                                }`}
                               >
                                 {concept.name}
                                 <ChevronIcon
@@ -907,12 +952,19 @@ export function RealClinicalEncounterScreen({
                     </div>
                   </div>
 
-                  {services.length === 0 && (
-                    <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
-                      Aún no se han registrado servicios realizados.
-                    </p>
-                  )}
-                  {services.map((s) => {
+                  {/* Columna derecha — servicios ya agregados a ESTA
+                      atención. Mismo contenido/orden de siempre (empty
+                      state -> tarjetas -> servicio manual CUPS), solo movido
+                      aquí junto con un encabezado pequeño, en el mismo
+                      lenguaje visual que "¿Qué realizaste?" a la izquierda. */}
+                  <div className="flex flex-col gap-2.5 md:col-span-3">
+                    <p className="text-xs font-semibold text-foreground/80">Registrados en esta atención</p>
+                    {services.length === 0 && (
+                      <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+                        Aún no se han registrado servicios realizados.
+                      </p>
+                    )}
+                    {services.map((s) => {
                     const filteredServicios = s.grupoServiciosCode
                       ? serviciosOptions.filter((o) => o.parentCode === s.grupoServiciosCode)
                       : [];
@@ -944,24 +996,19 @@ export function RealClinicalEncounterScreen({
                                 placeholder="Buscar por código o descripción…"
                               />
                             )}
-                            {professionals.length > 1 ? (
-                              <select
-                                value={s.professionalProfileId}
-                                onChange={(e) => updateService(s.id, { professionalProfileId: e.target.value })}
-                                className={FIELD_CLASS}
-                              >
-                                <option value="">Selecciona un profesional</option>
-                                {professionals.map((p) => (
-                                  <option key={p.professionalProfileId} value={p.professionalProfileId}>
-                                    {p.name}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <div className="flex items-center text-xs text-muted-foreground">
-                                {professional?.name ?? "Sin asignar"}
-                              </div>
-                            )}
+                            {/* RIPS A3 fix — el profesional de CADA servicio siempre se
+                                hereda de appointment.professionalProfileId (ver
+                                addService/addConceptService), nunca de una elección
+                                manual por servicio: la atención ya tiene un único
+                                profesional responsable, y Odentia no soporta
+                                co-atención con varios profesionales por atención (ver
+                                el reporte de esta fase). Antes, con más de un
+                                profesional en la clínica, esto era un <select>
+                                editable que dejaba reasignar el servicio a CUALQUIER
+                                profesional de la clínica — una decisión redundante e
+                                incorrecta que el odontólogo nunca debería tomar aquí.
+                                Solo texto de solo lectura, siempre. */}
+                            <div className="flex items-center text-xs text-muted-foreground">{professional?.name ?? "Sin asignar"}</div>
                           </div>
                           <button
                             type="button"
@@ -1151,6 +1198,7 @@ export function RealClinicalEncounterScreen({
                     <PlusIcon className="size-3.5" />
                     Agregar servicio manual (CUPS)
                   </button>
+                  </div>
                 </div>
               </Section>
 

@@ -17,6 +17,17 @@ export type CodeSearchResult = { code: string; description: string };
 // rips_service_type, which drives the consultation/procedure badge and
 // must come from the real catalog, never inferred — gets it back on
 // `onChange` without a second round-trip lookup.
+//
+// `initialSuggestions` (optional, off by default — CUPS never passes it,
+// so its own behavior below is byte-for-byte unchanged) is the one small,
+// explicit opt-in for RIPS #A3's diagnosis-discoverability gap: when the
+// field is focused and still empty (nothing typed yet), fetch and show a
+// short, labeled list instead of nothing. Fetched once per focus, never
+// on every keystroke, and never in a loop with the real search — the two
+// branches below (`trimmedQuery.length < 2` vs `>= 2`) are mutually
+// exclusive. Selecting one of these still goes through the exact same
+// `onChange` as a real search result — it is a discovery aid, never an
+// auto-selection.
 export function CodeSearchAutocomplete<T extends CodeSearchResult>({
   value,
   displayDescription,
@@ -24,6 +35,7 @@ export function CodeSearchAutocomplete<T extends CodeSearchResult>({
   onChange,
   placeholder,
   disabled,
+  initialSuggestions,
 }: {
   value: string;
   // The description to show for the currently-selected code before the
@@ -34,12 +46,25 @@ export function CodeSearchAutocomplete<T extends CodeSearchResult>({
   onChange: (value: T | null) => void;
   placeholder?: string;
   disabled?: boolean;
+  initialSuggestions?: {
+    // Shown above the list when it has at least one item (e.g. "Usados en
+    // esta clínica") — omit for no heading.
+    label?: string;
+    // Shown instead of the list when it comes back empty — a hint, never
+    // an error ("Sin resultados." stays reserved for a real, typed search
+    // with zero matches, below).
+    emptyHint: string;
+    fetch: () => Promise<T[]>;
+  };
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<T[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<T[] | null>(null);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const requestId = useRef(0);
+  const suggestionsRequestId = useRef(0);
   const trimmedQuery = query.trim();
 
   useEffect(() => {
@@ -68,6 +93,16 @@ export function CodeSearchAutocomplete<T extends CodeSearchResult>({
         onFocus={() => {
           setQuery("");
           setOpen(true);
+          if (initialSuggestions) {
+            const id = ++suggestionsRequestId.current;
+            setLoadingSuggestions(true);
+            initialSuggestions.fetch().then((values) => {
+              if (suggestionsRequestId.current === id) {
+                setSuggestions(values);
+                setLoadingSuggestions(false);
+              }
+            });
+          }
         }}
         onChange={(e) => {
           setQuery(e.target.value);
@@ -77,6 +112,37 @@ export function CodeSearchAutocomplete<T extends CodeSearchResult>({
           setTimeout(() => setOpen(false), 150);
         }}
       />
+      {open && trimmedQuery.length < 2 && initialSuggestions && (
+        <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-border bg-background shadow-lg">
+          {loadingSuggestions ? (
+            <p className="px-3 py-2 text-xs text-muted-foreground">Buscando…</p>
+          ) : !suggestions || suggestions.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-muted-foreground">{initialSuggestions.emptyHint}</p>
+          ) : (
+            <>
+              {initialSuggestions.label && (
+                <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                  {initialSuggestions.label}
+                </p>
+              )}
+              {suggestions.map((r) => (
+                <button
+                  key={r.code}
+                  type="button"
+                  className="block w-full px-3 py-2 text-left text-sm hover:bg-foreground/5"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setOpen(false);
+                    onChange(r);
+                  }}
+                >
+                  <span className="text-muted-foreground">{r.code}</span> — {r.description}
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
       {open && trimmedQuery.length >= 2 && (
         <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-border bg-background shadow-lg">
           {loading ? (

@@ -205,6 +205,28 @@ export async function findDiagnosisByCode(
   return mapDiagnosisRow(data);
 }
 
+// Batch lookup by code — used to enrich a small, already-known list of
+// codes (e.g. this clinic's own frequently-used diagnoses, resolved
+// elsewhere from encounter_diagnoses) with their human description,
+// without a full-text search. Active-only, same as searchDiagnoses: never
+// resurfaces a code that's no longer selectable today. Silently drops a
+// code with no active match (superseded/deprecated since it was last
+// used) rather than throwing — the caller only ever wants "of these,
+// which are still valid to show".
+export async function findDiagnosesByCodes(classificationSystem: string, codes: string[]): Promise<DiagnosisCode[]> {
+  if (codes.length === 0) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("diagnosis_catalog")
+    .select(DIAGNOSIS_COLUMNS)
+    .eq("classification_system", classificationSystem)
+    .eq("status", "active")
+    .in("code", codes);
+
+  if (error || !data) return [];
+  return data.map(mapDiagnosisRow);
+}
+
 export async function searchDiagnoses(classificationSystem: string, query: string, limit = 20): Promise<DiagnosisCode[]> {
   const supabase = await createClient();
   const term = sanitizeSearchTerm(query);
