@@ -12,8 +12,20 @@ import {
 export type NavGroup = "work" | "marketplace" | "admin" | "platform" | "business";
 
 // Marketplace is an independent product (see CLAUDE.md) — every clinic-facing
-// access to it is an external link, never an internal route.
-export const MARKETPLACE_URL = "https://odentia-marketplace.vercel.app";
+// access to it is an external link, never an internal route. Every real
+// entry point must start the SSO flow (see src/app/marketplace/entrar/
+// route.ts), never a direct link into Marketplace's own UI — this is
+// Marketplace's own /auth/sso/start, which redirects the browser on to
+// Core's authenticated entry point and back.
+//
+// Deliberately still a plain literal, not process.env.MARKETPLACE_URL:
+// this module is imported by client components (bottom-tab-bar.tsx,
+// sidebar-nav.tsx via role.ts, marketplace-card.tsx), and that env var is
+// intentionally server-only (no NEXT_PUBLIC_ prefix — see
+// src/app/marketplace/entrar/route.ts's own comment), so it isn't
+// readable here at all. The literal base URL matches that same env var's
+// real (non-secret) production value.
+export const MARKETPLACE_URL = "https://marketplace.odentia.co/auth/sso/start";
 
 export type NavItem = {
   label: string;
