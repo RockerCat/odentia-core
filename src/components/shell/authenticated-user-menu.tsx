@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { UserAvatar } from "@/components/user-avatar";
-import { BellIcon, ChevronDownIcon, LogOutIcon, UserIcon } from "./icons";
+import { BellIcon, ChevronDownIcon, LogOutIcon, ShoppingCartIcon, UserIcon } from "./icons";
+import { MARKETPLACE_URL } from "./nav-items";
+import { useMarketplaceCartCount } from "./use-marketplace-cart-count";
 
 type AuthenticatedUserMenuIdentity = {
   name: string;
@@ -23,13 +25,28 @@ type AuthenticatedUserMenuProps = {
 };
 
 // Shared avatar/name/clinic + user dropdown (Perfil/Salir), plus the
-// notifications bell — extracted from the app shell's desktop Header so
-// the public landing's authenticated header block (landing-header.tsx)
-// reuses the exact same menu instead of a second, visually-duplicated one.
-// The bell has no real notifications wired up anywhere yet (see CLAUDE.md
-// task scope) — same static badge everywhere this renders.
+// notifications bell and the Marketplace access — extracted from the app
+// shell's desktop Header so the public landing's authenticated header block
+// (landing-header.tsx) reuses the exact same menu instead of a second,
+// visually-duplicated one. The bell has no real notifications wired up
+// anywhere yet (see CLAUDE.md task scope) — same static badge everywhere
+// this renders.
+//
+// The Marketplace icon is a plain external link to the same MARKETPLACE_URL
+// (Marketplace's own SSO start) as nav-items.ts's sidebar/tab-bar entry and
+// marketplace-card.tsx — see PROJECT_STATUS.md's "SSO Core → Marketplace"
+// checkpoint for the full flow — styled identically to the bell so it reads
+// as the same group of header actions.
+//
+// Shared Cart Checkpoint A: the badge is the REAL Marketplace cart count
+// (see use-marketplace-cart-count.ts), not a static/fake number — Core
+// only ever reads Marketplace's own odentia_cart cookie server-side; it
+// never writes it, never calls Marketplace, and this link's destination
+// (still Marketplace's SSO start, unchanged) is a separate concern from
+// Checkpoint B.
 export function AuthenticatedUserMenu({ identity, onProfileClick, onSignOut, signingOut }: AuthenticatedUserMenuProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const cartCount = useMarketplaceCartCount();
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -42,6 +59,19 @@ export function AuthenticatedUserMenu({ identity, onProfileClick, onSignOut, sig
 
   return (
     <div className="flex items-center gap-3 sm:gap-4">
+      <a
+        href={MARKETPLACE_URL}
+        aria-label={cartCount > 0 ? `Ir al Marketplace, ${cartCount} producto${cartCount === 1 ? "" : "s"} en el carrito` : "Ir al Marketplace"}
+        className="relative flex size-9 items-center justify-center rounded-lg text-foreground/80 hover:bg-foreground/5"
+      >
+        <ShoppingCartIcon className="size-5" />
+        {cartCount > 0 && (
+          <span className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-warning text-[10px] font-medium text-primary-foreground">
+            {cartCount}
+          </span>
+        )}
+      </a>
+
       <button
         type="button"
         aria-label="Notificaciones"
