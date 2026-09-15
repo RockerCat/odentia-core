@@ -103,6 +103,15 @@ Order Attribution's base (persistence + admin visibility) is now complete —
 see "SSO Core → Marketplace" below for both Checkpoint 1 and Checkpoint 2
 detail.
 
+**Checkpoint 2026-09-15 — Shared Cart: Checkpoint A — PRODUCTION PASS.**
+Core's authenticated header now shows the REAL Marketplace cart count next
+to the notification bell, not a static/fake badge. Core receives the same
+`odentia_cart` cookie Marketplace already owns (domain-shared under
+`.odentia.co` in Production only) and is strictly read-only with respect to
+it — it never writes, mutates, or clears the cookie, and there is no new
+API, fetch, or duplicated cart state. See "SSO Core → Marketplace" below for
+the full detail and Production smoke results.
+
 ---
 
 # REAL E2E STABILIZATION — Functional Freeze Checkpoint (2026-09-09)
@@ -1549,6 +1558,50 @@ implemented; treat them as not present until documented otherwise.
 
 Order attribution downstream base is complete; the next product/commercial
 phase will be defined separately.
+
+## Downstream: Shared Cart — Checkpoint A (2026-09-15)
+
+**PRODUCTION PASS.** Core's authenticated header (`AuthenticatedUserMenu`)
+shows the real Marketplace cart item count as a badge on the existing cart
+icon, instead of no count at all. Implementation lives in
+`src/components/shell/marketplace-cart-actions.ts` (a Server Action reading
+the incoming request's cookie), `parse-marketplace-cart-count.ts` (the pure,
+unit-tested parser), and `use-marketplace-cart-count.ts` (the client hook
+bridging into `AuthenticatedUserMenu`) — Core's functional commit is
+`fff396b`; Marketplace's is `436285a`.
+
+`odentia_cart` remains entirely owned and written by Marketplace — Core
+never sets, mutates, or clears it. In Production this cookie is
+domain-shared under `.odentia.co` specifically so it arrives on Core's own
+incoming requests; Vercel Preview deployments and local development keep
+the cookie host-only (Marketplace-side decision — a `Domain` that doesn't
+match the actual response host would make the browser reject the cookie
+outright, which is why this isn't gated on `NODE_ENV` alone). Core's parser
+treats the cookie as untrusted input from a separate app: invalid JSON,
+non-object shapes, and non-numeric/non-positive quantities all degrade to a
+partial or zero count rather than breaking the header; valid quantities are
+summed, matching Marketplace's own `getCartCount()` semantics exactly (sum
+of quantities, not number of lines). The badge is hidden entirely at count
+`0`. No new API, fetch to Marketplace, database, or duplicated cart state
+was introduced on either side.
+
+### Production smoke — PASS (2026-09-15)
+
+Real cross-domain verification (no real UUIDs/cookie values recorded here):
+
+- Marketplace cart at `1` → Core badge `1` after refresh. **PASS.**
+- Marketplace cart updated to `2` → Core badge `2` after refresh. **PASS.**
+- Marketplace cart cleared to empty → badge disappeared on both Marketplace
+  and Core. **PASS.**
+
+Full checkout was not re-tested as part of this checkpoint — only the
+shared-cart read path above.
+
+**Verdict: SHARED CART CHECKPOINT A — PRODUCTION PASS.**
+
+**Checkpoint B pending (not designed here):** navigating Core's cart icon
+through SSO to land on Marketplace's `/carrito`, instead of its current
+destination.
 
 ---
 
