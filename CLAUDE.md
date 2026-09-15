@@ -77,6 +77,10 @@ Never access Marketplace databases directly.
 
 Never share business logic.
 
+Core is the single authority for identity, registration, membership, and
+clinic. Marketplace consumes that identity through SSO and never creates a
+parallel customer account of its own.
+
 ---
 
 ## Single User Experience

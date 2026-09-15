@@ -2,7 +2,7 @@
 
 # Odentia Core
 
-**Last Updated:** 2026-09-14
+**Last Updated:** 2026-09-15
 
 ---
 
@@ -72,6 +72,18 @@ There is also an independent, unrelated piece of WIP preserved in this repo's
 own git stash (`stash@{0}: "wip: invitation auth acceptance flow"`, a P1
 invitation/auth fix) — not part of RIPS, not touched during any of the above,
 intentionally left stashed for its own separate follow-up.
+
+**Checkpoint 2026-09-15 — SSO Core → Marketplace: PASS end-to-end in
+Production.** A real customer identity handoff from Core to Marketplace is
+now live: an authenticated Core user reaches Marketplace already recognized,
+with Core remaining the sole authority over identity/registration/membership/
+clinic and Marketplace creating no parallel customer account. Verified with a
+real manual smoke against production (Alex Sosa / clínica Muelitas7) — see
+"SSO Core → Marketplace" below for the full architecture, security
+properties, the two Production configuration issues found and fixed during
+smoke, and the smoke result itself. Core's own Marketplace entry points
+(desktop sidebar, mobile tab bar, `/agenda`'s Marketplace card) already start
+this flow — no separate follow-up needed there.
 
 ---
 
@@ -1347,10 +1359,100 @@ Claude MUST NOT:
 
 # Marketplace Status
 
-Marketplace is NOT part of Odentia Core's own implementation. Clinic-facing links
-point to the real, independently-deployed Marketplace app
-(`https://odentia-marketplace.vercel.app`) — no shared database, no shared
-business logic, per Marketplace Independence in CLAUDE.md.
+Marketplace is NOT part of Odentia Core's own implementation — a real,
+independently-deployed app, no shared database, no shared business logic, per
+Marketplace Independence in CLAUDE.md. **As of 2026-09-15, every real Core
+entry point to Marketplace (desktop sidebar, mobile tab bar, `/agenda`'s
+Marketplace card) starts the SSO flow at
+`https://marketplace.odentia.co/auth/sso/start`, never a direct link into
+Marketplace's own UI** — the previous direct link to
+`https://odentia-marketplace.vercel.app` is historical only (that Vercel
+deployment is still where Marketplace itself runs; it's simply no longer
+what Core links to directly). See "SSO Core → Marketplace" below for the
+full flow.
+
+---
+
+# SSO Core → Marketplace — Checkpoint (2026-09-15)
+
+**PASS end-to-end in Production.** An authenticated Core user reaches
+Marketplace already recognized as a real Core identity — Core stays the sole
+authority for registration/authentication/identity/membership/clinic;
+Marketplace creates no parallel customer account for these users (it keeps
+its own separate, historical admin `User`/session for internal store
+management only, untouched by this flow).
+
+## Architecture
+
+1. Core-authenticated user clicks Marketplace (any of the entry points above)
+   → `https://marketplace.odentia.co/auth/sso/start`.
+2. Marketplace generates its own anti-CSRF `state` and redirects to Core's
+   `/marketplace/entrar`.
+3. Core resolves the user's real session/clinic context and calls
+   `issue_marketplace_sso_code()` (`20260915090000_create_marketplace_sso_codes.sql`)
+   to mint an opaque, one-time authorization code.
+4. Core redirects back to Marketplace's `/auth/sso/callback` with that code
+   and the original `state`.
+5. Marketplace exchanges the code server-to-server against Core's
+   `POST /api/sso/exchange`, authenticated with a dedicated
+   `MARKETPLACE_SSO_SHARED_SECRET` (never the Supabase service role key or
+   any other existing credential).
+6. Core consumes the code atomically via `consume_marketplace_sso_code()`
+   (`20260915100000_create_consume_marketplace_sso_code_rpc.sql`) and returns
+   verified identity/clinic context.
+7. Marketplace creates its own `odentia_customer_session` cookie from that —
+   a session distinct from both Core's own `odentia_session` and
+   Marketplace's historical admin session; neither of those is involved.
+
+## Security properties
+
+- The authorization code is opaque, one-time, 120-second TTL; only its hash
+  is ever persisted; a replayed/reused code fails closed.
+- Identity is always derived server-side from Core's own `auth.uid()` and
+  real clinic membership — never accepted as input from Marketplace or the
+  browser.
+- V1 assumes exactly one active clinic membership per user. Multiple active
+  memberships fail the flow closed; there is no clinic selector and none is
+  planned for this phase.
+
+## Production configuration (values withheld — configured, not documented here)
+
+`SUPABASE_SERVICE_ROLE_KEY` and `MARKETPLACE_SSO_SHARED_SECRET` are set on
+Core in Production; the equivalent Marketplace-side secrets and
+`ODENTIA_CORE_URL` are set on Marketplace. See "Configuration issues found
+during smoke" below for the one non-obvious piece of this (the canonical,
+non-redirected Core domain).
+
+## Configuration issues found during smoke (fixed, not open bugs)
+
+1. Core's exchange initially returned `500` because `SUPABASE_SERVICE_ROLE_KEY`
+   was not yet configured in Production — configured, verified fixed.
+2. The exchange then returned `401` because Marketplace was calling
+   `https://odentia.co/api/sso/exchange`, which Vercel redirects to
+   `https://www.odentia.co/...` — a cross-origin redirect that drops the
+   `Authorization` header. Fixed on the Marketplace side only, by pointing
+   `ODENTIA_CORE_URL` at the canonical, non-redirected
+   `https://www.odentia.co` directly. No Core code change was needed.
+
+## Smoke — PASS (2026-09-15)
+
+Manual, real-account verification against Production: authenticated as Alex
+Sosa / clínica Muelitas7, hovering Core's Marketplace entry point confirmed
+the `https://marketplace.odentia.co/auth/sso/start` destination, clicking it
+completed the SSO redirects, and the user landed on
+`https://marketplace.odentia.co`. A separate incognito check confirmed
+Marketplace set `odentia_customer_session` and that no `odentia_session` was
+needed — confirming the customer SSO session and Marketplace's own
+administrative session stay genuinely separate.
+
+**Verdict: SSO Core → Marketplace — PASS END-TO-END.**
+
+## Next phase
+
+**Order attribution / Marketplace customer context** — attribute an order
+placed under `odentia_customer_session` to the identity and clinic Core
+already certified, without ever creating a parallel customer table/account.
+The exact model is intentionally not designed or scheduled yet.
 
 ---
 
