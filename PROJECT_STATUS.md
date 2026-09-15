@@ -85,6 +85,15 @@ smoke, and the smoke result itself. Core's own Marketplace entry points
 (desktop sidebar, mobile tab bar, `/agenda`'s Marketplace card) already start
 this flow — no separate follow-up needed there.
 
+**Checkpoint 2026-09-15 — Marketplace Order Attribution: Checkpoint 1
+PASS.** The downstream phase this SSO checkpoint originally called out as
+"next" is now done and verified in Production: an Order Marketplace creates
+under a valid `odentia_customer_session` is attributed to the Core identity
+that session certifies, and guest checkout (no Core identity) still works
+unchanged. The implementation lives entirely in `odentia-marketplace` — Core
+gained no new table, migration, or downstream responsibility. See "SSO Core
+→ Marketplace" below for the full detail and both Production smoke results.
+
 ---
 
 # REAL E2E STABILIZATION — Functional Freeze Checkpoint (2026-09-09)
@@ -1447,12 +1456,51 @@ administrative session stay genuinely separate.
 
 **Verdict: SSO Core → Marketplace — PASS END-TO-END.**
 
-## Next phase
+## Downstream: Marketplace Order Attribution — Checkpoint 1 (2026-09-15)
 
-**Order attribution / Marketplace customer context** — attribute an order
-placed under `odentia_customer_session` to the identity and clinic Core
-already certified, without ever creating a parallel customer table/account.
-The exact model is intentionally not designed or scheduled yet.
+**PASS end-to-end in Production.** This resolves what this checkpoint
+previously listed as "next phase" (Order attribution / Marketplace customer
+context) — that phase is done, not merely planned. The implementation lives
+entirely in `odentia-marketplace` (functional commit `ca05abf`, migration
+`20260915120000_add_order_core_attribution`) — Core gained no new table,
+migration, or downstream responsibility of its own for this.
+
+When Marketplace creates an Order under a valid `odentia_customer_session`,
+it persists four server-derived reference fields — `coreUserId`, `clinicId`,
+`membershipId`, `coreRole` — read from that certified customer session
+server-side, never from browser-supplied IDs. These are downstream
+references/snapshots in Marketplace only: no FK into Core, no duplication of
+Core's own profiles/clinics/memberships, and Marketplace remains a consumer
+of Core's identity, never an authority over it.
+
+Marketplace still works as a public store: with no valid customer session,
+an Order is created as a **guest** order, with all four fields `NULL`.
+Core-attributed and guest orders are both valid, coexisting order types —
+Core login is never required to buy. Attribution is written once, at Order
+creation; retries/idempotency recovery reuse the winning Order and never
+change user/clinic/membership/role or guest↔Core-attributed status.
+
+### Production smoke — PASS (2026-09-15)
+
+Both real paths were verified in Production (no real UUIDs recorded here):
+
+- **Core-attributed**: Core-authenticated user → real Marketplace entry
+  point → SSO → `odentia_customer_session` → Marketplace checkout → Order
+  persisted with `coreUserId`, `clinicId`, `membershipId` all populated and
+  `coreRole = clinic_admin`. **PASS.**
+- **Guest**: `odentia_customer_session` removed and confirmed absent in an
+  incognito window → direct Marketplace checkout → Order persisted with
+  `coreUserId`/`clinicId`/`membershipId`/`coreRole` all `NULL`. **PASS.**
+
+**Verdict: MARKETPLACE ORDER ATTRIBUTION CHECKPOINT 1 — PASS.**
+
+## Next downstream phase
+
+**Order Attribution — Checkpoint 2: Marketplace admin visibility.** Let a
+Marketplace operator distinguish a Core-attributed order from a guest order
+in Marketplace's own admin order detail. This is Marketplace-only work (its
+UI, any clinic-name lookup, commercial benefits, and billing are all out of
+scope and undesigned) — no Core change is anticipated for this phase.
 
 ---
 
