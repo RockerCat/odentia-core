@@ -94,6 +94,15 @@ unchanged. The implementation lives entirely in `odentia-marketplace` — Core
 gained no new table, migration, or downstream responsibility. See "SSO Core
 → Marketplace" below for the full detail and both Production smoke results.
 
+**Checkpoint 2026-09-15 — Marketplace Order Attribution: Checkpoint 2
+PRODUCTION PASS.** The next downstream phase this same section previously
+called out as pending — Marketplace admin visibility into Core-attributed
+vs. guest orders — is also done and verified in Production. Implementation
+lives entirely in `odentia-marketplace`; Core required no changes. Downstream
+Order Attribution's base (persistence + admin visibility) is now complete —
+see "SSO Core → Marketplace" below for both Checkpoint 1 and Checkpoint 2
+detail.
+
 ---
 
 # REAL E2E STABILIZATION — Functional Freeze Checkpoint (2026-09-09)
@@ -1494,13 +1503,52 @@ Both real paths were verified in Production (no real UUIDs recorded here):
 
 **Verdict: MARKETPLACE ORDER ATTRIBUTION CHECKPOINT 1 — PASS.**
 
-## Next downstream phase
+## Downstream: Marketplace Order Attribution — Checkpoint 2 (2026-09-15)
 
-**Order Attribution — Checkpoint 2: Marketplace admin visibility.** Let a
-Marketplace operator distinguish a Core-attributed order from a guest order
-in Marketplace's own admin order detail. This is Marketplace-only work (its
-UI, any clinic-name lookup, commercial benefits, and billing are all out of
-scope and undesigned) — no Core change is anticipated for this phase.
+**PRODUCTION PASS.** Resolves what this checkpoint previously listed as the
+next downstream phase (Marketplace admin visibility). Implementation lives
+entirely in `odentia-marketplace` (functional commit `77946ee`) — Core
+required no code, DB, or architecture changes for this.
+
+From an Order's admin detail, Marketplace now distinguishes `Cliente
+Odentia` from `Invitado`. For a Core-attributed order, the admin view shows
+minimal downstream context: `clinicId` and a `coreRole` snapshot (e.g.
+`clinic_admin` shown as "Administrador de clínica"). For a guest order, it
+shows `Invitado` with no clinic/role context. Marketplace does not expose
+`coreUserId` or `membershipId` in this view, does not look anything up
+against Core to resolve names, and does not allow editing attribution — this
+is informational only and never an authorization mechanism. Core gained no
+new responsibility from this change.
+
+### Production smoke — PASS (2026-09-15)
+
+Both admin states were verified in Production (no Order IDs or real UUIDs
+recorded here):
+
+- **Guest Admin Visibility**: "Origen del pedido" section shows the
+  `Invitado` badge, correctly explained as a direct Marketplace purchase
+  with no Odentia customer session — no clinic, no role, no `coreUserId`, no
+  `membershipId`; rest of the admin detail unaffected. **PASS.**
+- **Core-attributed Admin Visibility**: "Origen del pedido" section shows
+  the `Cliente Odentia` badge, `clinicId`, and the `clinic_admin` snapshot
+  shown as "Administrador de clínica" — no `coreUserId`, no `membershipId`,
+  no lookup against Core, no attribution editing; rest of the admin detail
+  unaffected. **PASS.**
+
+**Verdict: MARKETPLACE ORDER ATTRIBUTION CHECKPOINT 2 — PRODUCTION PASS.**
+
+## Order Attribution — downstream status
+
+- Checkpoint 1 (persistence / server-side attribution): **PASS.**
+- Checkpoint 2 (Marketplace admin visibility): **PRODUCTION PASS.**
+
+This closes the downstream base of Order Attribution. It does NOT mean
+clinic-name lookup, checkout prefill, commercial benefits, monthly
+aggregation, billing, or subscription integration exist — none of those are
+implemented; treat them as not present until documented otherwise.
+
+Order attribution downstream base is complete; the next product/commercial
+phase will be defined separately.
 
 ---
 
