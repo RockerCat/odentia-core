@@ -112,6 +112,15 @@ it — it never writes, mutates, or clears the cookie, and there is no new
 API, fetch, or duplicated cart state. See "SSO Core → Marketplace" below for
 the full detail and Production smoke results.
 
+**Checkpoint 2026-09-15 — Shared Cart: Checkpoint B — PRODUCTION PASS.**
+Only the cart icon's own link now asks Marketplace's existing customer SSO
+to land on `/carrito` after a successful login, via a `return_to` query
+param Core sends only on that one link — every other Core → Marketplace
+entry point is unchanged and still lands on Marketplace's `/` as before.
+Core does not interpret, persist, or validate `return_to` in any way; none
+of Core's SSO routes, RPCs, or database were touched. See "SSO Core →
+Marketplace" below for the full detail and Production smoke results.
+
 ---
 
 # REAL E2E STABILIZATION — Functional Freeze Checkpoint (2026-09-09)
@@ -1599,9 +1608,42 @@ shared-cart read path above.
 
 **Verdict: SHARED CART CHECKPOINT A — PRODUCTION PASS.**
 
-**Checkpoint B pending (not designed here):** navigating Core's cart icon
-through SSO to land on Marketplace's `/carrito`, instead of its current
-destination.
+## Downstream: Shared Cart — Checkpoint B (2026-09-15)
+
+**PRODUCTION PASS.** Core's cart icon now navigates to Marketplace's
+existing customer SSO with a `return_to=/carrito` query param on that one
+link only (`src/components/shell/authenticated-user-menu.tsx`) — after a
+successful SSO round trip, the user lands on Marketplace's `/carrito`
+instead of `/`. Core's functional commit is `fa61bb4`; Marketplace's is
+`78243e1`.
+
+Every other Core → Marketplace entry point (sidebar, tab bar,
+`marketplace-card.tsx`) is unchanged and still uses the shared
+`MARKETPLACE_URL` constant with no `return_to`, landing on `/` exactly as
+before — this checkpoint touched no other navigation. Core does not
+interpret, persist, or validate `return_to` in any way: it is a plain query
+string on a link the browser follows to Marketplace's own `/auth/sso/start`,
+nothing more. None of Core's SSO routes (`/marketplace/entrar`,
+`/api/sso/exchange`), the `issue_marketplace_sso_code()`/
+`consume_marketplace_sso_code()` RPCs, the anti-CSRF `state` mechanism, or
+`redirect_uri` validation were touched — the destination is handled entirely
+on the Marketplace side via its own short-lived, HttpOnly, single-use
+cookie, revalidated by exact string match only after a fully successful SSO.
+
+### Production smoke — PASS (2026-09-15)
+
+- Core cart icon (empty cart) → SSO → landed on Marketplace's `/carrito`,
+  correctly showing an empty-cart state. **PASS.**
+- Generic Marketplace navigation from Core (not the cart icon) → SSO →
+  landed on Marketplace's `/`, not `/carrito`. **PASS.**
+- SSO started with a `return_to` value other than the one allowed
+  destination → landed on Marketplace's `/`, neither the invalid value nor
+  `/carrito`. **PASS.**
+
+**Verdict: SHARED CART CHECKPOINT B — PRODUCTION PASS.**
+
+**Next focus:** Marketplace header/customer identity consistency with
+Core — not yet designed or implemented.
 
 ---
 
