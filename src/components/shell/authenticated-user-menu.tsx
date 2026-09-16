@@ -41,9 +41,17 @@ type AuthenticatedUserMenuProps = {
 // Shared Cart Checkpoint A: the badge is the REAL Marketplace cart count
 // (see use-marketplace-cart-count.ts), not a static/fake number — Core
 // only ever reads Marketplace's own odentia_cart cookie server-side; it
-// never writes it, never calls Marketplace, and this link's destination
-// (still Marketplace's SSO start, unchanged) is a separate concern from
-// Checkpoint B.
+// never writes it, never calls Marketplace, and this link's destination is
+// a separate concern (Checkpoint B, see CART_HREF below).
+//
+// Shared Cart Checkpoint B: only THIS icon's href carries `return_to`, so
+// only clicking the cart itself asks Marketplace's existing SSO to land on
+// `/carrito` afterward — MARKETPLACE_URL itself (the shared constant every
+// other Core → Marketplace entry point still uses unmodified: sidebar, tab
+// bar, marketplace-card.tsx) is untouched, so generic navigation keeps
+// landing wherever it already does today.
+const CART_HREF = `${MARKETPLACE_URL}?return_to=/carrito`;
+
 export function AuthenticatedUserMenu({ identity, onProfileClick, onSignOut, signingOut }: AuthenticatedUserMenuProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const cartCount = useMarketplaceCartCount();
@@ -60,7 +68,7 @@ export function AuthenticatedUserMenu({ identity, onProfileClick, onSignOut, sig
   return (
     <div className="flex items-center gap-3 sm:gap-4">
       <a
-        href={MARKETPLACE_URL}
+        href={CART_HREF}
         aria-label={cartCount > 0 ? `Ir al Marketplace, ${cartCount} producto${cartCount === 1 ? "" : "s"} en el carrito` : "Ir al Marketplace"}
         className="relative flex size-9 items-center justify-center rounded-lg text-foreground/80 hover:bg-foreground/5"
       >
