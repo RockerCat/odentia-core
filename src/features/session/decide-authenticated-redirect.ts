@@ -1,16 +1,28 @@
 import { restrictedReasonFor, restrictedReasonForPatient } from "./restricted-reason";
-import type { ClinicContext, PatientContext } from "./types";
+import type { ClinicContext, PatientContext, SuperadminContext } from "./types";
 
 // Where an already-authenticated visitor to /login should land — shared by
 // src/app/login/page.tsx's own post-sign-in redirect and src/lib/supabase/
 // proxy.ts's /login gate, so the two decisions can never drift apart.
-// Clinic status takes priority over patient status throughout: a real
-// staff account (clinic_admin/dentist/assistant) is the dominant real
-// flow in this app today, and nothing stops the same real person from
-// ALSO being a patient somewhere unrelated — that combination isn't
-// something this app needs to resolve specially, so "ok" staff context
-// always wins first.
-export function decideAuthenticatedRedirect(clinicContext: ClinicContext, patientContext: PatientContext): string {
+//
+// Priority, explicit and in order: Superadmin, then Clinic, then Patient,
+// then the existing fallback. Superadmin wins first — it's a platform
+// administrative identity (public.platform_roles), never a clinic
+// membership or a patient link, and someone provisioned as Superadmin
+// should always land in Platform even if the same real person also
+// happens to have a clinic membership or a patient link somewhere (e.g. a
+// staff account used for QA) — that combination isn't something this app
+// needs to resolve specially, same reasoning Clinic-over-Patient already
+// used below. Clinic still takes priority over Patient for everyone else:
+// a real staff account (clinic_admin/dentist/assistant) is the dominant
+// real flow in this app today, and nothing stops the same real person
+// from ALSO being a patient somewhere unrelated.
+export function decideAuthenticatedRedirect(
+  superadminContext: SuperadminContext,
+  clinicContext: ClinicContext,
+  patientContext: PatientContext,
+): string {
+  if (superadminContext.status === "ok") return "/platform";
   if (clinicContext.status === "ok") return "/agenda";
   if (patientContext.status === "ok") return "/portal/citas";
 

@@ -9,22 +9,26 @@ import { decideAuthenticatedRedirect } from "@/features/session/decide-authentic
 import { bridgeAuthenticatedContext } from "@/features/session/role-bridge";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
 import { resolvePatientContext } from "@/features/session/resolve-patient-context";
+import { resolveSuperadminContext } from "@/features/session/resolve-superadmin-context";
 import { signInWithPassword } from "@/features/session/sign-in";
 
 // Real Supabase Auth login (see src/features/session/sign-in.ts). Right
-// after signing in, resolves BOTH the user's clinic context (see
-// resolve-clinic-context.ts) and their Patient Portal context (see
-// resolve-patient-context.ts) to route them correctly — /agenda for real
-// staff, /portal/citas for a real linked patient, /registro if neither
-// exists yet, or a safe restricted screen for a suspended/inactive/
-// ambiguous account (see decide-authenticated-redirect.ts for the exact
-// priority) — and to bridge a real staff membership's role into the mock
-// session the rest of the clinic-side app still reads (see role-bridge.ts)
-// until every feature screen moves off mock data; the Patient Portal has
-// no equivalent mock bridge to maintain (see portal-shell.tsx — nothing
-// there reads the mock role for a real Patient). src/lib/supabase/proxy.ts
-// also redirects away from here server-side if there's already a valid
-// real session.
+// after signing in, resolves the user's Superadmin context (see
+// resolve-superadmin-context.ts), clinic context (see
+// resolve-clinic-context.ts), and Patient Portal context (see
+// resolve-patient-context.ts) to route them correctly — /platform for a
+// real platform_roles superadmin, /agenda for real staff, /portal/citas
+// for a real linked patient, /registro if none of those exist yet, or a
+// safe restricted screen for a suspended/inactive/ambiguous account (see
+// decide-authenticated-redirect.ts for the exact priority) — and to
+// bridge a real staff membership's role into the mock session the rest of
+// the clinic-side app still reads (see role-bridge.ts) until every
+// feature screen moves off mock data; neither the Patient Portal nor
+// Platform have an equivalent mock bridge to maintain (see
+// portal-shell.tsx / src/app/platform — nothing there reads the mock role
+// for a real Patient or a real Superadmin). src/lib/supabase/proxy.ts also
+// redirects away from here server-side if there's already a valid real
+// session.
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -47,13 +51,14 @@ export default function LoginPage() {
 
     try {
       const supabase = createClient();
-      const [clinicContext, patientContext] = await Promise.all([
+      const [superadminContext, clinicContext, patientContext] = await Promise.all([
+        resolveSuperadminContext(supabase),
         resolveClinicContext(supabase),
         resolvePatientContext(supabase),
       ]);
 
       bridgeAuthenticatedContext(clinicContext, patientContext);
-      router.push(decideAuthenticatedRedirect(clinicContext, patientContext));
+      router.push(decideAuthenticatedRedirect(superadminContext, clinicContext, patientContext));
     } catch {
       setSubmitting(false);
       setError("No pudimos iniciar sesión. Intenta de nuevo en unos minutos.");

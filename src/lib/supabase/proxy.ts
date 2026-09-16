@@ -3,19 +3,24 @@ import { NextResponse, type NextRequest } from "next/server";
 import { decideAuthenticatedRedirect } from "@/features/session/decide-authenticated-redirect";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
 import { resolvePatientContext } from "@/features/session/resolve-patient-context";
-import { restrictedReasonFor, restrictedReasonForPatient } from "@/features/session/restricted-reason";
-import type { ClinicContext, PatientContext } from "@/features/session/types";
+import { resolveSuperadminContext } from "@/features/session/resolve-superadmin-context";
+import { restrictedReasonFor, restrictedReasonForPatient, restrictedReasonForSuperadmin } from "@/features/session/restricted-reason";
+import type { ClinicContext, PatientContext, SuperadminContext } from "@/features/session/types";
 
 // Called from src/proxy.ts (Next.js 16's request-interception convention,
 // née "middleware" — see https://nextjs.org/docs/messages/middleware-to-proxy).
 //
 // Refreshes the Supabase auth session/cookies on every request, and gates
-// both the clinic team app's private routes (Agenda/Pacientes/Reportes/
-// Clínica/Configuración/Suscripción/Mi perfil profesional) AND the Patient
-// Portal's own private routes against the REAL Supabase session. /admin
-// (Superadmin) deliberately stays out of this real gate: that role has no
-// real auth wired up yet — it keeps the existing mock gate in
-// components/shell/use-route-guard.ts unchanged.
+// the clinic team app's private routes (Agenda/Pacientes/Reportes/
+// Clínica/Configuración/Suscripción/Mi perfil profesional), the Patient
+// Portal's own private routes, AND the real Platform/Superadmin surface
+// (/platform) against the REAL Supabase session. /admin (the OLD, fully
+// mock Phase 1 Superadmin screen) deliberately stays out of this real
+// gate and out of this checkpoint entirely — it keeps its existing mock
+// gate in components/shell/use-route-guard.ts unchanged, unrelated to
+// platform_roles/resolveSuperadminContext(). /platform is the real
+// surface going forward (see CLAUDE.md Domain Model's Superadmin
+// section).
 //
 // Deliberately NO NODE_ENV === "development" bypass here — unlike
 // use-route-guard.ts's own mock-session bypass, this real gate must hold
@@ -45,12 +50,27 @@ const PRIVATE_CLINIC_PATHS = [
 // there itself).
 const PRIVATE_PATIENT_PATHS = ["/portal/citas", "/portal/salud", "/portal/historia", "/portal/clinica", "/portal/perfil"];
 
+// The real Platform/Superadmin surface (Checkpoint 2). Deliberately a
+// blanket prefix (unlike PRIVATE_PATIENT_PATHS' explicit leaves) — unlike
+// the Patient Portal, /platform has no invitation-acceptance-style child
+// route that needs to stay reachable pre-authentication, so every current
+// and future path under it is private by default. This is layer one of
+// two: /platform's own layout also independently calls
+// resolveSuperadminContext() (see src/app/platform/layout.tsx) so a
+// future child route is never exposed solely because this list was
+// forgotten.
+const PRIVATE_PLATFORM_PATHS = ["/platform"];
+
 function isPrivateClinicPath(pathname: string): boolean {
   return PRIVATE_CLINIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
 function isPrivatePatientPath(pathname: string): boolean {
   return PRIVATE_PATIENT_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
+
+function isPrivatePlatformPath(pathname: string): boolean {
+  return PRIVATE_PLATFORM_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
 // F001 fix: "no-membership" used to mean one thing only — a genuinely new
@@ -83,6 +103,21 @@ function decidePatientRedirect(context: PatientContext): string | null {
   if (context.status === "ok") return null;
   if (context.status === "unauthenticated") return "/login";
   return `/acceso-restringido?motivo=${restrictedReasonForPatient(context.status)}`;
+}
+
+// /platform's own gate. Same two-branch shape as decideClinicRedirect/
+// decidePatientRedirect above: unauthenticated goes to plain /login (no
+// return-URL/`next` mechanism exists for any private path in this proxy
+// today — not inventing one here either, same as the other two), an
+// authenticated-but-not-superadmin visitor gets the honest restricted
+// screen, never a silent bounce and never any Platform content rendered
+// first. Exported (unlike decidePatientRedirect) so it's independently
+// unit-testable the same way decideClinicRedirect already is — see
+// decide-platform-redirect.test.ts.
+export function decidePlatformRedirect(context: SuperadminContext): string | null {
+  if (context.status === "ok") return null;
+  if (context.status === "unauthenticated") return "/login";
+  return `/acceso-restringido?motivo=${restrictedReasonForSuperadmin(context.status)}`;
 }
 
 // Supabase's default hosted email template ({{ .ConfirmationURL }})
@@ -144,16 +179,17 @@ export async function updateSession(request: NextRequest) {
   let redirectTo: string | null = null;
 
   if (pathname === "/login") {
-    // Needs both contexts: an already-authenticated visitor could be
-    // either real staff or a real linked patient (or neither, or an
-    // ambiguous/blocked patient state) — see decideAuthenticatedRedirect's
+    // Needs all three contexts: an already-authenticated visitor could be
+    // a real Superadmin, real staff, a real linked patient (or neither, or
+    // an ambiguous/blocked patient state) — see decideAuthenticatedRedirect's
     // own priority order.
-    const [clinicContext, patientContext] = await Promise.all([
+    const [superadminContext, clinicContext, patientContext] = await Promise.all([
+      resolveSuperadminContext(supabase),
       resolveClinicContext(supabase),
       resolvePatientContext(supabase),
     ]);
     if (clinicContext.status !== "unauthenticated") {
-      redirectTo = decideAuthenticatedRedirect(clinicContext, patientContext);
+      redirectTo = decideAuthenticatedRedirect(superadminContext, clinicContext, patientContext);
     }
   } else if (isPrivateClinicPath(pathname)) {
     const clinicContext = await resolveClinicContext(supabase);
@@ -164,6 +200,8 @@ export async function updateSession(request: NextRequest) {
     redirectTo = decideClinicRedirect(clinicContext, isLinkedPatient);
   } else if (isPrivatePatientPath(pathname)) {
     redirectTo = decidePatientRedirect(await resolvePatientContext(supabase));
+  } else if (isPrivatePlatformPath(pathname)) {
+    redirectTo = decidePlatformRedirect(await resolveSuperadminContext(supabase));
   } else if (pathname === "/") {
     // Only ever activates when Supabase's own redirect actually carried a
     // `code` — a plain visit to "/" (no query params) falls through this

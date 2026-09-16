@@ -9,8 +9,10 @@ import { RestrictedAccessSignOut } from "@/features/session/restricted-access-si
 // suspended, or (V1, no selector UI yet) has more than one active
 // membership; or a real Patient session with no patient_user_links row at
 // all, or more than one (same "no selector yet" reasoning), or whose
-// linked clinic is suspended. Never billing/subscription — that's a
-// separate, future concern.
+// linked clinic is suspended; or a real, authenticated session with no
+// public.platform_roles superadmin row trying to reach /platform
+// directly. Never billing/subscription — that's a separate, future
+// concern.
 const COPY: Record<RestrictedReason, { title: string; body: string }> = {
   suspendida: {
     title: "Tu clínica está suspendida",
@@ -31,6 +33,10 @@ const COPY: Record<RestrictedReason, { title: string; body: string }> = {
   "paciente-multiple": {
     title: "Tu cuenta está vinculada a más de un paciente",
     body: "Por ahora el Portal solo admite un paciente activo por cuenta desde aquí. Estamos trabajando en el selector — contáctanos si necesitas acceso antes.",
+  },
+  "no-superadmin": {
+    title: "No tienes acceso a Platform",
+    body: "Esta sección está reservada para el equipo de Odentia. Si crees que deberías tener acceso, contacta a soporte.",
   },
 };
 

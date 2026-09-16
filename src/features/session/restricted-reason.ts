@@ -2,7 +2,13 @@
 // real route guard (src/lib/supabase/proxy.ts) so the ?motivo= query param
 // they both redirect to /acceso-restringido with never drifts apart — see
 // src/app/acceso-restringido/page.tsx for where it's read.
-export type RestrictedReason = "inactiva" | "suspendida" | "multiple" | "paciente-no-vinculado" | "paciente-multiple";
+export type RestrictedReason =
+  | "inactiva"
+  | "suspendida"
+  | "multiple"
+  | "paciente-no-vinculado"
+  | "paciente-multiple"
+  | "no-superadmin";
 
 export function restrictedReasonFor(
   status: "membership-inactive" | "clinic-suspended" | "multiple-memberships",
@@ -39,5 +45,20 @@ export function restrictedReasonForPatient(status: "not-linked" | "multiple-link
       return "paciente-multiple";
     case "clinic-suspended":
       return "suspendida";
+  }
+}
+
+// Platform's own counterpart, used only by src/lib/supabase/proxy.ts's own
+// /platform gate — someone actually trying to REACH /platform while
+// authenticated but not a real platform_roles superadmin gets this honest
+// restricted screen, same "escalate on direct access, not on /login
+// fallthrough" split as restrictedReasonForPatient's own comment already
+// describes for "not-linked". decideAuthenticatedRedirect deliberately
+// does NOT call this — a non-superadmin /login visitor just falls through
+// to its existing Clinic/Patient/fallback branches unchanged.
+export function restrictedReasonForSuperadmin(status: "not-superadmin"): RestrictedReason {
+  switch (status) {
+    case "not-superadmin":
+      return "no-superadmin";
   }
 }

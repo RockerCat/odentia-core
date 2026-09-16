@@ -307,15 +307,35 @@ Manages the entire platform:
 - Marketplace
 - Global operations
 
-**Real auth for this role is currently out of scope.** `/admin` is fully
-mock UI (`src/features/admin/mock-data.ts`), with no `resolveClinicContext()`
-call and no route protection beyond the mock role switcher —
+**Platform/Superadmin authorization always comes from `public.platform_roles`
+(role = `superadmin`), never from `clinic_memberships`, never from Supabase
+`user_metadata`, and never from the mock role switcher.** A Superadmin is
+never an artificial member of some clinic and never a `patient_user_links`
+row — platform administration is its own, separate authorization plane.
+`resolveSuperadminContext()` (`src/features/session/
+resolve-superadmin-context.ts`) is the single source of truth for "is this
+real Supabase user a real platform Superadmin," the same
+resolver-per-identity-plane pattern `resolveClinicContext()`/
+`resolvePatientContext()` already establish for Clinic/Patient. The real,
+protected surface is `/platform` (`src/app/platform/`), gated in two
+independent layers — `src/lib/supabase/proxy.ts`'s own private-path list,
+and `/platform`'s own layout re-resolving the same real context — so a
+future child route added under `/platform` is never exposed solely
+because one of those two forgets it. Assigning `platform_roles` is a
+deliberate, exceptional administrative operation with no self-service,
+no invitation flow, and no first-user-becomes-superadmin bootstrap; a row
+is inserted only by direct, out-of-band administrative action.
+
+`/admin` is the OLD, separate, fully mock UI
+(`src/features/admin/mock-data.ts`), with no `resolveClinicContext()` call
+and no route protection beyond the mock role switcher —
 `ClinicContext.membership.role` only ever resolves to `clinic_admin |
 dentist | assistant` for a real session, so `role-bridge.ts` can never
 produce a real `"superadmin"` mock role. `/admin` is therefore
 unreachable through any real login in production, only through the DEV
-role switcher in development. Do not build toward real Superadmin auth
-unless explicitly asked — it's not part of the current MVP scope.
+role switcher in development — it is unrelated to `platform_roles`/
+`resolveSuperadminContext()` above, not yet migrated or removed, and not
+itself a model to copy for any future real authorization.
 
 ### Clinic Admin
 

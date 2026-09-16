@@ -109,3 +109,19 @@ export type PatientContext =
       patient: PatientInfo;
       clinic: PatientClinic;
     };
+
+// Platform/Superadmin's own identity — real, resolved entirely from
+// public.platform_roles (see resolve-superadmin-context.ts), the
+// platform-level counterpart to ClinicContext/PatientContext above. A
+// superadmin is never a clinic_memberships row (never an artificial
+// member of some clinic) and never a patient_user_links row — platform
+// administration is a separate authorization plane entirely (see
+// CLAUDE.md Domain Model's Superadmin section). "not-superadmin" covers
+// both "authenticated with zero platform_roles rows" and "authenticated
+// with a platform_roles row that isn't (yet) `superadmin`" — the enum
+// only has that one value today, but the status name deliberately
+// doesn't assume that never changes.
+export type SuperadminContext =
+  | { status: "unauthenticated" }
+  | { status: "not-superadmin" }
+  | { status: "ok"; profile: Profile };

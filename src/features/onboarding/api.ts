@@ -20,9 +20,9 @@ export function buildSignUpRedirectTo(origin: string, next: string): string {
   return `${origin}${next}`;
 }
 
-export type RegistroReentryDecision = "account" | "clinic" | "redirect-to-product";
+export type RegistroReentryDecision = "account" | "clinic" | "redirect-to-product" | "redirect-to-portal";
 
-// The exact 3-way branch behind /registro's reentry check (see
+// The exact branch behind /registro's reentry check (see
 // onboarding-wizard.tsx's mount effect, the only caller), extracted so
 // it's independently testable without a DOM/mocked Supabase client — same
 // "pure decide-where-to-go function" convention this codebase already
@@ -42,9 +42,32 @@ export type RegistroReentryDecision = "account" | "clinic" | "redirect-to-produc
 // completed clinic drops the user straight into the product instead of a
 // dead end — and, just as importantly, never lets them create a second
 // clinic by accident.
-export function decideRegistroReentry(hasSession: boolean, hasActiveMembership: boolean): RegistroReentryDecision {
+//
+// "redirect-to-portal" (PROMPT NINJA "Checkpoint 1B — Impedir que un
+// Paciente sea enviado al onboarding de clínica"): hasActiveMembership
+// alone can't tell a genuinely new staff founder apart from a real
+// Patient — a Patient never has a clinic_memberships row at all (see
+// CLAUDE.md Domain Model), so she used to fall through to the exact same
+// "clinic" branch as someone mid-onboarding, landing on Paso 2 of a
+// clinic-creation wizard she has no business seeing. hasPatientAccess is
+// resolved from patient_user_links (via hasAnyPatientLink(), the same
+// real source src/lib/supabase/proxy.ts's own decideClinicRedirect and
+// decideAuthenticatedRedirect already treat as authoritative for "is this
+// account a linked Patient") — never a client-supplied flag. Precedence
+// mirrors decideAuthenticatedRedirect exactly: an active clinic
+// membership wins first (unchanged from before), Patient access is
+// checked only once that's ruled out, and "neither" still falls through
+// to "clinic" unchanged — that last case is deliberately NOT redesigned
+// here (see this task's own scope note: it changes once self-service
+// clinic creation is retired, not before).
+export function decideRegistroReentry(
+  hasSession: boolean,
+  hasActiveMembership: boolean,
+  hasPatientAccess: boolean,
+): RegistroReentryDecision {
   if (!hasSession) return "account";
   if (hasActiveMembership) return "redirect-to-product";
+  if (hasPatientAccess) return "redirect-to-portal";
   return "clinic";
 }
 

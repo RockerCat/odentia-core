@@ -514,6 +514,38 @@ touched; if code and this section ever disagree, the code wins (see CLAUDE.md).
   bucket), and the founding `clinic_admin` membership via a `SECURITY DEFINER`
   bootstrap RPC (`bootstrap_clinic`). Handles email-confirmation-pending and
   mid-onboarding-reentry states.
+- **Checkpoint 2026-09-16 — self-service clinic creation is being retired.**
+  Odentia Core is moving to a commercial/provisioning model where only
+  SUPERADMIN can create a clinic (see the read-only audit that scoped this
+  change). Checkpoint 1A closed the backend authorization gap first, in
+  isolation: `bootstrap_clinic()` now requires `is_platform_superadmin()`
+  internally (migration `20260916090000`) — a plain `GRANT ... TO
+  authenticated` was never sufficient authorization on its own, and the RPC
+  turned out to exist as two live overloaded functions (the original
+  20-argument signature and a 22-argument one with `location_latitude`/
+  `location_longitude`, the one the real onboarding client actually calls),
+  both now gated identically. **This is a deliberate intermediate state:**
+  `/registro`'s wizard still renders and still calls `bootstrap_clinic()`
+  for a normal user, but that call now fails with an authorization error
+  for anyone who isn't a real platform superadmin — self-service clinic
+  creation no longer works end to end, on purpose, ahead of a later
+  checkpoint that repoints the UI entirely (landing CTAs, `/registro`
+  itself) to the new prospecto/provisioning flow.
+- **Checkpoint 1B (same initiative, 2026-09-16) — `/registro`'s reentry
+  check no longer misclassifies a Patient.** `decideRegistroReentry()`
+  (`src/features/onboarding/api.ts`) used to decide purely from
+  `hasActiveMembership` (`clinic_memberships`), so an authenticated real
+  Patient — who never has a `clinic_memberships` row at all — fell through
+  to the same "resume at Paso 2" branch as someone mid-clinic-onboarding.
+  It now also takes `hasPatientAccess` (resolved from `patient_user_links`
+  via the existing `hasAnyPatientLink()` helper, never a client-supplied
+  flag) and redirects a linked Patient with no clinic membership straight
+  to `/portal/citas` instead. Precedence matches
+  `decideAuthenticatedRedirect()` exactly: an active clinic membership
+  still wins first if both are somehow present. The "neither clinic
+  membership nor Patient access" case is unchanged on purpose — it still
+  resumes onboarding, pending the later checkpoint that retires
+  self-service entirely.
 - **Real bugs found and fixed in production this pass (2026-09-11):**
   - **NIT (tax_id) rejected by `clinics_tax_id_format`** — `bootstrap_clinic()`
     (Paso 3) sent the NIT exactly as typed, while `updateClinicInfo()` (the
@@ -555,6 +587,46 @@ touched; if code and this section ever disagree, the code wins (see CLAUDE.md).
   to trace a specific report of this, confirmed the account genuinely had
   no membership, and was fully removed afterward (the file is
   byte-identical to before the instrumentation).
+
+## Platform / Superadmin (real, Checkpoint 2 — 2026-09-16)
+
+Part of the same self-service-retirement initiative as the onboarding
+checkpoints above — see Checkpoints 1A/1B just above and CLAUDE.md's own
+Superadmin section for the permanent architectural rule this establishes.
+
+- **1A — CLOSED, applied to the remote Supabase project** as migration
+  `20260916090000_require_superadmin_to_bootstrap_clinic.sql`:
+  `bootstrap_clinic()` now requires `is_platform_superadmin()` internally
+  (both of its two live overloads — see that migration's own comment on
+  why there were two).
+- **1B — CLOSED.** `/registro`'s reentry check (`decideRegistroReentry()`)
+  now also recognizes real Patient access (`patient_user_links`, via
+  `hasAnyPatientLink()`) and redirects to `/portal/citas` instead of
+  treating a Patient as someone who should continue clinic onboarding.
+- **Checkpoint 2 — IMPLEMENTED.** Odentia can now resolve a real,
+  authenticated Superadmin server-side from `public.platform_roles` (the
+  existing real platform-authorization table, previously unused by the
+  app) via `resolveSuperadminContext()`
+  (`src/features/session/resolve-superadmin-context.ts`) — the same
+  resolver-per-identity-plane pattern as `resolveClinicContext()`/
+  `resolvePatientContext()`. `/platform` (`src/app/platform/`) is a real,
+  protected surface, gated in two independent layers: `src/lib/supabase/
+  proxy.ts`'s own private-path list (`PRIVATE_PLATFORM_PATHS`) and
+  `/platform/layout.tsx`'s own independent re-check, so a future child
+  route under `/platform` can't be exposed by forgetting just one of the
+  two. `decideAuthenticatedRedirect()` (shared by `/login` and
+  `proxy.ts`) now takes a `SuperadminContext` first and sends a real
+  Superadmin to `/platform` ahead of any Clinic/Patient status she might
+  also happen to have. `/platform` itself is deliberately minimal — a
+  single confirmation page, no dashboard, no prospectos, no clinic
+  management yet. `/admin` (the old, fully mock Phase 1 Superadmin
+  screen) is untouched and out of scope for this checkpoint.
+- **Next step:** commercial/prospectos flow (`Solicitar demo` →
+  prospecto → gestión por Superadmin) and real clinic provisioning from
+  `/platform`, per the read-only audit that originally scoped this whole
+  initiative. `platform_roles` still has no self-service or automatic
+  assignment path — granting a real Superadmin role remains a manual,
+  out-of-band administrative action.
 
 ## Clínica (real, Clinic Admin)
 

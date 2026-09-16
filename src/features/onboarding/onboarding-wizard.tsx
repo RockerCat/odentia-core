@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/shell/logo";
+import { hasAnyPatientLink } from "@/features/session/has-patient-link";
 import { signOutSupabase } from "@/features/session/sign-out";
 import { createClient } from "@/lib/supabase/client";
 import { AccountStep } from "./account-step";
@@ -120,17 +121,26 @@ export function OnboardingWizard() {
           data: { session },
         } = await supabase.auth.getSession();
 
-        // Only worth checking membership once a session actually exists —
-        // see decideRegistroReentry's own comment for the full 3-way
-        // decision this mirrors.
-        const { found } = session ? await findActiveMembership() : { found: false };
+        // Only worth checking membership/patient access once a session
+        // actually exists — see decideRegistroReentry's own comment for
+        // the full decision this mirrors. hasAnyPatientLink() is the same
+        // real patient_user_links-backed source proxy.ts's own
+        // decideClinicRedirect already treats as authoritative — never a
+        // client-supplied flag.
+        const [{ found }, hasPatientAccess] = session
+          ? await Promise.all([findActiveMembership(), hasAnyPatientLink(supabase)])
+          : ([{ found: false }, false] as const);
         if (cancelled) return;
 
-        const decision = decideRegistroReentry(Boolean(session), found);
+        const decision = decideRegistroReentry(Boolean(session), found, hasPatientAccess);
         if (decision === "redirect-to-product") {
           // `phase` intentionally stays "loading" — this component is
           // about to unmount.
           router.replace("/agenda");
+          return;
+        }
+        if (decision === "redirect-to-portal") {
+          router.replace("/portal/citas");
           return;
         }
         setPhase(decision);

@@ -60,23 +60,38 @@ describe("sanitizeTaxId", () => {
 });
 
 // Regression coverage for "PROMPT NINJA — Bug: /registro queda en bucle y
-// no permite reiniciar onboarding": the exact 3-way branch behind the
-// reentry check, covering all four diagnostic states from that task.
+// no permite reiniciar onboarding" plus "Checkpoint 1B — Impedir que un
+// Paciente sea enviado al onboarding de clínica": the exact branch behind
+// the reentry check, covering every diagnostic state from both tasks.
 describe("decideRegistroReentry", () => {
+  // A — no session
   it("a brand-new visitor with no session starts at Paso 1 (account)", () => {
-    expect(decideRegistroReentry(false, false)).toBe("account");
+    expect(decideRegistroReentry(false, false, false)).toBe("account");
   });
 
-  it("no session always wins, even if a stale membership lookup somehow says true", () => {
-    expect(decideRegistroReentry(false, true)).toBe("account");
+  it("no session always wins, even if a stale membership/patient lookup somehow says true", () => {
+    expect(decideRegistroReentry(false, true, true)).toBe("account");
   });
 
-  it("a real session with no active membership resumes at Paso 2 (clinic), never blocked", () => {
-    expect(decideRegistroReentry(true, false)).toBe("clinic");
-  });
-
+  // B — session + active clinic membership
   it("a real session with an active membership redirects to the product — never a second-clinic attempt, never a dead-end screen", () => {
-    expect(decideRegistroReentry(true, true)).toBe("redirect-to-product");
+    expect(decideRegistroReentry(true, true, false)).toBe("redirect-to-product");
+  });
+
+  // C — session + Patient access, no clinic membership
+  it("a real session with Patient access and no clinic membership redirects to the Patient Portal, never Paso 2 of clinic onboarding", () => {
+    expect(decideRegistroReentry(true, false, true)).toBe("redirect-to-portal");
+  });
+
+  // D — session, neither clinic membership nor Patient access (still onboarding, unchanged for now)
+  it("a real session with no active membership and no Patient access resumes at Paso 2 (clinic), never blocked", () => {
+    expect(decideRegistroReentry(true, false, false)).toBe("clinic");
+  });
+
+  // E — session + both clinic membership and Patient access: clinic wins,
+  // same precedence decideAuthenticatedRedirect already establishes.
+  it("a real session with BOTH an active membership and Patient access still redirects to the product — clinic membership takes precedence, same as decideAuthenticatedRedirect", () => {
+    expect(decideRegistroReentry(true, true, true)).toBe("redirect-to-product");
   });
 });
 
