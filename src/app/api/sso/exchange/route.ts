@@ -99,5 +99,9 @@ export async function POST(request: NextRequest) {
     firstName: row.first_name,
     lastName: row.last_name,
     email: row.email,
+    // From consume_marketplace_sso_code()'s own clinics lookup (see
+    // 20260915130000) — never a second query, never accepted from the
+    // request body.
+    clinicName: row.clinic_name,
   });
 }
