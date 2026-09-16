@@ -32,10 +32,11 @@ type LandingHeaderProps = {
 
 export function LandingHeader({ active, authContext = null }: LandingHeaderProps) {
   const router = useRouter();
-  // redirectTo="/" — signing out from the public landing must stay/return
-  // there, never the app shell's own "/login" default (see
-  // use-shell-logout.ts).
-  const { signOut, signingOut } = useShellLogout("/");
+  // Coordinated logout (see use-shell-logout.ts): every real "Salir"
+  // click, from any caller, now ends at the same place via Marketplace's
+  // own cleanup hop — there is no longer a distinct "/" destination for
+  // this landing header to ask for.
+  const { signOut, signingOut } = useShellLogout();
 
   if (authContext?.status === "ok") {
     const { profile, clinic, professionalProfile } = authContext;
