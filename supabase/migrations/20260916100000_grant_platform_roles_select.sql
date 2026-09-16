@@ -1,0 +1,36 @@
+-- Odentia Core — base table privilege for real Superadmin resolution
+--
+-- Production incident, confirmed root cause (post-21cc997): every login
+-- started failing with the generic "No pudimos iniciar sesión" — real
+-- Supabase Auth (signInWithPassword) succeeds every time; the failure is
+-- entirely post-auth, inside resolveSuperadminContext()'s own query:
+--
+--   .from("platform_roles").select("role").eq("profile_id", user.id).maybeSingle()
+--   → 42501: permission denied for table platform_roles
+--
+-- Same class of gap as 20260826153000_grant_onboarding_table_privileges.sql/
+-- 20260827130000_grant_session_context_select.sql/
+-- 20260829100000_grant_patient_user_links_select.sql: Postgres checks
+-- table-level GRANT before it ever evaluates a row-security policy, so a
+-- fully authenticated user whose session satisfies platform_roles'
+-- existing USING clause still gets a hard permission-denied, before RLS
+-- is even in the picture. public.platform_roles has carried
+-- platform_roles_select_self_or_superadmin (foundation RLS migration)
+-- since it was created, but — unlike every other table
+-- resolveClinicContext()/resolvePatientContext() touch — it never
+-- received the base GRANT those migrations already gave profiles/
+-- professional_profiles/clinic_memberships/clinics/patient_user_links/
+-- patients, because nothing exercised it from a real authenticated
+-- client query until resolveSuperadminContext() (Checkpoint 2).
+--
+-- SELECT only, to authenticated only: platform_roles_select_self_or_
+-- superadmin already restricts rows to the caller's own row
+-- (profile_id = auth.uid()) or, for an existing superadmin, every row —
+-- this GRANT only lets that policy be reached at all, it does not widen
+-- what it returns. There is no INSERT/UPDATE/DELETE policy on this table
+-- at all (granting a platform role is a deliberate out-of-band
+-- administrative action, not something exposed through the Data API —
+-- see the foundation RLS migration's own comment), so no write privilege
+-- is granted here either. Not granted to anon: platform_roles has no
+-- policy that would ever apply to an unauthenticated caller anyway.
+grant select on public.platform_roles to authenticated;

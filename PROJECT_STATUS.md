@@ -621,12 +621,64 @@ Superadmin section for the permanent architectural rule this establishes.
   single confirmation page, no dashboard, no prospectos, no clinic
   management yet. `/admin` (the old, fully mock Phase 1 Superadmin
   screen) is untouched and out of scope for this checkpoint.
-- **Next step:** commercial/prospectos flow (`Solicitar demo` →
-  prospecto → gestión por Superadmin) and real clinic provisioning from
-  `/platform`, per the read-only audit that originally scoped this whole
-  initiative. `platform_roles` still has no self-service or automatic
-  assignment path — granting a real Superadmin role remains a manual,
-  out-of-band administrative action.
+- **Checkpoints 1A + 1B + 2 shipped to production** as commit `21cc997`
+  (`eaaaed8..21cc997`), migration `20260916090000` applied to the remote
+  Supabase project, local/remote in sync, and the first real Superadmin
+  row created manually (`alexsosa.me@gmail.com`,
+  `platform_roles.role = 'superadmin'`).
+- **PRODUCTION INCIDENT (post-`21cc997`) — login started failing for
+  everyone, constantly.** UI showed the generic "No pudimos iniciar
+  sesión. Intenta de nuevo en unos minutos." for every login attempt,
+  any role — misleading, since real Supabase Auth (`signInWithPassword`)
+  was succeeding every time. **Root cause, confirmed:**
+  `resolveSuperadminContext()`'s own query
+  (`.from("platform_roles").select("role").eq("profile_id", user.id)`)
+  hit `42501: permission denied for table platform_roles` — `public.
+  platform_roles` has carried its `platform_roles_select_self_or_
+  superadmin` RLS policy since it was created, but, unlike every other
+  table `resolveClinicContext()`/`resolvePatientContext()` touch, it
+  never received the base `GRANT SELECT ... TO authenticated` Postgres
+  requires before RLS is even evaluated — the exact same gap class
+  already fixed once before for `clinic_memberships`/`clinics`
+  (`20260826153000_grant_onboarding_table_privileges.sql`) and for
+  `profiles`/`professional_profiles`/`patient_user_links` after them.
+  Nothing exercised `platform_roles` from a real authenticated client
+  query until `resolveSuperadminContext()` (Checkpoint 2), which is why
+  this surfaced only now. Since that resolver runs on every single login
+  (any role, via `Promise.all` in `login/page.tsx`), the missing grant
+  broke login universally, not just for the Superadmin — and
+  `login/page.tsx`'s own `catch` block shows the identical generic
+  message whether `signInWithPassword` itself fails or a post-auth
+  resolver throws, which is why a real, successful authentication
+  presented as a "wrong credentials"-shaped error. **Hotfix migration:**
+  `20260916100000_grant_platform_roles_select.sql` — additive, `SELECT`
+  only, `authenticated` only, no RLS/policy change, no write privilege,
+  `anon` untouched. **Applied to the remote Supabase project** (`npx
+  supabase db push`).
+- **Incident CLOSED — real production smoke, PASS.** With the hotfix
+  live, `alexsosa.me@gmail.com` logged in on `odentia.co` and landed on
+  `/platform`, which rendered correctly — the real, protected Platform
+  surface, not `/registro`, not an error. **Checkpoint 2 / Superadmin
+  production smoke: PASS.** The current `/platform` page is a
+  deliberate placeholder (a single confirmation screen, no dashboard) —
+  not a gap to fix, the actual scope boundary for this checkpoint.
+- **Known follow-up, not blocking:** `login/page.tsx`'s error boundary
+  still shows the same generic "No pudimos iniciar sesión" message
+  whether `signInWithPassword` itself fails or a post-auth resolver
+  throws (this is what made the incident above look like a credentials
+  problem at first). Worth a small, focused fix later so a future
+  resolver failure doesn't get misdiagnosed the same way — does not
+  block the next Platform checkpoint.
+- **Next step:** Platform / Clínicas — creación directa de clínica por
+  Superadmin (Ruta B from the read-only audit that scoped this whole
+  initiative: Superadmin → Clínicas → Nueva clínica, converging on one
+  provisioning mechanism also reusable later for the prospecto-driven
+  Ruta A). The approved visual design already live at
+  `demo.odentia.co/admin` is the visual reference for this and future
+  real Platform screens — reuse that look/structure, don't redesign
+  Platform from scratch. `platform_roles` still has no self-service or
+  automatic assignment path — granting a real Superadmin role remains a
+  manual, out-of-band administrative action.
 
 ## Clínica (real, Clinic Admin)
 
