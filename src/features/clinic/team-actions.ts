@@ -175,3 +175,113 @@ export async function acceptClinicInvitation(token: string): Promise<AcceptInvit
   const row = Array.isArray(data) ? data[0] : data;
   return { status: "ok", clinicId: row.clinic_id, role: row.role };
 }
+
+// Real, pre-auth invitation validation (PROMPT NINJA "Checkpoint 1 —
+// reparar infraestructura común de invitaciones") — lets /invitacion/
+// [token] fail fast on an invalid/expired/accepted/revoked token instead
+// of only discovering that at the very end of a full signup + email
+// confirmation round trip. `usable` is only ever true for `status ===
+// "pending"` (see preview_clinic_invitation()'s own comment) — never
+// treat any other status as safe to proceed past. A transport/RPC error
+// here is deliberately mapped to the SAME shape as "not found" — this
+// must fail closed, never render as if the token were valid.
+export type InvitationPreview = {
+  status: "pending" | "expired" | "accepted" | "revoked" | "not-found";
+  usable: boolean;
+  email: string | null;
+  role: TeamMemberRole | null;
+  clinicName: string | null;
+  // Checkpoint 1B — whether the invited email already has a real Odentia
+  // account (public.profiles, resolved server-side inside the RPC off
+  // the token's own invited email — never a client-supplied email; see
+  // that migration's own comment). Only ever meaningful when `usable` is
+  // true; never used to render anything on its own.
+  userExists: boolean;
+  // Checkpoint 3 — pre-provisioned identity for a Superadmin-issued first
+  // Clinic Admin invitation (see provision_first_clinic_admin_invitation(),
+  // 20260916150000). Always null for a traditional dentist/assistant
+  // invitation (invite_clinic_member() never sets these columns) — the
+  // page's own password-only branch only activates when all three are
+  // present, never on role/userExists alone.
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+};
+
+const NOT_FOUND_PREVIEW: InvitationPreview = {
+  status: "not-found",
+  usable: false,
+  email: null,
+  role: null,
+  clinicName: null,
+  userExists: false,
+  firstName: null,
+  lastName: null,
+  phone: null,
+};
+
+export async function previewClinicInvitation(token: string): Promise<InvitationPreview> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("preview_clinic_invitation", { p_token: token });
+
+  if (error) return NOT_FOUND_PREVIEW;
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || row.status === null) return NOT_FOUND_PREVIEW;
+
+  return {
+    status: row.status,
+    usable: row.usable,
+    email: row.email,
+    role: row.role,
+    clinicName: row.clinic_name,
+    userExists: row.user_exists,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    phone: row.phone,
+  };
+}
+
+// The exact branch behind /invitacion/[token]'s own session-vs-invitation
+// decision, extracted so it's independently testable without a
+// DOM/mocked Supabase client — same "pure decide-where-to-go function"
+// convention this codebase already uses for decideClinicRedirect/
+// decideAuthenticatedRedirect. Only ever called once a preview has
+// already confirmed `usable`, so `invitedEmail`/`userExists` are always
+// the real, server-resolved values for THIS token, never a client guess.
+export type InvitationSessionView = "need-auth" | "existing-user" | "ready" | "wrong-session";
+
+export function decideInvitationSessionView(
+  authedEmail: string | null,
+  invitedEmail: string,
+  userExists: boolean,
+): InvitationSessionView {
+  if (!authedEmail) return userExists ? "existing-user" : "need-auth";
+  return authedEmail.toLowerCase() === invitedEmail.toLowerCase() ? "ready" : "wrong-session";
+}
+
+// Checkpoint 3 — the exact branch behind /invitacion/[token]'s
+// password-only vs. traditional AccountStep decision, extracted for the
+// same independent-testability reason as decideInvitationSessionView
+// above. Only ever meaningful for a brand-new email (the "need-auth"
+// session view) — an existing-user/ready/wrong-session flow never
+// touches signup at all, so this is never consulted there.
+//
+// Deliberately requires role === "clinic_admin" AND all three identity
+// fields present — never role alone: a traditional dentist/assistant
+// invitation (invite_clinic_member()) always has first_name/last_name/
+// phone null on clinic_invitations, so this correctly stays false for
+// every one of those regardless of role, and a clinic_admin invitation
+// missing any of the three (shouldn't happen —
+// provision_first_clinic_admin_invitation() requires all three — but
+// checked explicitly rather than assumed) safely falls back to the
+// existing AccountStep instead of rendering a password-only form with
+// missing context.
+export function hasPreProvisionedIdentity(preview: {
+  role: TeamMemberRole | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+}): boolean {
+  return preview.role === "clinic_admin" && preview.firstName !== null && preview.lastName !== null && preview.phone !== null;
+}

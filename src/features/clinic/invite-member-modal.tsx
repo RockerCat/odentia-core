@@ -100,7 +100,7 @@ export function InviteMemberModal({
               </span>
               <p className="text-sm font-medium text-foreground">Invitación creada</p>
               <p className="text-xs text-muted-foreground">
-                Todavía no enviamos correos automáticamente — comparte este enlace tú mismo con {email.trim()} (vence en
+                Comparte este enlace con {email.trim()} (vence en
                 7 días, y solo se muestra esta vez).
               </p>
             </div>

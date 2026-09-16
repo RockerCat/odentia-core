@@ -9,6 +9,7 @@ import { decideAuthenticatedRedirect } from "@/features/session/decide-authentic
 import { bridgeAuthenticatedContext } from "@/features/session/role-bridge";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
 import { resolvePatientContext } from "@/features/session/resolve-patient-context";
+import { resolveLoginReturnTo } from "@/features/session/resolve-login-return-to";
 import { resolveSuperadminContext } from "@/features/session/resolve-superadmin-context";
 import { signInWithPassword } from "@/features/session/sign-in";
 
@@ -29,6 +30,19 @@ import { signInWithPassword } from "@/features/session/sign-in";
 // for a real Patient or a real Superadmin). src/lib/supabase/proxy.ts also
 // redirects away from here server-side if there's already a valid real
 // session.
+//
+// `?next=` override (PROMPT NINJA "Checkpoint 1 — reparar infraestructura
+// común de invitaciones"): /invitacion/[token] links here as
+// `/login?next=/invitacion/<token>` for an existing-account user with no
+// session, so a real sign-in returns her straight back to the invitation
+// instead of the role-based destination above. Read directly off
+// `window.location.search` (not the `useSearchParams()` hook) — same
+// convention onboarding-wizard.tsx already uses for its own `auth_error`
+// param, and it avoids the Suspense-boundary requirement that hook would
+// otherwise impose on this page. resolveLoginReturnTo() is the only thing
+// standing between this and an open redirect — see its own comment.
+// Absent or unsafe `next` preserves the exact pre-existing behavior
+// (role-based redirect below), unchanged.
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -58,7 +72,9 @@ export default function LoginPage() {
       ]);
 
       bridgeAuthenticatedContext(clinicContext, patientContext);
-      router.push(decideAuthenticatedRedirect(superadminContext, clinicContext, patientContext));
+
+      const returnTo = resolveLoginReturnTo(new URLSearchParams(window.location.search).get("next"));
+      router.push(returnTo ?? decideAuthenticatedRedirect(superadminContext, clinicContext, patientContext));
     } catch {
       setSubmitting(false);
       setError("No pudimos iniciar sesión. Intenta de nuevo en unos minutos.");

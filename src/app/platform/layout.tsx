@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { PlatformShell } from "@/components/platform/platform-shell";
 import { restrictedReasonForSuperadmin } from "@/features/session/restricted-reason";
 import { resolveSuperadminContext } from "@/features/session/resolve-superadmin-context";
 import { createClient } from "@/lib/supabase/server";
@@ -24,5 +25,11 @@ export default async function PlatformLayout({ children }: LayoutProps<"/platfor
   if (context.status === "unauthenticated") redirect("/login");
   if (context.status !== "ok") redirect(`/acceso-restringido?motivo=${restrictedReasonForSuperadmin(context.status)}`);
 
-  return <>{children}</>;
+  const name = `${context.profile.firstName} ${context.profile.lastName}`.trim();
+
+  return (
+    <PlatformShell name={name} email={context.profile.email}>
+      {children}
+    </PlatformShell>
+  );
 }

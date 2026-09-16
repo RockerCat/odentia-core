@@ -243,6 +243,12 @@ Detailed per-vertical implementation notes are further below.
 - **Onboarding** — real 3-step wizard creating a real Supabase Auth user, `clinics`
   row (with sede principal + map/geocoding + logo), and the founding `clinic_admin`
   membership.
+- **Platform / Superadmin** — real `platform_roles`-backed identity, a real
+  protected `/platform` shell, real Clínicas listing/detail (canonical
+  `slug` URLs), Superadmin-direct clinic creation (`provision_clinic()`),
+  and Superadmin-provisioned first-Clinic-Admin invitation + password-only
+  activation with no Confirm Signup email and automatic acceptance for a
+  new user. See "Platform / Superadmin" below for full detail.
 - **Clínica** — Información general, sede principal (map/geocoding/logo), Equipo
   (real list + invite + activate/deactivate), Mi perfil profesional (**real
   editing**, not just display), Consultorios (`rooms`).
@@ -669,16 +675,174 @@ Superadmin section for the permanent architectural rule this establishes.
   problem at first). Worth a small, focused fix later so a future
   resolver failure doesn't get misdiagnosed the same way — does not
   block the next Platform checkpoint.
-- **Next step:** Platform / Clínicas — creación directa de clínica por
-  Superadmin (Ruta B from the read-only audit that scoped this whole
-  initiative: Superadmin → Clínicas → Nueva clínica, converging on one
-  provisioning mechanism also reusable later for the prospecto-driven
-  Ruta A). The approved visual design already live at
-  `demo.odentia.co/admin` is the visual reference for this and future
-  real Platform screens — reuse that look/structure, don't redesign
-  Platform from scratch. `platform_roles` still has no self-service or
-  automatic assignment path — granting a real Superadmin role remains a
-  manual, out-of-band administrative action.
+- **Checkpoint 3 (2026-09-16) — Platform is real: shell, Clínicas
+  listing, and Superadmin-direct clinic creation.** `/platform`'s
+  placeholder confirmation screen is now a real shell
+  (`src/components/platform/`: `PlatformShell`/`PlatformSidebar`/
+  `PlatformHeader`) — sidebar grouped Plataforma (Inicio/Clínicas/
+  Usuarios) / Negocio (Suscripciones/Marketplace) / Administración
+  (Configuración), matching the structure already approved for this
+  exact sidebar in `src/dev/role.ts`'s own superadmin nav config (the
+  `demo` branch's `/admin` code itself is byte-identical to `main`'s —
+  no separate Demo implementation exists in this repo to diff against;
+  this nav structure is the closest real, already-approved source of
+  truth available, reproduced conservatively rather than redesigned).
+  Header shows the real Superadmin's name/email
+  (`resolveSuperadminContext()`), never mock. Usuarios/Suscripciones/
+  Marketplace/Configuración are real, named sections with no screen yet —
+  inert, not fake.
+  - **`/platform/clinicas`** — real listing (`clinics` + primary
+    `clinic_locations`, joined server-side). Confirmed via every GRANT
+    ever applied to both tables (not assumed, given the `platform_roles`
+    incident): both already carry base `SELECT` for `authenticated` and
+    RLS's own `is_platform_superadmin()` branch — no new grant or policy
+    needed for reads.
+  - **`/platform/clinicas/nueva` → `provision_clinic()`** (new migration
+    `20260916110000_create_provision_clinic_rpc.sql`) — a SEPARATE RPC
+    from onboarding's `bootstrap_clinic()`, never that one:
+    `bootstrap_clinic()`'s own body (both overloads) unconditionally
+    inserts a `clinic_memberships` row for the caller as `clinic_admin`,
+    which would incorrectly enroll the Superadmin as a member of every
+    clinic she provisions. `provision_clinic()` creates `clinics` +
+    `clinic_locations` (sede principal) + the same default `treatments`
+    seed `bootstrap_clinic()` seeds, gated on `is_platform_superadmin()`
+    checked first, with **no membership and no professional_profile
+    insert at all** — a Superadmin-provisioned clinic legitimately has
+    zero members until the next checkpoint. Designed to be the same
+    function a future prospecto-conversion flow calls — Ruta A and Ruta
+    B (read-only audit's naming) converge here.
+  - **`/platform/clinicas/[slug]`** — real detail (clinic + sede principal
+    fields). Originally shipped as `/platform/clinicas/[clinicId]`; later
+    renamed to a canonical, stable `slug` URL (`clinics.slug`, not null +
+    unique since the foundation schema, never writable after creation), with
+    a UUID-compatibility redirect for any link minted before the rename.
+  - **QA:** `bootstrap_clinic`/migration `20260916090000` untouched; the
+    Superadmin-vs-authorization guard logic in `/platform/layout.tsx` is
+    byte-unchanged (only the render output after the existing checks
+    changed); `npx tsc --noEmit`, ESLint, and `npx next build` all clean,
+    all 4 new routes registered; unit tests green (56/56, incl. 4 new for
+    `friendlyProvisionError`). The RPC's own authorization/no-membership/
+    atomicity properties are verified **statically** (guard checked
+    first, zero `clinic_memberships`/`professional_profiles` references
+    in the new function body, same class of verification Checkpoint 1A
+    used) — not by a live DB test, since this repo has no
+    Supabase-mocking test infra for any resolver/RPC caller.
+  - Migration `20260916110000` — **applied to remote**, local/remote in
+    sync. Manual DB smoke (real clinic created from Platform on a real
+    Superadmin session: exactly one `clinics` row, one primary
+    `clinic_locations` row, the treatments seed, zero `clinic_memberships`
+    rows for the Superadmin) confirmed PASS — superseded by the full
+    provisioning + first-Clinic-Admin E2E in Checkpoint 4 below.
+- **Member provisioning (the "Next step" noted above) — see Checkpoint 4
+  below:** assigning the first Clinic Admin to a Superadmin-provisioned
+  clinic is now real end to end, reusing the existing `clinic_invitations`/
+  `accept_clinic_invitation` mechanism rather than a second one, exactly
+  as anticipated here.
+
+### Checkpoint 4 (2026-09-16) — Primer Administrador de Clínica: provisioning + activación, E2E PASS
+
+Closes the "member provisioning" gap noted above. Superadmin can now take
+a Platform-provisioned clinic all the way to a working Clinic Admin
+session with no manual DB work and no outbound email.
+
+- **Platform visibility (Estados A/B/C).** `/platform/clinicas/[slug]`
+  resolves, from real reads, exactly one of: no admin/no valid pending
+  invitation → assignment form; a pending, not-yet-expired invitation →
+  its pre-provisioned identity, read-only, no second form; an active
+  admin → her identity (name/email/phone), no form. Required widening
+  Superadmin's own SELECT reach on `clinic_invitations` and `profiles`
+  (both otherwise scoped to a clinic's own members) — additive RLS only,
+  same `is_platform_superadmin()` OR-branch pattern already used on
+  `clinics`/`clinic_memberships`/`professional_profiles`, no new writes,
+  no `anon` change.
+- **Provisioning RPC.** `provision_first_clinic_admin_invitation()` —
+  Superadmin-only, `role` hardcoded `clinic_admin` server-side, rejects a
+  clinic that already has an active admin or an existing pending
+  `clinic_admin` invitation. Stores a pre-provisioned identity
+  (`first_name`/`last_name`/`email`/`phone`, all required) on
+  `clinic_invitations` alongside the same token/hash convention every
+  other invitation already uses.
+- **Activation without Confirm Signup.** For a genuinely new email:
+  `activatePreProvisionedClinicAdminAction` (Server Action) re-resolves
+  the invitation itself server-side (never trusts the browser's own
+  preview), creates the Auth user via the Admin API
+  (`email_confirm: true`, service-role key — server-only), the client
+  then does a normal `signInWithPassword`, and — new in this
+  checkpoint — automatically calls `accept_clinic_invitation()` against
+  that SAME token immediately after, landing directly on the existing
+  "¡Listo! Ya eres parte del equipo." success screen. One user gesture
+  ("Activar mi cuenta") now both creates access and accepts that specific
+  invitation; no second "Aceptar invitación" click for this path. An
+  email that already has an account is unaffected: normal login,
+  `/invitacion/[token]`, manual "Aceptar invitación" — unchanged. If
+  Auth/sign-in succeed but the automatic accept fails, the flow never
+  retries account creation or signs the user out — it falls back to the
+  same authenticated "ready" state with a visible notice and the existing
+  manual "Aceptar invitación" button.
+- **Historical bug re-fixed:** `accept_clinic_invitation()`'s `42702`
+  "column reference clinic_id is ambiguous" error (first fixed in
+  `20260909020000` — see "Production stabilization fixes" above) was
+  silently reintroduced by a later migration (`20260914090000`) that did
+  its own `CREATE OR REPLACE` from a stale, pre-fix copy of the function
+  body while adding an unrelated availability-seeding feature. Migration
+  `20260916140000` restored the correct `cm.clinic_id`/`cm.profile_id`
+  aliasing on top of the current (availability-seeding-inclusive) body,
+  verified by diff to be the only change. **Lesson for any future
+  migration that replaces an existing function:** always base the new
+  body on the CURRENT deployed version, never an older cached/remembered
+  copy — a `CREATE OR REPLACE` can silently resurrect a bug that was
+  already fixed once.
+- **Migrations for this block** (all applied to the remote Supabase
+  project, local/remote confirmed in sync through
+  `20260916170000_allow_superadmin_clinic_provisioning_reads.sql`):
+  - `20260916110000_create_provision_clinic_rpc.sql`
+  - `20260916120000_create_preview_clinic_invitation_rpc.sql`
+  - `20260916130000_add_user_exists_to_preview_clinic_invitation_rpc.sql`
+  - `20260916140000_fix_accept_clinic_invitation_ambiguous_clinic_id.sql`
+  - `20260916150000_provision_first_clinic_admin_invitation.sql`
+  - `20260916160000_extend_clinic_invitation_activation.sql`
+  - `20260916170000_allow_superadmin_clinic_provisioning_reads.sql`
+- **E2E REAL — PASS.** Clínica `Odentia QA Provisioning 3`, first admin
+  `Alex Test 03` (`alexsosa.me+adtest03@gmail.com`). Full flow: Platform →
+  crear clínica → asignar primer admin → generar/copiar link → incógnito →
+  preview password-only → "Activar mi cuenta" → Auth user creado y
+  confirmado sin correo → sign-in automático → aceptación automática de la
+  invitación → "¡Listo! Ya eres parte del equipo." → "Ir a mi Clínica" →
+  `/agenda` con el contexto correcto de `Odentia QA Provisioning 3` →
+  `/clinica` muestra a Alex Test 03 como Administrador activo.
+- **Validación SQL read-only, confirmada:** `profiles` (first_name =
+  `Alex`, last_name = `Test 03`, email = `alexsosa.me+adtest03@gmail.com`,
+  phone = `+573173672033`); `clinic_invitations` (status = `accepted`,
+  role = `clinic_admin`, `accepted_membership_id` no nulo);
+  `clinic_memberships` (mismo id que `accepted_membership_id`, role =
+  `clinic_admin`, status = `active`); `professional_profiles` — inexistente
+  para este membership, esperado por diseño (ver CLAUDE.md — Clinic Admin
+  vs Professional); Auth (`auth.users.id` = `profiles.id`,
+  `email_confirmed_at` y `last_sign_in_at` poblados, sin Confirm Signup
+  email en ningún punto del flujo). **Conclusión: Primer Clinic Admin
+  nuevo — provisioning + activation E2E: PASS.**
+- **Historial de smokes / QA users** (no reutilizar para probar
+  `user_exists=false`; ninguno fue limpiado/modificado):
+  - `alexsosa.me+adtest01@gmail.com` — smoke previo a la activación
+    server-side, quedó como Auth user sin confirmar.
+  - `alexsosa.me+adtest02@gmail.com` — confirmó create-confirmed-user +
+    sign-in automático, pero reveló el estado intermedio (segundo botón
+    manual "Aceptar invitación" para un usuario nuevo) que motivó el
+    auto-accept de este checkpoint.
+  - `alexsosa.me+adtest03@gmail.com` — smoke definitivo, PASS (arriba).
+- **Pendientes reales, no bloqueantes para este happy path:**
+  - `accept_clinic_invitation()`'s `expired` branch does an `UPDATE
+    status = 'expired'` immediately followed by a `RAISE EXCEPTION` in
+    the same transaction, so that UPDATE can be rolled back — known,
+    unfixed, unrelated to the flow validated in this checkpoint.
+  - Revocación/regeneración de la invitación del primer Clinic Admin: no
+    implementada.
+  - Selector multi-clínica / segundo Clinic Admin: no implementado — este
+    RPC solo bootstrapea el primero (por diseño, ver CLAUDE.md).
+  - The mock-session "self-heal" bridge (see "Authenticated-context
+    self-healing" above) is an observation, not a reproduced failure here:
+    the real E2E smoke's own "Ir a mi Clínica" → `/agenda` loaded the
+    correct user/clinic context immediately, with no blank shell.
 
 ## Clínica (real, Clinic Admin)
 
@@ -707,6 +871,11 @@ Superadmin section for the permanent architectural rule this establishes.
 - `set_clinic_member_status(membership_id, active)` — Clinic Admin only, refuses
   to deactivate the clinic's last active admin.
 - No email automation, no member-role-editing RPC — do not assume either exists.
+- A clinic's very first `clinic_admin` is issued by the Superadmin instead,
+  via a separate, narrower RPC (`provision_first_clinic_admin_invitation()`)
+  — see "Platform / Superadmin" → Checkpoint 4 above. Both write into the
+  same `clinic_invitations` table/lifecycle and both are accepted by the
+  same `accept_clinic_invitation(token)` — never two invitation systems.
 
 ## Pacientes (real, Clinic Admin/Dentist/Assistant)
 

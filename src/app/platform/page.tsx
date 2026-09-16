@@ -1,41 +1,31 @@
-import { Logo } from "@/components/shell/logo";
-import { RestrictedAccessSignOut } from "@/features/session/restricted-access-sign-out";
-import { resolveSuperadminContext } from "@/features/session/resolve-superadmin-context";
-import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
 
-// /platform — Checkpoint 2's own deliberately minimal confirmation
-// screen. Its only job is proving a real Superadmin (public.platform_roles,
-// resolved via resolveSuperadminContext() — see this route's own
-// layout.tsx for the actual authorization gate, already enforced before
-// this component ever renders) reached the protected Platform surface.
-// No commercial/provisioning functionality lives here yet — that's a
-// later checkpoint (prospectos, clinic provisioning, member invitations).
-// Deliberately NOT AppShell: that component's allowedRoles gates through
-// the mock role switcher (src/dev/role.ts), exactly the client-side/mock
-// authorization this checkpoint must never depend on — this page reuses
-// only plain shared primitives (Logo, RestrictedAccessSignOut), the same
-// ones /login and /acceso-restringido already use for their own
-// standalone screens.
-export default async function PlatformPage() {
-  const supabase = await createClient();
-  // layout.tsx already guarantees "ok" before this renders — re-resolving
-  // here is only to display the real identity, not a second auth check.
-  const context = await resolveSuperadminContext(supabase);
-  const name = context.status === "ok" ? `${context.profile.firstName} ${context.profile.lastName}`.trim() : null;
-
+// /platform — Checkpoint 3's real Inicio. No dashboard/metrics yet (that
+// stays out of scope until a later checkpoint — see PROJECT_STATUS.md):
+// a minimal welcome plus a real entry point into the one real
+// administrative function that exists so far (Clínicas). Rendered inside
+// PlatformShell (see /platform/layout.tsx, the real Superadmin identity
+// already shows in its header) — this page itself needs no auth
+// resolution of its own.
+export default function PlatformPage() {
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-surface px-4 py-10">
-      <div className="w-full max-w-md text-center">
-        <Logo className="mx-auto h-12 w-auto" />
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-lg font-semibold text-foreground">Platform</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Panel de administración de Odentia.</p>
+      </div>
 
-        <div className="mt-6 rounded-xl border border-border bg-background p-6 shadow-sm sm:p-8">
-          <h1 className="text-lg font-semibold text-foreground">Platform</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {name ? `Sesión de Superadmin activa: ${name}.` : "Sesión de Superadmin activa."} Esta área todavía no tiene
-            funcionalidad comercial — solo confirma que el acceso real a Platform funciona.
-          </p>
-          <RestrictedAccessSignOut />
-        </div>
+      <div className="rounded-2xl border border-border bg-background p-6 shadow-sm">
+        <h2 className="text-base font-semibold text-foreground">Clínicas</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Consulta las clínicas reales registradas en Odentia o crea una nueva directamente.
+        </p>
+        <Link
+          href="/platform/clinicas"
+          className="mt-4 inline-block rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+        >
+          Ir a Clínicas
+        </Link>
       </div>
     </div>
   );

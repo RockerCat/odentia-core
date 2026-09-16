@@ -326,6 +326,84 @@ deliberate, exceptional administrative operation with no self-service,
 no invitation flow, and no first-user-becomes-superadmin bootstrap; a row
 is inserted only by direct, out-of-band administrative action.
 
+**Only a Superadmin can create a clinic, and a prospecto is never a
+precondition for it.** Odentia's clinic-creation model is commercial/
+provisioned, not self-service: a clinic may be created directly by a
+Superadmin (Platform → Clínicas → Nueva clínica) with no prior prospecto
+at all, or later via a prospecto's own conversion — both routes are
+equally valid and neither is more "official" than the other. Both must
+converge on the SAME administrative provisioning mechanism
+(`provision_clinic()`, `src/features/platform/api.ts`) rather than each
+implementing its own clinic/sede-principal insert logic — never a second,
+diverging path to the same result. `provision_clinic()` is itself a
+separate function from onboarding's own `bootstrap_clinic()` (self-
+service, retained only until that path is formally retired) — never
+reuse `bootstrap_clinic()` for admin-driven provisioning, since it
+unconditionally makes its caller a `clinic_admin` member of the clinic it
+creates, which is correct for a founder bootstrapping her own clinic but
+would incorrectly enroll the Superadmin as a member of every clinic she
+provisions. A clinic provisioned this way may legitimately exist with
+zero members (no Clinic Admin, no team) until a separate, later
+provisioning step assigns them — this is expected, not a broken state.
+
+Provisioning a clinic's FIRST Clinic Admin is a separate, Superadmin-only
+step from creating the clinic itself: `provision_first_clinic_admin_invitation()`
+(`is_platform_superadmin()`-gated) issues a `clinic_invitations` row whose
+`role` is hardcoded `clinic_admin` server-side — never a parameter — and
+that carries a pre-provisioned identity (`first_name`/`last_name`/`email`/
+`phone`, all required) so activation never asks this person to type her
+own name. This RPC only ever bootstraps the FIRST admin of an
+already-provisioned clinic (rejected if the clinic already has an active
+`clinic_admin` membership, or an existing pending `clinic_admin`
+invitation) — growing the team further (dentists/assistants, and any
+admin beyond the first) stays the Clinic Admin's own job through the
+existing Equipo flow (`invite_clinic_member()`), unchanged. Same token/
+hash convention as every other invitation (see Communications) — a raw
+token shown exactly once, only its hash persisted, shared manually by the
+Superadmin, never emailed automatically. `/platform/clinicas/[slug]`
+resolves exactly one of three states for this from real reads (never a
+guess): no active admin and no valid pending invitation → assignment
+form; a still-pending, not-yet-expired invitation → its read-only
+pre-provisioned identity, no second form; an active admin → her identity,
+no form. Superadmin needs `is_platform_superadmin()` read access to
+`clinic_invitations` and `profiles` for this (both otherwise scoped to a
+clinic's own members) — this is a deliberate, minimal RLS widening for
+Superadmin SELECT only, same pattern already used on
+`clinics`/`clinic_memberships`/`professional_profiles`, never a write
+widening.
+
+Activating that pre-provisioned invitation differs by whether its email
+already has a real Odentia account, but both paths still end at the SAME
+`accept_clinic_invitation()` as every other invitation — the only
+operation that ever creates a `clinic_memberships` row:
+
+- A genuinely new email skips Confirm Signup entirely: she only ever
+  types a password (her identity is read-only, sourced from the
+  invitation); the Auth account is created and confirmed server-side via
+  the Auth Admin API (`email_confirm: true`, service-role key — server-only,
+  never in a Client Component or reachable from the browser bundle), a
+  normal `signInWithPassword` then establishes her session, and
+  `accept_clinic_invitation()` runs immediately after against that SAME
+  token, in that same interaction — one gesture ("Activar mi cuenta")
+  both creates her access and accepts that specific invitation, never a
+  second manual "Aceptar invitación" step for this path. This Confirm
+  Signup bypass exists ONLY for this pre-provisioned first-admin flow
+  (the secret token itself is the proof of legitimate access) — never
+  disable Confirm Email globally, and never skip it for the normal public
+  `/registro`/Equipo signup, both unchanged. If Auth/sign-in succeed but
+  the automatic accept fails, never retry account creation, never sign
+  the person out, never fabricate a membership — she's already
+  authenticated, so she recovers through the same manual "Aceptar
+  invitación" existing-invitation flow below.
+- An email that already has an Odentia account never auto-activates or
+  auto-accepts anything — she's sent to a normal login
+  (`/login?next=/invitacion/[token]`) and accepts manually via the same
+  button every other invitation uses. Logging in never by itself implies
+  accepting a new membership. Never reset her password, overwrite her
+  existing identity, or otherwise take over that account. The invitation's
+  pre-provisioned `phone` only ever fills `profiles.phone` when it is
+  currently NULL — an existing user's own phone is never overwritten.
+
 `/admin` is the OLD, separate, fully mock UI
 (`src/features/admin/mock-data.ts`), with no `resolveClinicContext()` call
 and no route protection beyond the mock role switcher —
@@ -373,6 +451,10 @@ membership that additionally owns an active `professional_profiles` row.
 edits it afterwards. Never invent a distinct role/flag for this — it's
 purely "does this `clinic_admin` also have an active professional
 profile," derived the same way `canEditClinicalData()` already does.
+Provisioning/accepting the clinic's very first `clinic_admin` (see
+Superadmin above) never creates a `professional_profile` either — if that
+admin also treats patients, she configures her own profile afterwards
+through this same self-service path, same as any other Clinic Admin.
 
 ### Dentist
 
