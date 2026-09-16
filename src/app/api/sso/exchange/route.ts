@@ -93,6 +93,11 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     coreUserId: row.core_user_id,
+    // "clinic_member" or "patient" — see 20260915140000. clinicId/
+    // membershipId/role/clinicName are all null for a patient row; never
+    // omitted, always explicit, so Marketplace can never mistake a
+    // missing field for a stale/incomplete response.
+    buyerType: row.buyer_type,
     clinicId: row.clinic_id,
     membershipId: row.membership_id,
     role: row.role,
@@ -101,7 +106,7 @@ export async function POST(request: NextRequest) {
     email: row.email,
     // From consume_marketplace_sso_code()'s own clinics lookup (see
     // 20260915130000) — never a second query, never accepted from the
-    // request body.
+    // request body. Always null for a patient row.
     clinicName: row.clinic_name,
   });
 }

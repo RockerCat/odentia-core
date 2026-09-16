@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
-import { resolvePatientContext } from "@/features/session/resolve-patient-context";
+import { hasAnyPatientLink } from "@/features/session/has-patient-link";
 import { createClient } from "@/lib/supabase/server";
-import { decideClinicRedirect } from "@/lib/supabase/proxy";
 import { canonicalCallbackUrl, isCanonicalCallback, isValidState } from "./validate-sso-entry";
+import { decideMarketplaceEntryRedirect } from "./decide-marketplace-entry-redirect";
 
 // Core's authenticated SSO entry point for Marketplace (SSO E) — the
 // destination Marketplace's own GET /auth/sso/start redirects the browser
@@ -62,32 +62,39 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const clinicContext = await resolveClinicContext(supabase);
 
-    // Only resolved when it can actually change the outcome — same
-    // pattern as src/lib/supabase/proxy.ts's own private-clinic-path
-    // gate, reused here via decideClinicRedirect rather than duplicated.
-    const isLinkedPatient =
-      clinicContext.status === "no-membership" && (await resolvePatientContext(supabase)).status === "ok";
+    // Marketplace SSO recognizes two distinct buyer identities: a real
+    // clinic member (clinicContext.status === "ok") and a real Patient
+    // with no clinic membership at all. This is deliberately NOT the same
+    // "isLinkedPatient" check src/lib/supabase/proxy.ts's own
+    // private-clinic-path gate uses (that one calls resolvePatientContext()
+    // and requires status === "ok", which fails closed on more than one
+    // patient_user_links row) — Marketplace never selects or transports a
+    // clinic for a Patient buyer, so that ambiguity doesn't apply here;
+    // hasAnyPatientLink() asks the narrower, sufficient question directly
+    // (see that file's own comment). This never changes what /agenda,
+    // /pacientes, etc. do for an ambiguous Patient — only this route's own
+    // decision.
+    const isMarketplaceEligiblePatient =
+      clinicContext.status === "no-membership" && (await hasAnyPatientLink(supabase));
 
-    // Reuses the exact same status → destination decision the real
-    // /agenda /pacientes /etc. gate already makes: unauthenticated →
-    // /login (the user can sign in, then manually return to Marketplace —
-    // see this task's own PENDING/BLOCKERS on why an automatic post-login
-    // return isn't wired up here), no-membership → /registro or /portal,
-    // and membership-inactive/clinic-suspended/multiple-memberships → the
-    // existing /acceso-restringido screen. Every one of these fails
-    // closed on code issuance — only "ok" (decideClinicRedirect returning
-    // null) proceeds below.
-    const blockedRedirect = decideClinicRedirect(clinicContext, isLinkedPatient);
+    // See decide-marketplace-entry-redirect.ts for the full reasoning —
+    // null means "proceed to issuance" (clinic member or eligible
+    // patient); any other value is the same destination
+    // /agenda/pacientes/etc. would already redirect this exact
+    // clinicContext to.
+    const blockedRedirect = decideMarketplaceEntryRedirect(clinicContext, isMarketplaceEligiblePatient);
     if (blockedRedirect) {
       return NextResponse.redirect(new URL(blockedRedirect, request.url));
     }
 
-    // clinicContext.status === "ok" here. issue_marketplace_sso_code()
-    // resolves profile/membership/clinic itself from auth.uid() — no
-    // identity value from clinicContext is passed to it; it is the
-    // RPC, not this route, that remains the last authority (see SSO A:
-    // 0 or >1 active memberships, or an inactive clinic, fail closed
-    // there too, independently of this check).
+    // Either clinicContext.status === "ok" (clinic member) or
+    // isMarketplaceEligiblePatient (patient) — issue_marketplace_sso_code()
+    // re-resolves profile/membership/clinic-or-patient-link itself from
+    // auth.uid(), never trusting clinicContext/isMarketplaceEligiblePatient
+    // as anything more than "should this route even attempt issuance"; it
+    // is the RPC, not this route, that remains the last authority (see
+    // SSO A: 0 or >1 active memberships, an inactive clinic, or no patient
+    // link at all, all fail closed there too, independently of this check).
     const { data, error } = await supabase.rpc("issue_marketplace_sso_code");
     const row = Array.isArray(data) ? data[0] : data;
     if (error || !row || typeof row.raw_code !== "string" || !row.raw_code) {
