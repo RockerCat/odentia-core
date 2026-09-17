@@ -45,6 +45,14 @@ export type RipsReadinessError = {
   scope: RipsReadinessScope;
   message: string;
   patientId?: string;
+  // Only ever set for scope === "patient" errors (see
+  // getPatientReadinessErrors) — encounter/service-scope errors already
+  // fold the patient's name into their own `message` text instead
+  // (encounterLabel), so this stays undefined there rather than
+  // duplicating it as a second, possibly-drifting source. Exists so a
+  // patient-scope correction UI (e.g. the RIPS screen's own "Corregir")
+  // can group/label by patient without parsing it back out of `message`.
+  patientName?: string;
   encounterId?: string;
   serviceId?: string;
   professionalProfileId?: string;
@@ -253,7 +261,7 @@ export type RipsExportReadinessInput = {
 
 function getPatientReadinessErrors(patient: ExportReadinessPatient): RipsReadinessError[] {
   const errors: RipsReadinessError[] = [];
-  const base = { patientId: patient.patientId, fixHref: "/pacientes" };
+  const base = { patientId: patient.patientId, patientName: patient.patientName, fixHref: "/pacientes" };
   const label = `Paciente ${patient.patientName}`;
 
   if (!patient.documentType) {

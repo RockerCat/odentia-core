@@ -12,6 +12,8 @@ import { InviteMemberModal } from "@/features/clinic/invite-member-modal";
 import { MyProfessionalProfileSection, StatusBadge } from "@/features/clinic/my-professional-profile-section";
 import { PrimaryLocationSection } from "@/features/clinic/primary-location-section";
 import { RipsConfigSection } from "@/features/clinic/rips-config-section";
+import { RipsSpecialtyServicesSection } from "@/features/clinic/rips-specialty-services-section";
+import type { ConfirmedSpecialtyRipsService, RelevantSpecialty, SuggestedSpecialtyRipsService } from "@/features/clinic/rips-specialty-service-config";
 import { regenerateClinicInvitation, setClinicMemberStatus, type InvitationRecord } from "@/features/clinic/team-actions";
 import { createRoom, renameRoom, setRoomActive } from "@/features/rooms/actions";
 import type { Room } from "@/features/rooms/data";
@@ -43,6 +45,11 @@ export function ClinicSettingsScreen({
   rooms,
   specialties,
   documentTypes,
+  ripsRelevantSpecialties,
+  ripsConfirmedServices,
+  ripsSuggestions,
+  ripsGrupoServiciosOptions,
+  ripsServiciosOptions,
 }: {
   clinic: ClinicDetail;
   location: PrimaryLocation | null;
@@ -52,6 +59,11 @@ export function ClinicSettingsScreen({
   rooms: Room[];
   specialties: Specialty[];
   documentTypes: ReferenceValue[];
+  ripsRelevantSpecialties: RelevantSpecialty[];
+  ripsConfirmedServices: ConfirmedSpecialtyRipsService[];
+  ripsSuggestions: SuggestedSpecialtyRipsService[];
+  ripsGrupoServiciosOptions: ReferenceValue[];
+  ripsServiciosOptions: ReferenceValue[];
 }) {
   // Lifted above Equipo/Mi perfil profesional (not local to either) so
   // both sections read the SAME real data — Equipo's own role/specialty
@@ -76,6 +88,13 @@ export function ClinicSettingsScreen({
     <div className="flex flex-col gap-6">
       <InformacionGeneralSection clinic={clinic} location={location} taxId={taxId} onTaxIdChange={setTaxId} />
       <RipsConfigSection taxId={taxId} location={location} codPrestador={codPrestador} onCodPrestadorSaved={setCodPrestador} />
+      <RipsSpecialtyServicesSection
+        specialties={ripsRelevantSpecialties}
+        confirmedServices={ripsConfirmedServices}
+        suggestions={ripsSuggestions}
+        grupoServiciosOptions={ripsGrupoServiciosOptions}
+        serviciosOptions={ripsServiciosOptions}
+      />
       <EquipoSection members={members} onMembersChange={setMembers} initialPendingInvitations={initialPendingInvitations} />
       <MyProfessionalProfileSection
         selfMember={selfMember}

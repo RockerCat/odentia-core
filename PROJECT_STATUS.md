@@ -60,9 +60,63 @@ that smoke were fixed and re-validated the same day: the per-service manual
 professional selector (removed — inherited from the Cita automatically now),
 "Servicios realizados"'s layout (responsive two-column), and CIE-10 diagnosis
 discoverability ("Usados en esta clínica", tenant-scoped real suggestions).
-See "RIPS #8" below for the full detail. **Next: A4 — Especialidad → Servicio
-RIPS write path for `clinic_admin`** (today, `clinic_specialty_rips_services`
-is select-only; nothing writes to it yet). Separately, and unrelated to RIPS:
+See "RIPS #8" below for the full detail.
+
+**Checkpoint 2026-09-17 — A4 + patient contextual correction + A4B, all
+PASS (real smoke, both migrations applied to remote).**
+
+**VALIDATED (real evidence):**
+- **A4** — `clinic_admin` confirms Especialidad → Servicio RIPS at
+  `/clinica#rips`'s "Servicios RIPS por especialidad" section
+  (`confirm_clinic_specialty_rips_service()`, migration `20260917100000`,
+  **applied to remote**). Real smoke: Endodoncia confirmed as "Consulta
+  externa → ENDODONCIA"; a NEW Endodoncia atención automatically inherited
+  that configuration, Grupo/Servicio appeared in Detalles RIPS, the
+  atención finalized correctly, and `/rips` readiness did NOT flag
+  `RIPS_SERVICE_CONFIGURATION_MISSING` for it. Along the way, a real
+  PostgREST embed bug was found and fixed in the defaults/effective-config
+  readers (`rips_reference_values:rips_reference_value_id(...)` — read as
+  "embed a relation literally named `rips_reference_value_id`", not a
+  table:column hint — is invalid; the correct form is the bare
+  `rips_reference_values(code, parent_code)`, since exactly one FK
+  connects the two tables and no hint is needed at all).
+- **Patient contextual correction** — a patient-scope pendiente
+  (`PATIENT_SEX_MISSING`, etc.) is corrected from a modal inside `/rips`
+  itself, grouped by `patient_id`, reusing `updatePatient()` and the
+  existing identity catalogs — never navigating to `/pacientes`. Real
+  smoke: 5 pendientes → 3 patient fields completed in one modal → 2
+  pendientes, without leaving `/rips`. País de residencia's own selector
+  now shows Colombia (`170`) first, then the rest alphabetically —
+  presentation-only, no autoselection, no code changes.
+- **A4B** — `RIPS_SERVICE_CONFIGURATION_MISSING` on an already-finalized
+  encounter is corrected from `/rips`, grouped by `encounter_id`
+  (`apply_confirmed_specialty_rips_service_to_encounter()`, migration
+  `20260917110000`, **applied to remote**), with an append-only audit log
+  (`encounter_service_rips_corrections`). Real smoke on the 2026-09-14
+  Muelitas7/Alex Paciente encounter (2 servicios, CUPS `890222`/`997001`):
+  `Corregir` opened ONE "Completar Servicio RIPS" modal showing patient,
+  fecha, profesional (Alex Sosa), especialidad (Endodoncia), both
+  services' historical Grupo/Servicio ("Sin configurar"), and the
+  confirmed institutional configuration ("Consulta externa → ENDODONCIA");
+  clicking "Aplicar configuración confirmada" resolved both services in
+  one call. After refresh, same período (septiembre 2026): **0
+  pendientes**, "Listo para generar", `Generar RIPS` enabled, metrics
+  unchanged (3 atenciones, 2 pacientes, 3 consultas, 1 procedimiento).
+
+**NOT YET VALIDATED / NEXT:**
+- Generating a NEW RIPS export after A4/A4B and reviewing the resulting
+  JSON — not done in this checkpoint, deliberately deferred to the next
+  one (no RIPS was generated during this close-out).
+- Recording/validating a MUV result remains, as always, a fully manual
+  step (`rips_export_log.result_status`) — nothing here changes that.
+- The A4B SQL regression test
+  (`supabase/tests/apply_confirmed_specialty_rips_service_to_encounter.test.sql`)
+  is still `NOT RUN` locally (no Postgres/Docker in this dev environment)
+  — the migration itself applied cleanly to the remote project and the
+  real manual smoke above passed, but the SQL test suite has never
+  actually executed. Do not treat it as a passing regression suite.
+
+Separately, and unrelated to RIPS:
 `PatientRecordModal`'s "Resumen clínico"/KPIs/"Próxima cita" were found to be
 hardcoded placeholders (predating the real `appointments`/
 `patient_clinical_encounters` tables) and were connected to real data the
@@ -1957,28 +2011,100 @@ re-verified in this update.
   resolve this duplication — which one stays, which is deprecated, or how
   they reconcile is still an open decision, not something today's work
   touched.
-- **A4 — Especialidad → Servicio RIPS write path (next, not yet built).**
-  `specialty_rips_service_defaults` (global suggestion) and
-  `clinic_specialty_rips_services` (per-clinic confirmed config, currently
-  select-only) both already exist (migration `20260912130000`). Confirmed
-  global defaults seeded so far: Odontología general → 334, Endodoncia →
-  311, Ortodoncia → 338, Periodoncia → 343, Rehabilitación oral → 347,
-  Odontopediatría → 396. No safe default exists yet for Cirugía oral y
-  maxilofacial, Implantología, or Estética dental — do not invent one. The
-  permanent rule (CLAUDE.md, unchanged): `specialty_rips_service_defaults`
-  is only ever Odentia's own suggestion, never effective configuration on
-  its own — `clinic_admin` must explicitly confirm it into
-  `clinic_specialty_rips_services` before it becomes real. A4's own scope
-  is exactly that write/confirmation path; once a specialty is confirmed,
-  `RIPS_SERVICE_CONFIGURATION_MISSING` should stop appearing for encounters
-  using it.
+- **A4 — Especialidad → Servicio RIPS write path (implemented and
+  smoke-PASSED, 2026-09-17, migration applied to remote).**
+  `clinic_specialty_rips_services` (previously select-only) now has its
+  one sanctioned write path:
+  `confirm_clinic_specialty_rips_service()` (`SECURITY DEFINER`, migration
+  `20260917100000`) — re-derives the caller's own `clinic_admin` clinic_id
+  (never a client parameter, same resolution `invite_clinic_member()`
+  uses), re-validates the selected Servicio against the active
+  `rips_reference_values` (`catalog_key='Servicios'`) catalog, derives+
+  re-verifies Grupo from that Servicio's own `parent_code` (never a
+  separate client-supplied Grupo — an inconsistent pair cannot persist),
+  and supersedes any existing active row for that `(clinic, specialty)`
+  atomically before inserting the new one. `/clinica#rips` gained a new
+  "Servicios RIPS por especialidad" section
+  (`rips-specialty-services-section.tsx`, right below the existing
+  `RipsConfigSection`) listing only specialties actually practiced by this
+  clinic's own active professionals (`fetchClinicRelevantSpecialties`,
+  `professional_profiles.primary_specialty_id`, never the global
+  catalog) — each row shows Confirmado / Pendiente de confirmar (with
+  Odentia's own suggestion shown for context only, never autosaved) / Sin
+  sugerencia segura, with an explicit "Confirmar configuración" action
+  (`confirmClinicSpecialtyRipsServiceAction` → the RPC above) required
+  either way. Confirmed global defaults unchanged: Odontología general →
+  334, Endodoncia → 311, Ortodoncia → 338, Periodoncia → 343, Rehabilitación
+  oral → 347, Odontopediatría → 396 — no default exists (or was added) for
+  Cirugía oral y maxilofacial, Implantología, or Estética dental. The
+  permanent rule (CLAUDE.md, unchanged) still holds exactly:
+  `specialty_rips_service_defaults` is only ever Odentia's own suggestion,
+  never effective configuration on its own.
+  **Historical encounters are NOT auto-fixed by A4** — Grupo/Servicio are
+  snapshotted into `encounter_services` only at encounter-finalize time
+  (`clinical-service-resolution.ts`, untouched), and `/rips` reads that
+  snapshot directly, never re-resolving `clinic_specialty_rips_services`
+  live. Confirming a specialty here only changes what a NEW encounter
+  resolves going forward — closing that historical gap is exactly A4B,
+  below, real and shipped in this same checkpoint, not a future one.
+- **Patient contextual correction (implemented and smoke-PASSED,
+  2026-09-17).** A patient-scope readiness pendiente
+  (`PATIENT_SEX_MISSING`/`PATIENT_USER_TYPE_MISSING`/
+  `PATIENT_COUNTRY_RESIDENCE_MISSING`/etc.) is corrected from a modal
+  inside `/rips` itself (`CompletePatientRipsDataModal`,
+  `patient-rips-gaps.ts` groups every pendiente for the same patient into
+  ONE modal, ONE save), reusing the existing `updatePatient()` write path
+  and the same identity catalogs `/pacientes` already uses — never
+  navigating away from `/rips`. Real smoke: 5 pendientes → completed
+  sexo/tipo de usuario/país de residencia in one modal → 2 pendientes,
+  same período, same screen. País de residencia's own `<select>` now
+  lists Colombia (code `170`, unchanged) first, then every other country
+  alphabetically by label (`sortCountriesColombiaFirst`,
+  presentation-only — no autoselection, `Selecciona` stays the initial
+  state, no catalog/code changes).
+- **A4B — corrección histórica de Servicio RIPS (implemented and
+  smoke-PASSED, 2026-09-17, migration applied to remote).**
+  `RIPS_SERVICE_CONFIGURATION_MISSING` on an already-finalized encounter
+  is now correctable from `/rips` itself, grouped by `encounter_id`
+  (`encounter-service-rips-gaps.ts` — one modal per atención, never per
+  service, since every service in one encounter shares the same
+  professional/specialty under the current no-co-atención model). Write
+  path: `apply_confirmed_specialty_rips_service_to_encounter()`
+  (`SECURITY DEFINER`, migration `20260917110000`) — `clinic_admin`-only,
+  `clinic_id` re-derived from the encounter's own row (never a client
+  parameter), requires `finalized_at is not null`, reads the effective
+  configuration EXCLUSIVELY from `clinic_specialty_rips_services`
+  (re-validated live against the official catalog — never
+  `specialty_rips_service_defaults`), and can only fill
+  `encounter_services.grupo_servicios_code`/`cod_servicio_code`, never any
+  other column. Three real eligibility shapes: Grupo+Servicio both null →
+  both filled; Grupo already frozen and matching the derived one → Grupo
+  preserved, only Servicio filled; Grupo already frozen and DIFFERENT from
+  the derived one → the whole encounter's correction fails closed (never
+  a partial per-service fix, never an inconsistent pair). Every corrected
+  service gets an append-only row in `encounter_service_rips_corrections`
+  (previous/new codes, actor, timestamp) — no client-reachable write path
+  on that table at all, `ON DELETE RESTRICT` on its `encounter_service_id`/
+  `clinic_id` FKs (an audit trail must outlive the row it explains).
+  Real smoke on the 2026-09-14 Muelitas7/Alex Paciente encounter (CUPS
+  `890222`/`997001`): `Corregir` opened ONE "Completar Servicio RIPS"
+  modal (paciente, fecha, profesional Alex Sosa, especialidad Endodoncia,
+  both services' historical Grupo/Servicio "Sin configurar", confirmed
+  config "Consulta externa → ENDODONCIA"); "Aplicar configuración
+  confirmada" resolved both services in one call. After refresh, same
+  período (septiembre 2026): **0 pendientes**, "Listo para generar",
+  `Generar RIPS` enabled, metrics unchanged (3 atenciones, 2 pacientes, 3
+  consultas, 1 procedimiento). **Not yet done**: generating a NEW RIPS
+  export after this fix and reviewing its JSON — deliberately deferred to
+  the next checkpoint, no RIPS was generated during this close-out. The
+  SQL regression test
+  (`apply_confirmed_specialty_rips_service_to_encounter.test.sql`) is
+  still `NOT RUN` locally (no Postgres/Docker in this dev environment) —
+  the migration applied cleanly to the remote project and the real manual
+  smoke above passed, but that SQL suite itself has never executed.
 - **Explicitly not built yet (future phase)**: MUV integration, CUV
   generation/inference, ProcesoId auto-capture, submission states beyond
   a manually-recorded result, retries/polling, FEV/DIAN, glosas, SIIFA.
-  Also not built yet: **A4** — any UI for a clinic to actually write to
-  `clinic_specialty_rips_services` (A2 is select-only today) — a clinic
-  admin cannot yet confirm/override a Servicio RIPS from the app itself.
-  This is the current next milestone (see "RIPS #9" above).
 
 ---
 

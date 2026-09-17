@@ -2,6 +2,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import {
   fetchActiveSpecialties,
   fetchClinicDetail,
+  fetchClinicRelevantSpecialties,
   fetchPendingInvitations,
   fetchPrimaryLocation,
   fetchTeamMembers,
@@ -13,8 +14,11 @@ import {
 } from "@/features/clinic/data";
 import { ClinicSettingsScreen } from "@/features/clinic/clinic-settings-screen";
 import { logStepFailed } from "@/features/clinic/debug";
+import type { ConfirmedSpecialtyRipsService } from "@/features/clinic/rips-specialty-service-config";
 import { fetchRooms, type Room } from "@/features/rooms/data";
 import { getActiveReferenceValues, type ReferenceValue } from "@/features/rips/catalog-data";
+import { fetchClinicSpecialtyRipsServices } from "@/features/rips/clinical-concept-data";
+import { fetchSpecialtyRipsServiceDefaults, type SpecialtyRipsServiceDefault } from "@/features/rips/specialty-rips-service-defaults-data";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
 import { createClient } from "@/lib/supabase/server";
 
@@ -66,6 +70,11 @@ export default async function ClinicaPage() {
   let rooms: Room[] = [];
   let specialties: Specialty[] = [];
   let documentTypes: ReferenceValue[] = [];
+  let ripsRelevantSpecialties: Specialty[] = [];
+  let ripsConfirmedServices: ConfirmedSpecialtyRipsService[] = [];
+  let ripsSuggestions: SpecialtyRipsServiceDefault[] = [];
+  let ripsGrupoServiciosOptions: ReferenceValue[] = [];
+  let ripsServiciosOptions: ReferenceValue[] = [];
   let clinicFailed = false;
 
   if (clinicId) {
@@ -128,6 +137,41 @@ export default async function ClinicaPage() {
       // picker, same "empty list, not a broken page" handling as above.
       logStepFailed("getActiveReferenceValues(TipoDocumento)", error);
     }
+
+    // RIPS #A4 — "Servicios RIPS por especialidad". Five independent
+    // fetches, same "optional section, empty list on failure" convention
+    // as everything else on this page — a failure in any one of them
+    // never takes down Información general/Equipo/Consultorios, and the
+    // section itself renders its own honest empty state on an empty list.
+    try {
+      ripsRelevantSpecialties = await fetchClinicRelevantSpecialties(supabase, clinicId);
+    } catch (error) {
+      logStepFailed("fetchClinicRelevantSpecialties", error);
+    }
+
+    try {
+      ripsConfirmedServices = await fetchClinicSpecialtyRipsServices(clinicId);
+    } catch (error) {
+      logStepFailed("fetchClinicSpecialtyRipsServices", error);
+    }
+
+    try {
+      ripsSuggestions = await fetchSpecialtyRipsServiceDefaults();
+    } catch (error) {
+      logStepFailed("fetchSpecialtyRipsServiceDefaults", error);
+    }
+
+    try {
+      ripsGrupoServiciosOptions = await getActiveReferenceValues("GrupoServicios");
+    } catch (error) {
+      logStepFailed("getActiveReferenceValues(GrupoServicios)", error);
+    }
+
+    try {
+      ripsServiciosOptions = await getActiveReferenceValues("Servicios");
+    } catch (error) {
+      logStepFailed("getActiveReferenceValues(Servicios)", error);
+    }
   }
 
   // "Mi perfil profesional" is always about the authenticated user's own
@@ -154,6 +198,11 @@ export default async function ClinicaPage() {
           rooms={rooms}
           specialties={specialties}
           documentTypes={documentTypes}
+          ripsRelevantSpecialties={ripsRelevantSpecialties}
+          ripsConfirmedServices={ripsConfirmedServices}
+          ripsSuggestions={ripsSuggestions}
+          ripsGrupoServiciosOptions={ripsGrupoServiciosOptions}
+          ripsServiciosOptions={ripsServiciosOptions}
         />
       )}
     </AppShell>

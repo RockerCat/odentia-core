@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 import { AlertTriangleIcon, CheckCircleIcon, ChevronDownIcon, DownloadIcon } from "@/components/shell/icons";
 import { useToast } from "@/components/toast";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { EMPTY_PATIENT_IDENTITY_CATALOGS, type PatientIdentityCatalogs } from "@/features/patients/data";
+import { CompleteEncounterRipsServiceModal } from "./complete-encounter-rips-service-modal";
+import { CompletePatientRipsDataModal } from "./complete-patient-rips-data-modal";
+import { groupEncounterServiceRipsGaps, type EncounterServiceRipsGap } from "./encounter-service-rips-gaps";
 import {
   generateRipsSinFacturaExportAction,
   getRipsExportHistoryAction,
@@ -14,6 +18,7 @@ import {
 import type { RipsExportPeriod } from "./export-datetime";
 import { RipsExportHistoryList } from "./export-history-list";
 import type { RipsReadinessError, RipsReadinessScope } from "./export-readiness";
+import { groupPatientRipsGaps, type PatientRipsGaps } from "./patient-rips-gaps";
 import { RecordRipsResultModal } from "./record-rips-result-modal";
 
 // RIPS #5 — the first real RIPS screen (Admin Clínica only, see this
@@ -94,7 +99,7 @@ export function getRipsGenerateState(readinessReady: boolean | undefined, encoun
   return (encounterCount ?? 0) > 0 ? "ready" : "empty-period";
 }
 
-export function RipsScreen() {
+export function RipsScreen({ identityCatalogs = EMPTY_PATIENT_IDENTITY_CATALOGS }: { identityCatalogs?: PatientIdentityCatalogs } = {}) {
   const { showToast } = useToast();
   const [period, setPeriod] = useState<RipsExportPeriod>(currentPeriod);
   const [summary, setSummary] = useState<RipsPeriodSummary | null>(null);
@@ -111,6 +116,15 @@ export function RipsScreen() {
   const [justGenerated, setJustGenerated] = useState(false);
   const [history, setHistory] = useState<RipsExportHistoryEntry[]>([]);
   const [recordingEntry, setRecordingEntry] = useState<RipsExportHistoryEntry | null>(null);
+  // Prompt Ninja "corregir datos faltantes del paciente sin salir de
+  // /rips" — the one patient-scope group currently open for correction,
+  // grouped by patient_id (never one modal per readiness error — see
+  // patient-rips-gaps.ts).
+  const [correctingGaps, setCorrectingGaps] = useState<PatientRipsGaps | null>(null);
+  // Prompt Master A4B — the one encounter's RIPS_SERVICE_CONFIGURATION_MISSING
+  // group currently open for correction, grouped by encounter_id (see
+  // encounter-service-rips-gaps.ts).
+  const [correctingEncounterGap, setCorrectingEncounterGap] = useState<EncounterServiceRipsGap | null>(null);
 
   const refreshHistory = async () => {
     const result = await getRipsExportHistoryAction();
@@ -127,6 +141,24 @@ export function RipsScreen() {
     setLoadError(null);
     setSummary(result.summary);
     setShowPending(false);
+  };
+
+  // Re-resolves readiness for the CURRENTLY selected period after saving a
+  // patient's missing RIPS fields OR applying a confirmed Servicio RIPS
+  // to a historical encounter — same getRipsPeriodSummaryAction the
+  // period selector itself already uses, so a resolved pendiente
+  // disappears automatically without a full reload and without leaving
+  // /rips. Deliberately does NOT reuse applySummaryResult (which also
+  // resets showPending — correct for a genuine period change, but here it
+  // would collapse the very list the admin just fixed something in).
+  const refreshReadinessInPlace = async () => {
+    const result = await getRipsPeriodSummaryAction(period);
+    if (result.status === "error") {
+      setLoadError(result.message);
+      return;
+    }
+    setLoadError(null);
+    setSummary(result.summary);
   };
 
   useEffect(() => {
@@ -182,6 +214,8 @@ export function RipsScreen() {
 
   const readiness = summary?.readiness ?? null;
   const errorGroups = readiness ? groupErrorsByScope(readiness.errors) : [];
+  const patientGaps = readiness ? groupPatientRipsGaps(readiness.errors) : [];
+  const encounterServiceGaps = readiness ? groupEncounterServiceRipsGaps(readiness.errors) : [];
   const yearOptions = getPeriodYearOptions(new Date().getFullYear());
   const generateState = getRipsGenerateState(readiness?.ready, summary?.encounterCount);
   const canGenerate = generateState === "ready";
@@ -279,16 +313,57 @@ export function RipsScreen() {
                       <div key={group.scope}>
                         <p className="text-[11px] font-semibold tracking-wide text-label-foreground uppercase">{SCOPE_LABELS[group.scope]}</p>
                         <ul className="mt-1.5 flex flex-col gap-1.5">
-                          {group.errors.map((error, index) => (
-                            <li key={`${error.code}-${index}`} className="flex items-start justify-between gap-2 text-sm text-foreground/80">
-                              <span>{error.message}</span>
-                              {error.fixHref && (
-                                <a href={error.fixHref} className="shrink-0 text-xs font-medium text-primary hover:underline">
-                                  Corregir
-                                </a>
-                              )}
-                            </li>
-                          ))}
+                          {group.errors.map((error, index) => {
+                            // Patient-scope pendientes never leave /rips
+                            // anymore — "Corregir" opens the SAME grouped
+                            // modal (by patient_id) regardless of which of
+                            // that patient's several missing fields this
+                            // particular row is for (see
+                            // groupPatientRipsGaps).
+                            const gapsForPatient =
+                              error.scope === "patient" ? patientGaps.find((g) => g.patientId === error.patientId) : undefined;
+                            // RIPS_SERVICE_CONFIGURATION_MISSING pendientes
+                            // (A4B) never leave /rips either — "Corregir"
+                            // opens the SAME grouped modal (by
+                            // encounter_id) regardless of which of that
+                            // encounter's several affected services this
+                            // particular row is for (see
+                            // groupEncounterServiceRipsGaps). Every other
+                            // code/scope keeps its existing fixHref
+                            // navigation unchanged.
+                            const gapsForEncounterService =
+                              error.code === "RIPS_SERVICE_CONFIGURATION_MISSING"
+                                ? encounterServiceGaps.find((g) => g.encounterId === error.encounterId)
+                                : undefined;
+                            return (
+                              <li key={`${error.code}-${index}`} className="flex items-start justify-between gap-2 text-sm text-foreground/80">
+                                <span>{error.message}</span>
+                                {gapsForPatient ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setCorrectingGaps(gapsForPatient)}
+                                    className="shrink-0 text-xs font-medium text-primary hover:underline"
+                                  >
+                                    Corregir
+                                  </button>
+                                ) : gapsForEncounterService ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setCorrectingEncounterGap(gapsForEncounterService)}
+                                    className="shrink-0 text-xs font-medium text-primary hover:underline"
+                                  >
+                                    Corregir
+                                  </button>
+                                ) : (
+                                  error.fixHref && (
+                                    <a href={error.fixHref} className="shrink-0 text-xs font-medium text-primary hover:underline">
+                                      Corregir
+                                    </a>
+                                  )
+                                )}
+                              </li>
+                            );
+                          })}
                         </ul>
                       </div>
                     ))}
@@ -336,6 +411,31 @@ export function RipsScreen() {
             setRecordingEntry(null);
             showToast("Resultado del MUV registrado.");
             refreshHistory();
+          }}
+        />
+      )}
+
+      {correctingGaps && (
+        <CompletePatientRipsDataModal
+          gaps={correctingGaps}
+          identityCatalogs={identityCatalogs}
+          onClose={() => setCorrectingGaps(null)}
+          onSaved={async () => {
+            setCorrectingGaps(null);
+            showToast("Datos del paciente actualizados.");
+            await refreshReadinessInPlace();
+          }}
+        />
+      )}
+
+      {correctingEncounterGap && (
+        <CompleteEncounterRipsServiceModal
+          encounterId={correctingEncounterGap.encounterId}
+          onClose={() => setCorrectingEncounterGap(null)}
+          onApplied={async () => {
+            setCorrectingEncounterGap(null);
+            showToast("Servicio RIPS aplicado.");
+            await refreshReadinessInPlace();
           }}
         />
       )}

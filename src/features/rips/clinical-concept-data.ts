@@ -1,3 +1,4 @@
+import { logStepFailed } from "@/features/clinic/debug";
 import { createClient } from "@/lib/supabase/server";
 import type {
   ClinicalConceptOption,
@@ -92,14 +93,35 @@ type ClinicSpecialtyRipsServiceRow = {
   rips_reference_values: { code: string; parent_code: string | null } | null;
 };
 
+// Same PGRST200 embed defect as fetchSpecialtyRipsServiceDefaults()
+// (specialty-rips-service-defaults-data.ts) had, and the same fix: no
+// hint needed — there is exactly one FK between these two tables, so
+// PostgREST resolves it on its own. `rips_reference_values:
+// rips_reference_value_id(...)` reads as "embed the relation named
+// rips_reference_value_id" (not a table:column hint), which does not
+// exist — confirmed live against the real remote project.
+//
+// Unlike that sibling helper, this one still degrades to `[]` on error
+// (logged, never silently) rather than throwing: it's called from an
+// UNGUARDED Promise.all in /agenda/atencion/[appointmentId]/page.tsx
+// (A3's own encounter loader, no try/catch around it) — throwing here
+// would crash the whole "¿Qué realizaste?" screen on any transient read
+// error, turning a benign "no confirmed Servicio RIPS yet" state (which
+// A3 already treats as valid — see clinical-service-resolution.ts's own
+// comment: this never blocks finalizing an atención) into a hard page
+// failure. That resilience is A3 behavior this task must not change.
 export async function fetchClinicSpecialtyRipsServices(clinicId: string): Promise<ClinicSpecialtyRipsServiceOption[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("clinic_specialty_rips_services")
-    .select("specialty_id, rips_reference_values:rips_reference_value_id(code, parent_code)")
+    .select("specialty_id, rips_reference_values(code, parent_code)")
     .eq("clinic_id", clinicId)
     .eq("status", "active");
-  if (error || !data) return [];
+  if (error) {
+    logStepFailed("fetchClinicSpecialtyRipsServices", error);
+    return [];
+  }
+  if (!data) return [];
   return (data as unknown as ClinicSpecialtyRipsServiceRow[])
     .filter((row) => row.rips_reference_values !== null && row.rips_reference_values.parent_code !== null)
     .map((row) => ({

@@ -279,3 +279,44 @@ export async function fetchActiveSpecialties(supabase: SupabaseClient): Promise<
   }
   return data ?? [];
 }
+
+// RIPS #A4 — the specialties actually relevant to THIS clinic, unlike
+// fetchActiveSpecialties above (the full global catalog, used only for
+// "Mi perfil profesional"'s own picker). "Servicios RIPS por especialidad"
+// must never list a specialty no active professional of this clinic
+// actually practices — showing the full global catalog there would bury
+// the 1-3 specialties that matter under dozens of irrelevant ones. Same
+// two-sequential-queries-merged-in-JS convention as fetchTeamMembers above
+// (professional_profiles.primary_specialty_id has no direct embeddable FK
+// to specialties worth relying on here either) — deduplicated by specialty
+// id, since more than one active professional can share the same primary
+// specialty.
+export async function fetchClinicRelevantSpecialties(supabase: SupabaseClient, clinicId: string): Promise<Specialty[]> {
+  const professionalProfilesResult = await supabase
+    .from("professional_profiles")
+    .select("primary_specialty_id")
+    .eq("clinic_id", clinicId)
+    .eq("active", true);
+  if (professionalProfilesResult.error) {
+    logStepFailed("fetchClinicRelevantSpecialties (professional_profiles)", professionalProfilesResult.error);
+    throw professionalProfilesResult.error;
+  }
+
+  const specialtyIds = [
+    ...new Set(
+      professionalProfilesResult.data.map((pp) => pp.primary_specialty_id).filter((id): id is string => id !== null),
+    ),
+  ];
+  if (specialtyIds.length === 0) return [];
+
+  const specialtiesResult = await supabase
+    .from("specialties")
+    .select("id, name")
+    .in("id", specialtyIds)
+    .order("name", { ascending: true });
+  if (specialtiesResult.error) {
+    logStepFailed("fetchClinicRelevantSpecialties (specialties)", specialtiesResult.error);
+    throw specialtiesResult.error;
+  }
+  return specialtiesResult.data ?? [];
+}

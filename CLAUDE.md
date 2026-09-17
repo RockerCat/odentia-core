@@ -867,6 +867,56 @@ configuration:
   for a given specialty means "this clinic hasn't confirmed it yet" —
   never "use the default instead."
 
+**RIPS #A4 — writing `clinic_specialty_rips_services`.** The only write
+path is `confirm_clinic_specialty_rips_service()` (`SECURITY DEFINER`,
+`/clinica#rips`'s own "Servicios RIPS por especialidad" section) — the
+table itself stays RLS-closed to `authenticated` for INSERT/UPDATE/DELETE,
+same deny-by-default convention as `clinic_invitations`/
+`professional_profiles`. `clinic_id` is never a parameter of that
+function (nothing for a caller to spoof): it's re-derived from the
+caller's own active `clinic_admin` membership, exactly like
+`invite_clinic_member()`. Grupo is never a separate input either — it's
+derived from the selected Servicio's own `rips_reference_values.parent_code`
+and re-verified against the official `GrupoServicios` catalog, so an
+inconsistent Grupo/Servicio pair can never persist. Confirming a new
+Servicio for an already-configured specialty supersedes the previous row
+(`status = 'superseded'`) rather than overwriting it — never a second
+simultaneous "active" row per `(clinic_id, specialty_id)`. Grupo/Servicio
+are SNAPSHOTTED into `encounter_services` only at encounter-finalize time
+(`clinical-service-resolution.ts`, unchanged by A4) — confirming this
+configuration therefore only ever affects NEW encounters going forward,
+never an already-finalized one. Configuring a specialty later never
+rewrites any already-finalized encounter's own frozen snapshot — that
+historical gap is what RIPS #A4B (below) exists to close, explicitly and
+per-encounter, never automatically.
+
+**RIPS #A4B — corrección histórica de Servicio RIPS en una atención
+finalizada.** `RIPS_SERVICE_CONFIGURATION_MISSING` on an already-finalized
+encounter is resolved from `/rips` itself (grouped by `encounter_id` — one
+modal per atención, never per service, since every service in one
+encounter shares the same professional/specialty under the current
+no-co-atención model), via
+`apply_confirmed_specialty_rips_service_to_encounter()` (`SECURITY
+DEFINER`, migration `20260917110000`). Same permanent rules as RIPS #A4,
+restated because a future change must never violate them here either:
+effective configuration comes EXCLUSIVELY from
+`clinic_specialty_rips_services`, re-validated live against the official
+catalog — `specialty_rips_service_defaults` is never read as a fallback.
+The RPC can only fill `encounter_services.grupo_servicios_code`/
+`cod_servicio_code` — no other column, no clinical content, ever. It only
+completes a currently-NULL `cod_servicio_code`; if `grupo_servicios_code`
+is already frozen (e.g. from a manual "Detalles RIPS" edit) and disagrees
+with the Grupo the confirmed configuration would derive, the WHOLE
+encounter's correction fails closed rather than silently overwriting a
+historical value or leaving an inconsistent Grupo/Servicio pair — never a
+partial per-service correction. Every corrected service gets its own
+append-only row in `encounter_service_rips_corrections` (actor, timestamp,
+previous/new codes) — that table has no client-reachable write path at
+all (no INSERT policy/grant; the RPC is the only writer) and its parent
+FKs (`encounter_service_id`, `clinic_id`) are `ON DELETE RESTRICT`, never
+CASCADE — an audit trail must outlive the row it explains, not disappear
+with it.
+
 **RIPS #6D — corrección de gaps en una atención finalizada.** A finalized
 encounter's historia clínica stays immutable except for exactly two RIPS
 gaps (`incapacity_code`, a consultation's `service_value`) —
@@ -875,6 +925,19 @@ gaps (`incapacity_code`, a consultation's `service_value`) —
 never overwrite an already-set one. `clinic_admin`-only, same gate as
 every other `/rips` action — deliberately not
 `is_active_clinical_professional()`.
+
+**Corrección de datos RIPS del paciente, contextual en `/rips`.** A
+patient-scope readiness gap (`PATIENT_SEX_MISSING`,
+`PATIENT_COUNTRY_RESIDENCE_MISSING`, etc.) is corrected from a modal
+inside `/rips` itself — grouped by `patient_id` (one modal completes every
+missing field for that patient in one save), reusing the existing
+`updatePatient()` write path and the same identity catalogs
+`/pacientes` already uses. Never navigates to `/pacientes`; readiness is
+re-resolved in place (`getRipsPeriodSummaryAction`) without leaving the
+screen. Any future RIPS-blocking gap with a real, safe correction path
+should follow this same "stay in `/rips`, group by the natural key, fail
+closed on ambiguity" shape rather than sending the admin away to fix it
+elsewhere.
 
 Automatic SISPRO/MUV submission is not implemented and not currently
 buildable without new infrastructure: both official mechanisms (the
