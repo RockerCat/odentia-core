@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideRouteGuardRedirect } from "./use-route-guard";
+import { decideRouteGuardRedirect, resolveEffectiveHydrated, shouldRunSelfHeal } from "./use-route-guard";
 
 // Regression coverage for a real production report: a freshly onboarded
 // Clinic Admin's first HARD navigation to /agenda (as opposed to an in-app
@@ -42,5 +42,56 @@ describe("decideRouteGuardRedirect", () => {
 
   it("once hydrated with a valid session and an allowed role, never redirects — the fresh Clinic Admin's actual /agenda case", () => {
     expect(decideRouteGuardRedirect({ hydrated: true, sessionOk: true, roleOk: true, role: "clinic-admin" })).toBeNull();
+  });
+});
+
+// Regression coverage for "Prompt Master — Corregir invitación/acceso de
+// Patient reutilizando el patrón de Team Invitations" (smoke follow-up): a
+// real Patient landing on /portal/citas immediately after a brand-new
+// Portal invitation activation — no /login, no DEV role switcher —
+// looped /portal/citas -> /agenda -> /portal -> /portal/citas forever in
+// development.
+//
+// Root cause: the self-heal effect (useRouteGuard's own comment on the
+// production-onboarding bug it was built for) used to gate on `sessionOk`,
+// which is unconditionally true in development (`NODE_ENV === "development"
+// || hasSession`) purely so the DEV role switcher works without a real
+// login. That meant in development the self-heal never ran at all for a
+// genuinely new real session with no mock role bridged yet — `role` stayed
+// DEFAULT_ROLE ("clinic-admin"), failing PortalShell's ["patient"] check
+// and bouncing to /agenda, which itself bounces a linked-but-unmembershipped
+// Patient to /portal, which redirects back to /portal/citas. shouldRunSelfHeal/
+// resolveEffectiveHydrated are the two pure decisions that used to read
+// `sessionOk` and now correctly read the REAL `hasSession` instead — proven
+// here without mounting the hook or mocking Supabase/useSyncExternalStore.
+describe("shouldRunSelfHeal", () => {
+  it("REGRESSION: must run even when sessionOk would be dev-bypassed to true — hasSession (never sessionOk) gates this", () => {
+    expect(shouldRunSelfHeal(true, false)).toBe(true);
+  });
+
+  it("never runs before hydration", () => {
+    expect(shouldRunSelfHeal(false, false)).toBe(false);
+  });
+
+  it("never re-runs once a real mock session already exists (a DEV role-switcher pick, or an already-completed bridge)", () => {
+    expect(shouldRunSelfHeal(true, true)).toBe(false);
+  });
+});
+
+describe("resolveEffectiveHydrated", () => {
+  it("REGRESSION: not effectively hydrated until self-heal has run, even in development (no session yet, self-heal not done)", () => {
+    expect(resolveEffectiveHydrated(true, false, false)).toBe(false);
+  });
+
+  it("becomes effectively hydrated once self-heal completes, session bridged or not", () => {
+    expect(resolveEffectiveHydrated(true, false, true)).toBe(true);
+  });
+
+  it("is immediately effectively hydrated when a real mock session already exists — nothing to wait for", () => {
+    expect(resolveEffectiveHydrated(true, true, false)).toBe(true);
+  });
+
+  it("never effectively hydrated before real hydration, regardless of session/self-heal state", () => {
+    expect(resolveEffectiveHydrated(false, true, true)).toBe(false);
   });
 });

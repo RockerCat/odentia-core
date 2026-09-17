@@ -47,6 +47,25 @@ export function decideRouteGuardRedirect({
   return null;
 }
 
+// Whether the self-heal effect below may run yet — deliberately keyed on
+// the REAL `hasSession` (readSession() !== null), never on `sessionOk`
+// (which is unconditionally true in development — see that constant's own
+// comment). Extracted as a pure function for the same reason
+// decideRouteGuardRedirect is: see this function's own regression test for
+// the exact bug this fixes.
+export function shouldRunSelfHeal(hydrated: boolean, hasSession: boolean): boolean {
+  return hydrated && !hasSession;
+}
+
+// Whether the redirect decision below may run yet. Mirrors
+// shouldRunSelfHeal's own `hasSession` (never `sessionOk`) gating: the
+// redirect decision must wait for self-heal to have a real chance to run
+// and complete — in EVERY environment, not just production — before ever
+// concluding a role is wrong. See this function's own regression test.
+export function resolveEffectiveHydrated(hydrated: boolean, hasSession: boolean, checkedRealSession: boolean): boolean {
+  return hydrated && (hasSession || checkedRealSession);
+}
+
 // Shared by every shell (AppShell for the clinic dashboard, PortalShell for
 // the Patient portal) so the same hydration-safe session/role check isn't
 // duplicated per shell. Returns whether the current page may render.
@@ -125,21 +144,35 @@ export function useRouteGuard(allowedRoles?: Role[]): boolean {
   // one-tick hydration flash `hydrated` above already handles — it's a
   // real, permanent absence of data).
   //
-  // Self-heal: once hydrated, if there's still no mock session, re-resolve
-  // the real context exactly the same way /login itself does and bridge
-  // it right here before ever concluding "redirect to /login". hasSession
+  // Self-heal: once hydrated, if there's still no REAL mock session, re-
+  // resolve the real context exactly the same way /login itself does and
+  // bridge it right here before ever concluding a redirect. hasSession
   // above is subscribed to subscribeToSession, so writeSession (inside
   // bridgeAuthenticatedContext) triggers a normal re-render with the
   // corrected value once this resolves. `checkedRealSession` only exists
   // to keep the REDIRECT decision from firing while this one-time check
   // is still in flight (a real network round trip, unlike the synchronous
   // hydration correction above) — it's only ever set from inside the async
-  // callback, never synchronously in the effect body, since sessionOk
-  // already being true means there was nothing to self-heal and
-  // `effectiveHydrated` below doesn't need it in that case anyway.
+  // callback, never synchronously in the effect body.
+  //
+  // REGRESSION (found via "Prompt Master — Corregir invitación/acceso de
+  // Patient": a real Patient landing on /portal/citas immediately after
+  // activating a brand-new Portal invitation — no /login, no DEV role
+  // switcher — looped /portal/citas -> /agenda -> /portal ->
+  // /portal/citas forever in development): this used to gate on
+  // `sessionOk`, not `hasSession`. `sessionOk` is unconditionally true in
+  // development (see its own comment), so in dev this effect never ran at
+  // all for a genuinely new real session with no mock role bridged yet —
+  // `role` stayed DEFAULT_ROLE ("clinic-admin"), roleOk was false for
+  // ["patient"], and the guard redirected to /agenda before self-heal ever
+  // got a chance to resolve the real "patient" role. Gating on `hasSession`
+  // instead fixes this in every environment while leaving the DEV role
+  // switcher untouched: writeSession() (called by the switcher, same as by
+  // this self-heal) makes hasSession true immediately, so an explicit
+  // dev-picked role is never overwritten by this effect.
   const [checkedRealSession, setCheckedRealSession] = useState(false);
   useEffect(() => {
-    if (!hydrated || sessionOk) return;
+    if (!shouldRunSelfHeal(hydrated, hasSession)) return;
     let cancelled = false;
     (async () => {
       const supabase = createClient();
@@ -154,12 +187,9 @@ export function useRouteGuard(allowedRoles?: Role[]): boolean {
     return () => {
       cancelled = true;
     };
-  }, [hydrated, sessionOk]);
+  }, [hydrated, hasSession]);
 
-  // Only actually needs checkedRealSession while sessionOk is false — once
-  // it's true (whether from the start, or freshly bridged above) there's
-  // nothing left to wait for.
-  const effectiveHydrated = hydrated && (sessionOk || checkedRealSession);
+  const effectiveHydrated = resolveEffectiveHydrated(hydrated, hasSession, checkedRealSession);
 
   useEffect(() => {
     const redirectTo = decideRouteGuardRedirect({ hydrated: effectiveHydrated, sessionOk, roleOk, role });
