@@ -142,7 +142,7 @@ export default async function LandingPage() {
                   <>
                     <LandingCtaLink
                       href="/demo"
-                      className="rounded-lg bg-primary px-4 py-2.5 text-center text-sm font-medium text-primary-foreground hover:opacity-90 sm:px-6 sm:py-3"
+                      className="rounded-lg border border-primary bg-background px-4 py-2.5 text-center text-sm font-medium text-primary hover:bg-primary/10 sm:px-6 sm:py-3"
                     >
                       Quiero Odentia para mi clínica
                     </LandingCtaLink>

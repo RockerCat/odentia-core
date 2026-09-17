@@ -999,9 +999,10 @@ session with no manual DB work and no outbound email.
     (`SECURITY DEFINER`, Superadmin-only, `for update` row lock, valida
     la transición contra el estado REAL en DB, nunca confía en un
     `currentStatus` del cliente; solo escribe `status`/`updated_at`, sin
-    RPC de edición de identidad/contacto). **LOCAL, pendiente de `npx
-    supabase db push`** — Alex decide cuándo aplicarla; hasta entonces el
-    cambio de estado en Platform no persiste en producción.
+    RPC de edición de identidad/contacto). **APLICADA al Supabase
+    remoto** — confirmado por el smoke real de progresión de estado
+    (`new → contacted → demo_scheduled → demo_completed → won`), ver
+    Checkpoint 8.
   - `/demo` (`src/features/commercial-prospects/prospect-form.tsx`) — 6
     campos (Nombre, Apellido, Nombre de la clínica, Correo, Teléfono/
     WhatsApp, Ciudad), estados idle/submitting/success/error, honeypot
@@ -1022,11 +1023,11 @@ session with no manual DB work and no outbound email.
     sesión`/`Quiero Odentia...` intactas, `/registro` sigue existiendo).
     No se agregó test pgTAP: solo 2 de ~20 migraciones con RPC en este
     repo tienen uno, no es convención universal.
-  - **PENDIENTE:** `Prospecto ganado → Convertir en clínica` (próximo
-    checkpoint, reutilizará `provision_clinic()`); aplicar
-    `20260916200000` al remoto; política formal de privacidad/tratamiento
-    de datos (no existe aún en el repo); hardening anti-spam real
-    (rate limiting/CAPTCHA) si el volumen lo justifica más adelante.
+  - **PENDIENTE (vigente):** política formal de privacidad/tratamiento de
+    datos para `/demo` (no existe aún en el repo); hardening anti-spam
+    real (rate limiting/CAPTCHA) si el volumen lo justifica más adelante.
+    `Prospecto ganado → Convertir en clínica` — implementado en
+    Checkpoint 6, ya no pendiente.
   - **Fix — fila de `/platform/prospects` no navegaba al detalle.** Solo
     el nombre dentro de la primera celda tenía `<Link>`; el resto de la
     fila (la mayoría del área clickeable visible) no navegaba. Corregido
@@ -1053,8 +1054,7 @@ session with no manual DB work and no outbound email.
     provisioning**: llama directamente a `provision_clinic()`
     (`20260916110000`, sin modificar) — esa migración ya había sido
     diseñada explícitamente para esto ("Ruta A desde un prospecto, Ruta B
-    directa, ambas convergen aquí"). **LOCAL, pendiente de `npx supabase
-    db push`.**
+    directa, ambas convergen aquí"). **APLICADA al Supabase remoto.**
   - `PlatformClinicForm` (`src/features/platform/clinic-form.tsx`) ganó
     dos props opcionales (`initialClinic`/`initialLocation`, default
     `EMPTY_CLINIC`/`EMPTY_CLINIC_LOCATION`) para poder prellenar
@@ -1078,15 +1078,14 @@ session with no manual DB work and no outbound email.
     verde, 498 tests (3 nuevos de `isEligibleForClinicConversion`, PASS/
     FAIL espejando la RPC). Migración revisada estructuralmente (no
     duplica lógica de `provision_clinic()`, guard de Superadmin primero,
-    row lock antes de cualquier escritura, sin grant nuevo a `anon`). No
-    aplicada a remoto — por tanto, sin afirmar E2E de conversión real
-    todavía.
-  - **PENDIENTE:** Alex debe aplicar `20260916210000` (y `20260916200000`
-    si aún no lo hizo) y correr el smoke real: Ganado → Crear clínica →
-    verificar fila en `commercial_prospects.converted_clinic_id` →
-    "Ver clínica" abre el detalle correcto → continuar con el
-    provisioning normal del primer Clinic Admin (flujo Platform → Equipo
-    ya existente, sin cambios).
+    row lock antes de cualquier escritura, sin grant nuevo a `anon`).
+    **Migración aplicada al remoto y smoke real E2E: PASS** — prospecto
+    QA (Alex Sosa / Temporal Clinic / Tunja) llevado hasta `won` y
+    convertido en clínica real; `commercial_prospects.converted_clinic_id`
+    quedó poblado y "Ver clínica" abrió el detalle correcto en
+    `/platform/clinicas/[slug]`. El provisioning del primer Clinic Admin
+    para esa clínica sigue siendo el flujo Platform → Equipo ya existente
+    y cerrado — no es un paso pendiente de este checkpoint.
 - **Checkpoint 7 (2026-09-16) — Platform clinic logo wiring (real,
   bloqueado por una brecha de autorización encontrada durante el smoke
   del Checkpoint 6).** Auditoría focalizada confirmó que `PlatformClinicForm`
@@ -1112,7 +1111,7 @@ session with no manual DB work and no outbound email.
     policies de Storage que ya lo comparten, incluida `clinic_logos_select_admin`).
     Sin membership artificial, sin ampliar acceso más allá del bucket
     `clinic-logos`, sin tocar la autorización existente de Clinic Admin.
-    **LOCAL, pendiente de `npx supabase db push`.**
+    **APLICADA al Supabase remoto.**
   - `PlatformClinicForm.onSubmit` ahora recibe un tercer argumento
     (`logoFile: File | null`) — el componente sigue sin subir nada él
     mismo (no hay `clinic_id` real en submit time). Los dos callers reales
@@ -1132,11 +1131,83 @@ session with no manual DB work and no outbound email.
     para `fetchActiveClinicAdminMembership()`). Migración revisada
     estructuralmente (ALTER POLICY conserva nombre/comando/roles, CREATE
     OR REPLACE mantiene firma/tipo de retorno, validación de path/uuid
-    intacta). No aplicada a remoto — sin E2E de upload real todavía.
-  - **PENDIENTE:** Alex debe aplicar `20260916220000` y retomar el smoke:
-    Temporal Clinic → seleccionar logo → Crear clínica → verificar
-    `clinics.logo_url` + objeto en el bucket `clinic-logos` → "Ver
-    clínica" muestra el logo.
+    intacta). **Migración aplicada al remoto y smoke real E2E: PASS** —
+    Temporal Clinic creada con logo seleccionado durante la conversión de
+    prospecto, `clinics.logo_url` poblado, objeto real presente en el
+    bucket `clinic-logos`, y el logo visible tanto en `/platform/clinicas`
+    (miniatura) como en `/platform/clinicas/[slug]` (header, tratamiento
+    ampliado — ver Checkpoint 8).
+- **Checkpoint 8 (2026-09-16) — Bloque público/comercial de Odentia:
+  CERRADO E IMPLEMENTADO.** Consolida los Checkpoints 5, 6 y 7 anteriores:
+  el funnel comercial público completo (Landing → `/demo` → Prospecto →
+  seguimiento Superadmin desde Platform → `won` → conversión opcional a
+  clínica) está real, con sus cuatro migraciones (`20260916190000`,
+  `20260916200000`, `20260916210000`, `20260916220000`) **aplicadas al
+  Supabase remoto** y validadas con smoke manual real end-to-end — no es
+  trabajo pendiente ni parcial:
+  - progresión completa de un prospecto real (Alex Sosa / Temporal Clinic
+    / Tunja) por los seis estados de `commercial_prospect_status`
+    (`new → contacted → demo_scheduled → demo_completed → won`, con
+    `lost` disponible desde cualquier estado no terminal) — PASS;
+  - conversión `won → clínica` vía `convert_commercial_prospect_to_clinic()`
+    (reutiliza `provision_clinic()` sin duplicar lógica; idempotente por
+    row lock; nunca crea Auth user/membership/professional_profile/
+    invitation; el contacto del prospecto queda solo como contexto
+    read-only, nunca se asume que sea el futuro Clinic Admin) — PASS;
+  - creación directa de clínica por Superadmin (`/platform/clinicas/nueva`,
+    sin pasar por un prospecto) sigue disponible, sin cambios de
+    comportamiento — PASS;
+  - upload/persistencia real de logo en AMBOS caminos (`uploadClinicLogo()`,
+    sin duplicar infraestructura de Storage), incluyendo la corrección de
+    autorización que le permite a un Superadmin gestionar el logo de una
+    clínica sin membership (`clinics_update_admin`/`owns_clinic_logo_path()`
+    ampliados con `or is_platform_superadmin()`, nunca una membership
+    artificial) — PASS;
+  - visualización del logo real en `/platform/clinicas` (miniatura,
+    fallback `BuildingIcon` para clínicas sin logo) y en
+    `/platform/clinicas/[slug]` (tratamiento ampliado, mismo lenguaje
+    visual que la identidad de clínica de Agenda —
+    `ClinicIdentityCard`/`ClinicLogo`, `src/features/dashboard/
+    clinic-identity-card.tsx` — nunca una miniatura pequeña ahí) — PASS.
+  - **Asignación/provisioning del Administrador de Clínica** (primer
+    Clinic Admin, vía Platform → Equipo) ya existía y quedó cerrada en un
+    checkpoint previo (ver "Platform / Superadmin" arriba) — no es un
+    siguiente paso de este bloque.
+  - **Alineación comercial pública Core ↔ Marketplace (decisión de
+    producto, implementación de Marketplace vive en su propio repo,
+    `odentia-marketplace`, no documentada aquí en detalle):** el CTA
+    público principal de todo el ecosistema es `Quiero Odentia para mi
+    clínica`, apuntando siempre a Core's `/demo` — nunca un formulario de
+    autorregistro de clínica dentro de Marketplace. El header público de
+    Marketplace quedó alineado: `Quiero Odentia para mi Clínica` (→
+    `/demo` de Core) y `Ya soy Usuario Odentia` (conserva, sin cambios de
+    comportamiento, el mismo link a `/login` de Core que ya usaba con
+    otro copy) — reemplazando los CTAs previos `Soy cliente Odentia`/
+    `Registra tu clínica`. Marketplace nunca implementó ni implementa su
+    propio login/registro de clientes; Core sigue siendo la única
+    autoridad de identidad.
+  - **Ajuste visual final del Hero de Core (`src/app/page.tsx`):** el CTA
+    "Quiero Odentia para mi clínica" del Hero (debajo del logo de
+    LopaDent) pasó a outline blanco con borde/texto teal (`border-primary`/
+    `text-primary`/`bg-background`, hover `bg-primary/10`) para reducir su
+    protagonismo visual frente al mismo CTA sólido del navbar, que se
+    mantiene sin cambios. `Iniciar sesión` no se tocó.
+  - **QA de cierre:** `tsc --noEmit` y ESLint limpios en cada archivo
+    tocado a lo largo de los Checkpoints 5–8; suite completa (`npx vitest
+    run`) en verde (498 tests, sin regresiones) al cierre del Checkpoint 7;
+    sin suite adicional para el ajuste visual del Hero (cambio de una sola
+    clase, ya validado manualmente).
+  - **Deuda técnica vigente (no resuelta, no inventada como nueva):**
+    política formal de privacidad/tratamiento de datos para `/demo`;
+    hardening anti-spam real (rate limiting/CAPTCHA) más allá del
+    honeypot pasivo actual.
+  - **Siguiente paso comercial:** ninguno definido todavía más allá de
+    operar el pipeline ya construido (Platform → Prospectos) y, cuando
+    exista demanda real, decidir si el bloque comercial necesita más
+    funcionalidad. El siguiente frente de trabajo activo en este repo es
+    clínico, no comercial: **RIPS A4 — Especialidad → Servicio RIPS write
+    path para `clinic_admin`** (ver "RIPS #8" y "Estado actual" arriba,
+    sin cambios por este checkpoint).
 
 ## Clínica (real, Clinic Admin)
 

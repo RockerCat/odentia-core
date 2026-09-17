@@ -894,13 +894,21 @@ and PROJECT_STATUS.md's own "RIPS" section for current scope and gaps.
 # Prospecto Comercial (Commercial Funnel)
 
 Permanent architectural decision, same standing as the rest of this file.
-Odentia's public commercial entry point is `/demo`
-(`src/features/commercial-prospects/`): Landing → "Quiero Odentia para mi
-clínica" → `/demo` → a Prospecto Comercial is persisted
-(`public.commercial_prospects`, via `submit_commercial_prospect()`) →
-seguimiento comercial from Platform → Prospectos
-(`/platform/prospects`) → (future checkpoint) conversion to a real
-clinic.
+**Public users do not self-create clinics. Clinic creation/provisioning is
+controlled by Platform Superadmin; the public commercial path starts with
+a prospect/demo request, never a public clinic-registration form** — see
+Domain Model's Superadmin section above for `provision_clinic()`/the
+`bootstrap_clinic()` self-service retirement. Odentia's public commercial
+entry point is `/demo` (`src/features/commercial-prospects/`): Landing →
+"Quiero Odentia para mi clínica" → `/demo` → a Prospecto Comercial is
+persisted (`public.commercial_prospects`, via
+`submit_commercial_prospect()`) → seguimiento comercial from Platform →
+Prospectos (`/platform/prospects`) → an explicit, separate Superadmin
+action converts a `won` prospect into a real clinic (see below) — this
+entire path is real, not a future checkpoint. Marketplace's own public
+header follows the same rule: its "Quiero Odentia para mi Clínica" CTA
+links to this same Core `/demo`, never a Marketplace-side clinic
+self-registration form.
 
 **A Prospecto Comercial is never any Odentia identity entity.** It is not
 an `auth.users` row, not a `profiles` row, not a `clinic`, not a
