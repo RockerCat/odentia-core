@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import type { TeamMemberRole } from "@/features/clinic/data";
 import { isValidTaxIdLength, sanitizeTaxId } from "@/features/onboarding/api";
 import { slugCandidate, slugifyClinicName } from "@/features/onboarding/slug";
 import type { ClinicFormData, ClinicLocationData } from "@/features/onboarding/types";
@@ -151,6 +152,101 @@ export function friendlyProvisionAdminError(error: unknown): string {
     }
     if (message.includes("already has a pending clinic_admin invitation")) {
       return "Ya existe una invitación pendiente para el primer Administrador de esta clínica.";
+    }
+    if (message.includes("first_name must not be empty")) {
+      return "Ingresa el nombre.";
+    }
+    if (message.includes("last_name must not be empty")) {
+      return "Ingresa el apellido.";
+    }
+    if (message.includes("phone must not be empty")) {
+      return "Ingresa el teléfono.";
+    }
+    if (message.includes("valid email")) {
+      return "Ingresa un correo electrónico válido.";
+    }
+  }
+  return "No pudimos crear la invitación. Intenta de nuevo en unos minutos.";
+}
+
+export type ProvisionClinicTeamMemberInput = {
+  clinicId: string;
+  role: TeamMemberRole;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+};
+
+export type ProvisionClinicTeamMemberResult = {
+  id: string;
+  clinicId: string;
+  email: string;
+  role: TeamMemberRole;
+  expiresAt: string;
+  // Only ever present in this one response — never stored anywhere,
+  // never re-fetchable later (only its hash is persisted).
+  rawToken: string;
+};
+
+// "Platform → Clínica → Equipo: gestión transversal por Superadmin".
+// Calls provision_clinic_team_member() (20260916180000) — a SEPARATE RPC
+// from provision_first_clinic_admin_invitation(), never that one: this
+// covers ongoing team management for any of the three real roles, with
+// none of that RPC's "first admin bootstrap" guards. Also separate from
+// inviteClinicMember()'s invite_clinic_member(), which stays exactly as
+// today for a Clinic Admin managing her own clinic. clinic_id is an
+// explicit parameter (a Superadmin has no membership of her own to
+// derive it from), and every field is required — every Platform
+// invitation, regardless of role, carries complete pre-provisioned
+// identity so a genuinely new user gets the same password-only,
+// no-Confirm-Signup activation as the first Clinic Admin.
+export async function provisionClinicTeamMember(
+  input: ProvisionClinicTeamMemberInput,
+): Promise<ProvisionClinicTeamMemberResult> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("provision_clinic_team_member", {
+    p_clinic_id: input.clinicId,
+    p_role: input.role,
+    p_first_name: input.firstName.trim(),
+    p_last_name: input.lastName.trim(),
+    p_email: input.email.trim(),
+    p_phone: input.phone.trim(),
+  });
+
+  if (error) throw error;
+
+  const row = Array.isArray(data) ? data[0] : data;
+  return { id: row.id, clinicId: row.clinic_id, email: row.email, role: row.role, expiresAt: row.expires_at, rawToken: row.raw_token };
+}
+
+// Mirrors friendlyProvisionAdminError()'s own shape/tone, scoped to this
+// RPC's own distinct rejection cases — including the two duplicate-
+// membership outcomes that need different recovery actions (reactivate
+// vs. nothing to do).
+export function friendlyProvisionTeamMemberError(error: unknown): string {
+  if (error && typeof error === "object" && "message" in error) {
+    const message = String((error as { message: unknown }).message).toLowerCase();
+    if (message.includes("session")) {
+      return "Tu sesión expiró. Recarga la página e inicia sesión de nuevo para continuar.";
+    }
+    if (message.includes("superadmin")) {
+      return "No tienes permisos de Superadmin para agregar miembros a esta clínica.";
+    }
+    if (message.includes("clinic not found")) {
+      return "No encontramos esta clínica. Recarga la página e intenta de nuevo.";
+    }
+    if (message.includes("role must be")) {
+      return "Selecciona un rol válido.";
+    }
+    if (message.includes("already an active member")) {
+      return "Esta persona ya es miembro activo de esta clínica.";
+    }
+    if (message.includes("already has an inactive membership")) {
+      return "Esta persona ya tiene una membresía inactiva en esta clínica. Usa \"Reactivar\" en vez de crear una invitación.";
+    }
+    if (message.includes("already a pending invitation")) {
+      return "Ya existe una invitación pendiente para este correo en esta clínica.";
     }
     if (message.includes("first_name must not be empty")) {
       return "Ingresa el nombre.";

@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { Logo } from "@/components/shell/logo";
 import { CheckCircleIcon } from "@/components/shell/icons";
-import { activatePreProvisionedClinicAdminAction } from "@/features/clinic/activate-invitation-action";
+import { activatePreProvisionedInvitationAction } from "@/features/clinic/activate-invitation-action";
 import {
   acceptClinicInvitation,
   decideInvitationSessionView,
@@ -93,9 +93,11 @@ type UsablePreview = {
   role: "clinic_admin" | "dentist" | "assistant";
   clinicName: string | null;
   userExists: boolean;
-  // Checkpoint 3 — null for every traditional dentist/assistant
-  // invitation; all three present only for a Superadmin-issued first
-  // Clinic Admin invitation (see hasPreProvisionedIdentity()).
+  // Null for every traditional Clinic-Admin-issued dentist/assistant
+  // invitation (invite_clinic_member()); all three present, regardless of
+  // role, only for a Superadmin-issued Platform invitation
+  // (provision_first_clinic_admin_invitation()/provision_clinic_team_member()
+  // — see hasPreProvisionedIdentity()).
   firstName: string | null;
   lastName: string | null;
   phone: string | null;
@@ -128,6 +130,15 @@ export default function InvitationPage() {
   const token = params.token;
   const router = useRouter();
   const [view, setView] = useState<ViewState>({ kind: "validating" });
+  // Purely cosmetic pending flag for "Ir a mi Clínica" — router.push() is
+  // fire-and-forget (no promise to await, nothing that throws
+  // synchronously for a valid internal route), so this never resets back
+  // to false on its own; the component unmounts once /agenda takes over.
+  // Same local-pending-useState + guarded onClick + disabled convention
+  // already used for other plain router.push buttons (e.g.
+  // real-appointment-detail-modal.tsx's "Ver paciente"/"Ver historial
+  // completo").
+  const [navigatingToClinic, setNavigatingToClinic] = useState(false);
   const [accountData, setAccountData] = useState(EMPTY_ACCOUNT);
   const [signingUp, setSigningUp] = useState(false);
   const [signUpError, setSignUpError] = useState<string | null>(null);
@@ -135,7 +146,7 @@ export default function InvitationPage() {
   // password/confirmPassword fields (never its firstName/lastName/email,
   // which stay blank/unused in this branch) and the SAME signingUp/
   // signUpError state AccountStep uses, but calls
-  // activatePreProvisionedClinicAdminAction() (handleActivateAccount
+  // activatePreProvisionedInvitationAction() (handleActivateAccount
   // below), never signUpAccount()/handleSignUp() — see that action's own
   // comment for why this branch needs a genuinely different mechanism,
   // not just a different payload.
@@ -200,7 +211,7 @@ export default function InvitationPage() {
   // handleSignUp() above: that path is a public, anonymous
   // supabase.auth.signUp() and always triggers Confirm Signup email,
   // which this checkpoint's whole point is to skip for a pre-provisioned
-  // clinic_admin invitation (see activatePreProvisionedClinicAdminAction's
+  // clinic_admin invitation (see activatePreProvisionedInvitationAction's
   // own comment for why that email adds no real security here). Only
   // `token` and the password just typed are sent to the server — never
   // preview.email/firstName/lastName/phone, which the server re-resolves
@@ -208,7 +219,7 @@ export default function InvitationPage() {
   const handleActivateAccount = async (preview: UsablePreview) => {
     setSigningUp(true);
     setSignUpError(null);
-    const outcome = await activatePreProvisionedClinicAdminAction(token, accountData.password);
+    const outcome = await activatePreProvisionedInvitationAction(token, accountData.password);
 
     if (outcome.status === "error") {
       setSigningUp(false);
@@ -235,7 +246,7 @@ export default function InvitationPage() {
     if (signInError) {
       // The account exists and is already confirmed — this is only ever
       // a transient failure of the immediate follow-up sign-in, never a
-      // reason to call activatePreProvisionedClinicAdminAction() again
+      // reason to call activatePreProvisionedInvitationAction() again
       // (it would now correctly report existing-user anyway). A normal
       // login recovers this exact same token/invitation, with no email
       // step involved at any point. Never auto-accept from here — the
@@ -531,10 +542,22 @@ export default function InvitationPage() {
               <p className="mt-4 text-sm font-medium text-foreground">¡Listo! Ya eres parte del equipo.</p>
               <button
                 type="button"
-                onClick={() => router.push("/agenda")}
-                className="mt-4 w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+                disabled={navigatingToClinic}
+                aria-busy={navigatingToClinic || undefined}
+                onClick={() => {
+                  if (navigatingToClinic) return;
+                  setNavigatingToClinic(true);
+                  router.push("/agenda");
+                }}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
               >
-                Ir a mi Clínica
+                {navigatingToClinic && (
+                  <span
+                    aria-hidden="true"
+                    className="size-3.5 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-80 motion-reduce:animate-none"
+                  />
+                )}
+                {navigatingToClinic ? "Entrando a mi Clínica…" : "Ir a mi Clínica"}
               </button>
             </div>
           )}

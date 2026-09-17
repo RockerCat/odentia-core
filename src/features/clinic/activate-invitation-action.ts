@@ -3,16 +3,21 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-// "Invitación de primer Clinic Admin — Activación sin confirmación por
-// correo". Exists ONLY for a Superadmin-issued, pre-provisioned
-// clinic_admin invitation (provision_first_clinic_admin_invitation(),
-// 20260916150000) — never a general "create an account" endpoint. The
-// person's access already started from a real, secret, cryptographic
-// token an admin/Superadmin generated and handed to her directly; the
-// Confirm Signup email loop (designed for an ANONYMOUS public signup,
-// where the email address itself is the only proof of ownership) adds no
-// real security here and was actively breaking the happy path — see this
-// task's own smoke report.
+// "Platform → Clínica → Equipo: gestión transversal por Superadmin" —
+// generalized from the original first-Clinic-Admin-only activation to any
+// Superadmin-issued, pre-provisioned invitation (`clinic_admin`,
+// `dentist`, or `assistant` — see `provision_first_clinic_admin_invitation()`,
+// 20260916150000, and `provision_clinic_team_member()`, this checkpoint's
+// own migration) — never a general "create an account" endpoint, and
+// never applicable to a traditional Clinic-Admin-issued dentist/assistant
+// invitation (`invite_clinic_member()`), which never sets a
+// pre-provisioned identity and always keeps going through the ordinary
+// AccountStep + Confirm Signup path. The person's access already started
+// from a real, secret, cryptographic token a Superadmin generated and
+// handed to her directly; the Confirm Signup email loop (designed for an
+// ANONYMOUS public signup, where the email address itself is the only
+// proof of ownership) adds no real security here and was actively
+// breaking the happy path — see this task's own smoke report.
 //
 // Same rule the password-only UI branch already enforces client-side
 // (hasPreProvisionedIdentity(), src/features/clinic/team-actions.ts) —
@@ -21,7 +26,7 @@ import { createClient } from "@/lib/supabase/server";
 // from the browser.
 const MIN_PASSWORD_LENGTH = 8;
 
-export type ActivatePreProvisionedClinicAdminOutcome =
+export type ActivatePreProvisionedInvitationOutcome =
   | { status: "ok"; email: string }
   // Deliberately the SAME shape the client's existing "existing-user" view
   // already renders — this covers both "the account already existed
@@ -48,10 +53,10 @@ export type ActivatePreProvisionedClinicAdminOutcome =
 // — a GoTrue Admin endpoint authorized directly by the service-role key
 // itself, entirely independent of Postgres GRANT/RLS, so it needs no
 // table/function grant at all.
-export async function activatePreProvisionedClinicAdminAction(
+export async function activatePreProvisionedInvitationAction(
   token: string,
   password: string,
-): Promise<ActivatePreProvisionedClinicAdminOutcome> {
+): Promise<ActivatePreProvisionedInvitationOutcome> {
   if (typeof token !== "string" || token.trim() === "") {
     return { status: "error", message: "Este enlace de invitación no es válido." };
   }
@@ -63,7 +68,7 @@ export async function activatePreProvisionedClinicAdminAction(
   const { data, error } = await supabase.rpc("preview_clinic_invitation", { p_token: token });
 
   if (error) {
-    console.error("[activatePreProvisionedClinicAdminAction] preview_clinic_invitation failed", {
+    console.error("[activatePreProvisionedInvitationAction] preview_clinic_invitation failed", {
       code: error.code,
       message: error.message,
     });
@@ -84,9 +89,15 @@ export async function activatePreProvisionedClinicAdminAction(
   // Defensive, not the primary gate: the password-only form is only ever
   // rendered client-side when hasPreProvisionedIdentity() is already true
   // for this exact same preview shape — this just refuses to activate a
-  // traditional dentist/assistant invitation (or an incomplete one) if
-  // this action were ever somehow reached for one.
-  if (row.role !== "clinic_admin" || !row.first_name || !row.last_name || !row.email || !row.phone) {
+  // traditional Clinic-Admin-issued dentist/assistant invitation (which
+  // never sets these) or an incomplete one, if this action were ever
+  // somehow reached for one. Deliberately role-agnostic (no `row.role`
+  // check): a Superadmin-issued invitation carries this complete identity
+  // for clinic_admin, dentist, AND assistant alike (provision_clinic_team_member()/
+  // provision_first_clinic_admin_invitation()) — role determines
+  // membership/professional_profile effects entirely inside
+  // accept_clinic_invitation(), never here.
+  if (!row.first_name || !row.last_name || !row.email || !row.phone) {
     return { status: "error", message: "Esta invitación no admite activación por contraseña." };
   }
 
@@ -124,7 +135,7 @@ export async function activatePreProvisionedClinicAdminAction(
     if (createError.code === "weak_password" || /password/i.test(createError.message)) {
       return { status: "error", message: "La contraseña no cumple los requisitos de seguridad. Intenta con otra." };
     }
-    console.error("[activatePreProvisionedClinicAdminAction] admin.createUser failed", {
+    console.error("[activatePreProvisionedInvitationAction] admin.createUser failed", {
       code: createError.code,
       message: createError.message,
     });

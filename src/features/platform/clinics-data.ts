@@ -136,6 +136,20 @@ export type ActiveClinicAdminMembership = {
 // table already carries its base GRANT SELECT TO authenticated — verified
 // directly against the migration, same discipline as fetchPlatformClinics
 // above.
+//
+// A clinic can have MORE THAN ONE active clinic_admin (product decision,
+// "Platform → Clínica → Equipo" — the "first admin" concept only governs
+// the bootstrap RPC's own guards, never a cap on how many can exist
+// afterward) — this only ever needs to know "does at least one exist" to
+// decide Estado A vs C, so `.limit(1)` + take the first row, exactly the
+// same defensive pattern fetchPendingClinicAdminInvitation() below
+// already uses, and for the identical reason: `.maybeSingle()` throws a
+// real PostgREST error ("multiple (or no) rows returned") the moment a
+// clinic legitimately has two or more, which is exactly the refresh
+// regression this comment now documents — a Superadmin's OWN
+// clinic_memberships row is invisible here (RLS never grants her one
+// against her own profile_id, she isn't a member), so this can only ever
+// return real staff rows, never accidentally her own.
 export async function fetchActiveClinicAdminMembership(
   supabase: SupabaseClient,
   clinicId: string,
@@ -146,11 +160,14 @@ export async function fetchActiveClinicAdminMembership(
     .eq("clinic_id", clinicId)
     .eq("role", "clinic_admin")
     .eq("status", "active")
-    .maybeSingle();
+    .order("joined_at", { ascending: true })
+    .limit(1);
   if (error) throw error;
-  if (!data) return null;
 
-  return { id: data.id, profileId: data.profile_id, joinedAt: data.joined_at };
+  const row = data?.[0];
+  if (!row) return null;
+
+  return { id: row.id, profileId: row.profile_id, joinedAt: row.joined_at };
 }
 
 export type StaffIdentity = {

@@ -267,21 +267,20 @@ export function decideInvitationSessionView(
 // session view) — an existing-user/ready/wrong-session flow never
 // touches signup at all, so this is never consulted there.
 //
-// Deliberately requires role === "clinic_admin" AND all three identity
-// fields present — never role alone: a traditional dentist/assistant
-// invitation (invite_clinic_member()) always has first_name/last_name/
-// phone null on clinic_invitations, so this correctly stays false for
-// every one of those regardless of role, and a clinic_admin invitation
-// missing any of the three (shouldn't happen —
-// provision_first_clinic_admin_invitation() requires all three — but
-// checked explicitly rather than assumed) safely falls back to the
-// existing AccountStep instead of rendering a password-only form with
-// missing context.
+// Generalized (Platform → Clínica → Equipo checkpoint) to ALL THREE
+// roles — deliberately NOT gated on role === "clinic_admin" anymore:
+// every Superadmin-issued Platform invitation (provision_first_clinic_admin_invitation()/
+// provision_clinic_team_member()) now requires complete pre-provisioned
+// identity regardless of role, while a traditional Clinic-Admin-issued
+// dentist/assistant invitation (invite_clinic_member()) never sets
+// first_name/last_name/phone at all — the identity-completeness check
+// alone is therefore already a safe, structural way to distinguish the
+// two (never a heuristic): those three columns are only ever non-null
+// together, for exactly the invitations meant to use this path.
 export function hasPreProvisionedIdentity(preview: {
-  role: TeamMemberRole | null;
   firstName: string | null;
   lastName: string | null;
   phone: string | null;
 }): boolean {
-  return preview.role === "clinic_admin" && preview.firstName !== null && preview.lastName !== null && preview.phone !== null;
+  return preview.firstName !== null && preview.lastName !== null && preview.phone !== null;
 }

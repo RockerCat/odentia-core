@@ -355,17 +355,59 @@ that carries a pre-provisioned identity (`first_name`/`last_name`/`email`/
 own name. This RPC only ever bootstraps the FIRST admin of an
 already-provisioned clinic (rejected if the clinic already has an active
 `clinic_admin` membership, or an existing pending `clinic_admin`
-invitation) — growing the team further (dentists/assistants, and any
-admin beyond the first) stays the Clinic Admin's own job through the
-existing Equipo flow (`invite_clinic_member()`), unchanged. Same token/
+invitation) — it is not, itself, a general team-invitation mechanism.
+
+The Superadmin's real authority is broader than that one bootstrap
+moment: she controls provisioning AND transversal support for any clinic
+— creating it, assigning its first Clinic Admin, and later adding further
+team members (Clinic Admin, Odontólogo, or Asistente) to any clinic from
+Platform — without ever needing a `clinic_membership` of her own in it.
+This is additive to, never a replacement for, the Clinic Admin's own
+existing Equipo flow (`invite_clinic_member()`/`accept_clinic_invitation()`/
+`set_clinic_member_status()`): a Clinic Admin keeps administering her own
+clinic's team exactly as today, unchanged, and a Superadmin acting on that
+same clinic from Platform is a second, transversal entry point into the
+same underlying invitation/membership mechanism — never a second,
+diverging one. That ongoing capability is `provision_clinic_team_member()`
+— Superadmin-gated, `clinic_id` an explicit parameter, accepting any of
+the three real roles (`clinic_admin`/`dentist`/`assistant`) with no
+"first admin" guards of its own (those stay exclusive to
+`provision_first_clinic_admin_invitation()` above). **Multiple
+`clinic_admin` memberships per clinic are allowed by product decision**
+(no schema constraint ever prevented this) — after the first admin
+exists, a Superadmin may provision additional ones the same way. Every
+Platform-issued invitation, regardless of role, always carries complete
+pre-provisioned identity (`first_name`/`last_name`/`phone`) — this is
+what `hasPreProvisionedIdentity()` (`src/features/clinic/team-actions.ts`)
+actually checks for (identity completeness, never `role === "clinic_admin"`
+specifically): a traditional Clinic-Admin-issued dentist/assistant
+invitation (`invite_clinic_member()`) never sets these, so the check
+stays a safe, structural distinction, never a heuristic. Reactivating an
+existing but inactive/suspended membership, or regenerating a still-
+pending invitation's link, reuse the exact same
+`set_clinic_member_status()`/`regenerate_clinic_invitation()` RPCs the
+Clinic Admin's own Equipo screen already uses — both now authorize either
+an active `clinic_admin` of that specific clinic OR a platform
+Superadmin, resolved from the TARGET row's own `clinic_id`, never a
+caller-supplied one. `provision_clinic_team_member()` itself never
+creates a duplicate invitation or membership: an existing active
+membership for that email in that clinic is rejected outright, an
+existing inactive one is rejected with a distinct message pointing at
+reactivation instead, and an existing unexpired pending invitation for
+that email/clinic is rejected regardless of who issued it. Same token/
 hash convention as every other invitation (see Communications) — a raw
-token shown exactly once, only its hash persisted, shared manually by the
-Superadmin, never emailed automatically. `/platform/clinicas/[slug]`
-resolves exactly one of three states for this from real reads (never a
-guess): no active admin and no valid pending invitation → assignment
-form; a still-pending, not-yet-expired invitation → its read-only
-pre-provisioned identity, no second form; an active admin → her identity,
-no form. Superadmin needs `is_platform_superadmin()` read access to
+token shown exactly once, only its hash persisted, shared manually by
+the Superadmin, never emailed automatically.
+`/platform/clinicas/[slug]`
+resolves exactly one of three states for this bootstrap moment from real
+reads (never a guess): no active admin and no valid pending invitation →
+assignment form; a still-pending, not-yet-expired invitation → its
+read-only pre-provisioned identity, no second form; an active admin →
+the general Equipo section (member roster + pending invitations +
+"Agregar miembro" for any of the three roles) replaces that narrower
+bootstrap card entirely — never both shown at once, so there is never a
+second, competing entry point for creating the first admin. Superadmin
+needs `is_platform_superadmin()` read access to
 `clinic_invitations` and `profiles` for this (both otherwise scoped to a
 clinic's own members) — this is a deliberate, minimal RLS widening for
 Superadmin SELECT only, same pattern already used on
@@ -387,10 +429,11 @@ operation that ever creates a `clinic_memberships` row:
   token, in that same interaction — one gesture ("Activar mi cuenta")
   both creates her access and accepts that specific invitation, never a
   second manual "Aceptar invitación" step for this path. This Confirm
-  Signup bypass exists ONLY for this pre-provisioned first-admin flow
-  (the secret token itself is the proof of legitimate access) — never
-  disable Confirm Email globally, and never skip it for the normal public
-  `/registro`/Equipo signup, both unchanged. If Auth/sign-in succeed but
+  Signup bypass exists ONLY for a pre-provisioned Platform invitation —
+  clinic_admin, dentist, or assistant alike (the secret token itself is
+  the proof of legitimate access) — never disable Confirm Email globally,
+  and never skip it for the normal public `/registro`/Equipo signup
+  (`invite_clinic_member()`), both unchanged. If Auth/sign-in succeed but
   the automatic accept fails, never retry account creation, never sign
   the person out, never fabricate a membership — she's already
   authenticated, so she recovers through the same manual "Aceptar
@@ -403,6 +446,30 @@ operation that ever creates a `clinic_memberships` row:
   existing identity, or otherwise take over that account. The invitation's
   pre-provisioned `phone` only ever fills `profiles.phone` when it is
   currently NULL — an existing user's own phone is never overwritten.
+
+Whichever RPC issued the invitation (`invite_clinic_member()`,
+`provision_first_clinic_admin_invitation()`, or
+`provision_clinic_team_member()`), `accept_clinic_invitation()`'s own
+role-conditional effects apply identically, unchanged: `dentist` always
+gets a `professional_profile` plus the default Monday–Friday 08:00–17:00
+availability seed; `clinic_admin` and `assistant` never get one
+automatically.
+
+**A `clinic_admin` membership is never a per-clinic singleton** —
+structurally (no schema constraint enforces at most one) or by
+convention (a Superadmin may provision additional admins beyond the
+bootstrap first one via `provision_clinic_team_member()`). Any lookup
+whose purpose is "does this clinic have an active Clinic Admin" must
+tolerate multiple matching rows and must never use a primitive that
+requires at-most-one (e.g. `.maybeSingle()`) unless a real DB constraint
+actually guarantees that cardinality — a real regression once came from
+exactly this assumption. Separately, and just as permanently: a failure
+to read that state is never the same fact as "no admin exists." Any
+bootstrap-state resolution (Estado A/B/C on `/platform/clinicas/[slug]`,
+or any future equivalent) must fail closed on a genuine lookup error — a
+distinct, visible "we don't know" state — never silently fall through to
+an assignment/creation form just because the read that would have said
+otherwise failed.
 
 `/admin` is the OLD, separate, fully mock UI
 (`src/features/admin/mock-data.ts`), with no `resolveClinicContext()` call

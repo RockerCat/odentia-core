@@ -30,38 +30,44 @@ describe("decideInvitationSessionView", () => {
   });
 });
 
-// Regression coverage for "Provisioning Checkpoint 3 — Activación
-// password-only del primer Clinic Admin nuevo" — the exact branch that
-// decides between the password-only activation view and the traditional
-// AccountStep. Must never activate for a traditional dentist/assistant
-// invitation, and must never activate for an incomplete clinic_admin
-// invitation (defensive — provision_first_clinic_admin_invitation()
-// already enforces completeness server-side, but the UI must not assume
-// it blindly).
+// Regression coverage for "Platform → Clínica → Equipo: gestión
+// transversal por Superadmin" — the exact branch that decides between the
+// password-only activation view and the traditional AccountStep,
+// generalized from clinic_admin-only to all three roles. Must never
+// activate for a traditional Clinic-Admin-issued dentist/assistant
+// invitation (invite_clinic_member(), which never sets these), and must
+// never activate for an incomplete pre-provisioned invitation (defensive —
+// provision_first_clinic_admin_invitation()/provision_clinic_team_member()
+// already enforce completeness server-side, but the UI must not assume it
+// blindly).
 describe("hasPreProvisionedIdentity", () => {
-  const complete = { role: "clinic_admin" as const, firstName: "Ana", lastName: "Admin", phone: "+57 300 1234567" };
+  const complete = { firstName: "Ana", lastName: "Admin", phone: "+57 300 1234567" };
 
   it("a complete, pre-provisioned clinic_admin invitation → password-only", () => {
     expect(hasPreProvisionedIdentity(complete)).toBe(true);
   });
 
+  it("a complete, pre-provisioned dentist invitation (Platform-issued) → password-only", () => {
+    expect(hasPreProvisionedIdentity({ firstName: "Luis", lastName: "Dentista", phone: "+57 300 1111111" })).toBe(true);
+  });
+
+  it("a complete, pre-provisioned assistant invitation (Platform-issued) → password-only", () => {
+    expect(hasPreProvisionedIdentity({ firstName: "Sofía", lastName: "Asistente", phone: "+57 300 2222222" })).toBe(true);
+  });
+
   it("a traditional dentist invitation (no pre-provisioned identity) → AccountStep, never password-only", () => {
-    expect(hasPreProvisionedIdentity({ role: "dentist", firstName: null, lastName: null, phone: null })).toBe(false);
+    expect(hasPreProvisionedIdentity({ firstName: null, lastName: null, phone: null })).toBe(false);
   });
 
   it("a traditional assistant invitation → AccountStep, never password-only", () => {
-    expect(hasPreProvisionedIdentity({ role: "assistant", firstName: null, lastName: null, phone: null })).toBe(false);
+    expect(hasPreProvisionedIdentity({ firstName: null, lastName: null, phone: null })).toBe(false);
   });
 
-  it("clinic_admin role but missing phone → falls back to AccountStep, defensively", () => {
+  it("missing phone → falls back to AccountStep, defensively", () => {
     expect(hasPreProvisionedIdentity({ ...complete, phone: null })).toBe(false);
   });
 
-  it("clinic_admin role but missing first_name → falls back to AccountStep, defensively", () => {
+  it("missing first_name → falls back to AccountStep, defensively", () => {
     expect(hasPreProvisionedIdentity({ ...complete, firstName: null })).toBe(false);
-  });
-
-  it("null role (not-found/invalid preview) → never password-only", () => {
-    expect(hasPreProvisionedIdentity({ role: null, firstName: "Ana", lastName: "Admin", phone: "123" })).toBe(false);
   });
 });

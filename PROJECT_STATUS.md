@@ -763,7 +763,9 @@ session with no manual DB work and no outbound email.
   `clinic_invitations` alongside the same token/hash convention every
   other invitation already uses.
 - **Activation without Confirm Signup.** For a genuinely new email:
-  `activatePreProvisionedClinicAdminAction` (Server Action) re-resolves
+  `activatePreProvisionedInvitationAction` (Server Action, renamed from
+  `activatePreProvisionedClinicAdminAction` once generalized — see
+  `Platform → Clínica → Equipo` below) re-resolves
   the invitation itself server-side (never trusts the browser's own
   preview), creates the Auth user via the Admin API
   (`email_confirm: true`, service-role key — server-only), the client
@@ -794,7 +796,7 @@ session with no manual DB work and no outbound email.
   already fixed once.
 - **Migrations for this block** (all applied to the remote Supabase
   project, local/remote confirmed in sync through
-  `20260916170000_allow_superadmin_clinic_provisioning_reads.sql`):
+  `20260916180000_provision_clinic_team_member.sql`):
   - `20260916110000_create_provision_clinic_rpc.sql`
   - `20260916120000_create_preview_clinic_invitation_rpc.sql`
   - `20260916130000_add_user_exists_to_preview_clinic_invitation_rpc.sql`
@@ -802,6 +804,10 @@ session with no manual DB work and no outbound email.
   - `20260916150000_provision_first_clinic_admin_invitation.sql`
   - `20260916160000_extend_clinic_invitation_activation.sql`
   - `20260916170000_allow_superadmin_clinic_provisioning_reads.sql`
+  - `20260916180000_provision_clinic_team_member.sql` (Superadmin general
+    team provisioning + the `regenerate_clinic_invitation()`/
+    `set_clinic_member_status()` authorization widening — see
+    `Platform → Clínica → Equipo` below for the full detail)
 - **E2E REAL — PASS.** Clínica `Odentia QA Provisioning 3`, first admin
   `Alex Test 03` (`alexsosa.me+adtest03@gmail.com`). Full flow: Platform →
   crear clínica → asignar primer admin → generar/copiar link → incógnito →
@@ -829,20 +835,149 @@ session with no manual DB work and no outbound email.
     sign-in automático, pero reveló el estado intermedio (segundo botón
     manual "Aceptar invitación" para un usuario nuevo) que motivó el
     auto-accept de este checkpoint.
-  - `alexsosa.me+adtest03@gmail.com` — smoke definitivo, PASS (arriba).
+  - `alexsosa.me+adtest03@gmail.com` — smoke definitivo (primer Clinic
+    Admin), PASS (arriba).
+  - `alexsosa.me+odo01@gmail.com` — E2E real, nuevo Odontólogo vía
+    `Platform → Clínica → Equipo`, PASS (ver más abajo).
+  - `alexsosa.me+adtest04@gmail.com` — E2E real, segundo Clinic Admin de
+    la misma clínica, PASS (ver más abajo).
 - **Pendientes reales, no bloqueantes para este happy path:**
   - `accept_clinic_invitation()`'s `expired` branch does an `UPDATE
     status = 'expired'` immediately followed by a `RAISE EXCEPTION` in
     the same transaction, so that UPDATE can be rolled back — known,
     unfixed, unrelated to the flow validated in this checkpoint.
-  - Revocación/regeneración de la invitación del primer Clinic Admin: no
-    implementada.
-  - Selector multi-clínica / segundo Clinic Admin: no implementado — este
-    RPC solo bootstrapea el primero (por diseño, ver CLAUDE.md).
+  - Revocación de una invitación pendiente: no implementada (regenerar sí
+    lo está, para Clinic Admin y, desde este mismo checkpoint, también
+    para Superadmin — ver más abajo).
+  - Selector multi-clínica (UI para una persona con membership en más de
+    una clínica): no implementado. Nótese que esto es distinto de
+    "múltiples `clinic_admin` en una misma clínica", que sí está
+    implementado y validado E2E — ver `Platform → Clínica → Equipo` más
+    abajo.
   - The mock-session "self-heal" bridge (see "Authenticated-context
     self-healing" above) is an observation, not a reproduced failure here:
     the real E2E smoke's own "Ir a mi Clínica" → `/agenda` loaded the
     correct user/clinic context immediately, with no blank shell.
+- **`Platform → Clínica → Equipo` — REAL, E2E VALIDATED (2026-09-16).**
+  Product decision confirmed and now proven end to end: the Superadmin
+  can administer team membership (Administrador, Odontólogo, Asistente)
+  of ANY clinic from Platform — provisioning/transversal support, not
+  limited to the first Clinic Admin bootstrap above — without ever
+  acquiring a `clinic_membership` of her own.
+  - **Migration `20260916180000_provision_clinic_team_member.sql` —
+    APPLIED to the remote Supabase project, Local/Remote confirmed
+    aligned through `20260916180000`.**
+    `provision_clinic_team_member(p_clinic_id, p_role, p_first_name,
+    p_last_name, p_email, p_phone)` (Superadmin-only, all three roles,
+    always complete pre-provisioned identity, no "first admin" guards —
+    those stay exclusive to `provision_first_clinic_admin_invitation()`,
+    untouched — rejects an already-active membership for that email,
+    rejects with a distinct message when a membership already exists but
+    is inactive, pointing at reactivation instead of a new invitation,
+    rejects a conflicting pending invitation regardless of who issued it,
+    and treats a membership in a DIFFERENT clinic as no conflict at all),
+    plus a minimal, single-line authorization widening
+    (`or is_platform_superadmin()`) on `regenerate_clinic_invitation()`
+    and `set_clinic_member_status()`, each based on its own currently-
+    deployed body — not an older cached copy, the exact lesson from the
+    42702 regression above. `accept_clinic_invitation()` needed NO
+    changes: confirmed already fully role-generic.
+  - `hasPreProvisionedIdentity()` (`src/features/clinic/team-actions.ts`)
+    generalized from `role === "clinic_admin"` to identity-completeness
+    alone — a traditional Clinic-Admin-issued dentist/assistant
+    invitation never sets first_name/last_name/phone, so this stays a
+    safe structural distinction, never a heuristic. The activation Server
+    Action (renamed `activatePreProvisionedInvitationAction`,
+    `src/features/clinic/activate-invitation-action.ts`) dropped its own
+    `role !== "clinic_admin"` check the same way — the same password-only,
+    no-Confirm-Signup, auto-accept happy path from the first-admin flow
+    above now applies to any genuinely new user provisioned from Platform,
+    for any of the three roles.
+  - `PlatformEquipoSection`/`AddTeamMemberModal`
+    (`src/components/platform/platform-equipo-section.tsx`) on
+    `/platform/clinicas/[slug]`, reusing `fetchTeamMembers()`/
+    `fetchPendingInvitations()` (already Superadmin-readable under
+    existing RLS/grants) and `setClinicMemberStatus()`/
+    `regenerateClinicInvitation()` (`src/features/clinic/team-actions.ts`,
+    unmodified) as-is. Only rendered once an active admin exists (Estado
+    C), replacing the narrower admin-identity-only card; the bootstrap
+    Estado A/B cards above are unchanged and stay the only entry point
+    until then — never two competing "add the first admin" forms.
+  - **UX — "Ir a mi Clínica" loading feedback.** The real navigation to
+    `/agenda` after auto-accept could take long enough to look
+    unresponsive. Fixed with the same local-pending-`useState` + disabled
+    CTA convention already used for other plain `router.push` buttons
+    (see Architecture above): immediate disable + spinner +
+    "Entrando a mi Clínica…" on click, held until `/agenda` takes over.
+    No change to routing, auth, session resolution, or the destination
+    itself.
+  - **E2E REAL — nuevo Odontólogo, PASS.** Clínica `Odentia QA
+    Provisioning 3`. Superadmin → Agregar miembro → Odontólogo → identidad
+    pre-provisionada → link → incógnito → password-only → "Activar mi
+    cuenta" → auto-accept → success. DB confirmó: membership
+    `role=dentist`/`status=active` en la clínica correcta; invitation
+    `status=accepted` con `accepted_membership_id` igual al membership
+    creado; identidad y teléfono correctos; `professional_profile_id` NO
+    nulo, con disponibilidad default real (lunes–viernes, 08:00–17:00,
+    `active=true`, misma clínica y mismo `professional_profile`) —
+    confirma que la generalización no rompió el side effect existente de
+    `accept_clinic_invitation()` para `dentist`.
+  - **E2E REAL — segundo Clinic Admin, PASS.** Misma clínica, mismo flujo
+    password-only + auto-accept, rol Administrador. DB confirmó:
+    membership `role=clinic_admin`/`status=active`, invitation
+    `status=accepted` con `accepted_membership_id` correcto,
+    `professional_profile_id = NULL` (esperado). Valida explícitamente que
+    múltiples `clinic_admin` activos en una misma clínica son válidos, que
+    "primer administrador" es solo un concepto de bootstrap (no un techo
+    permanente), y que un admin adicional no recibe `professional_profile`
+    automáticamente — mismo comportamiento que el primero.
+  - **Bug real encontrado y cerrado — cardinalidad multi-admin
+    (`PGRST116`).** Tras aceptar el segundo Clinic Admin, un hard refresh
+    de `/platform/clinicas/odentia-qa-provisioning-3` mostraba
+    `admin-assignment state lookup failed` en consola y la UI caía
+    incorrectamente a "Asignar Administrador de Clínica" pese a existir
+    DOS admins activos. Root cause: `fetchActiveClinicAdminMembership()`
+    (`src/features/platform/clinics-data.ts`) usaba `.maybeSingle()`, que
+    exige cardinalidad máxima de uno — PostgREST devuelve `PGRST116`
+    ("multiple (or no) rows returned") en cuanto existe una segunda fila
+    válida. Fix: selección determinística de una fila
+    (`.order(...).limit(1)` + `data?.[0]`), ya que este helper solo
+    necesita responder "¿existe al menos un Clinic Admin activo?", nunca
+    cuál en concreto. Se corrigió además el fail-open de la UI: antes, un
+    error de lectura dejaba las variables en `null` y la UI lo
+    interpretaba como "no existe admin"; ahora existe una señal explícita
+    (`adminStateLookupFailed`) que renderiza un estado distinto de
+    error/desconocido, nunca Estado A, ante un fallo real de lectura —
+    mismo `loadFailed`-boolean convention que `/platform/clinicas/page.tsx`
+    ya usa para la lista. Regresión manual confirmada PASS: hard refresh →
+    sigue en Estado C con el roster completo, sin el falso Estado A, sin
+    el error en consola. Ver CLAUDE.md para la regla arquitectónica
+    permanente que esto dejó documentada.
+  - **Lifecycle Superadmin — Desactivar/Reactivar, PASS.** Con `Alex
+    Odontest` (el nuevo Odontólogo), el Superadmin ejecutó desde Platform
+    Activo → Desactivar → Inactivo → Reactivar → Activo, con la UI
+    reflejando correctamente cada estado (badge + acción disponible) en
+    cada paso. Los dos Clinic Admin permanecieron activos durante toda la
+    prueba. Valida en runtime el widening de `set_clinic_member_status()`
+    para un Superadmin sin membership propia en la clínica.
+  - **QA ejecutado:** `tsc --noEmit` y ESLint limpios en cada archivo
+    tocado a lo largo de este bloque; `team-actions.test.ts` (19 tests,
+    incl. los 3 nuevos de `hasPreProvisionedIdentity` cubriendo
+    invitaciones Platform de dentist/assistant) y
+    `resolve-login-return-to.test.ts`, `clinics-data.test.ts`,
+    `api.test.ts` en verde; migración `20260916180000` revisada
+    estructuralmente antes de aplicarse (cuerpos de función balanceados,
+    guard de Superadmin primero, sin escritura prematura de
+    membership/professional_profile, sin persistencia de raw token, sin
+    grants nuevos a `anon`, los dos `CREATE OR REPLACE` diferenciados
+    contra sus cuerpos vigentes para confirmar que solo cambió la línea de
+    autorización). No se agregó test nuevo para el fix de cardinalidad:
+    `fetchActiveClinicAdminMembership()` es un wrapper de I/O sin lógica
+    pura extraíble, y este proyecto no tiene infraestructura de mocking de
+    Supabase para esta clase de función — validado en su lugar mediante
+    regresión manual real (arriba).
+  - **Conclusión general: `Platform → Equipo`: PASS funcional para este
+    checkpoint.**
 
 ## Clínica (real, Clinic Admin)
 
