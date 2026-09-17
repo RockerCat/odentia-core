@@ -7,6 +7,7 @@ export type PlatformClinicListItem = {
   status: "active" | "suspended";
   city: string | null;
   createdAt: string;
+  logoUrl: string | null;
 };
 
 export type PlatformClinicDetail = {
@@ -24,6 +25,7 @@ export type PlatformClinicDetail = {
     city: string | null;
     state: string | null;
   } | null;
+  logoUrl: string | null;
 };
 
 // Matches any RFC 4122-shaped UUID, case-insensitively — the one pure,
@@ -62,7 +64,7 @@ function findPrimary<T extends { is_primary: boolean }>(locations: T[] | null | 
 export async function fetchPlatformClinics(supabase: SupabaseClient): Promise<PlatformClinicListItem[]> {
   const { data, error } = await supabase
     .from("clinics")
-    .select("id, name, slug, status, created_at, clinic_locations(city, is_primary)")
+    .select("id, name, slug, status, created_at, logo_url, clinic_locations(city, is_primary)")
     .order("created_at", { ascending: false });
   if (error) throw error;
 
@@ -75,12 +77,13 @@ export async function fetchPlatformClinics(supabase: SupabaseClient): Promise<Pl
       status: row.status,
       city: primary?.city ?? null,
       createdAt: row.created_at,
+      logoUrl: row.logo_url,
     };
   });
 }
 
 const CLINIC_DETAIL_SELECT =
-  "id, name, slug, legal_name, tax_id, email, phone, status, created_at, clinic_locations(address, city, state, is_primary)";
+  "id, name, slug, legal_name, tax_id, email, phone, status, created_at, logo_url, clinic_locations(address, city, state, is_primary)";
 
 function mapClinicDetailRow(data: {
   id: string;
@@ -92,6 +95,7 @@ function mapClinicDetailRow(data: {
   phone: string | null;
   status: "active" | "suspended";
   created_at: string;
+  logo_url: string | null;
   clinic_locations: RawClinicDetailLocation[] | null;
 }): PlatformClinicDetail {
   const primary = findPrimary<RawClinicDetailLocation>(data.clinic_locations);
@@ -103,6 +107,7 @@ function mapClinicDetailRow(data: {
     legalName: data.legal_name,
     taxId: data.tax_id,
     email: data.email,
+    logoUrl: data.logo_url,
     phone: data.phone,
     status: data.status,
     createdAt: data.created_at,

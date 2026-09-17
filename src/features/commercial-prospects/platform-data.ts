@@ -15,10 +15,17 @@ export type CommercialProspectListItem = {
 
 export type CommercialProspectDetail = CommercialProspectListItem & {
   updatedAt: string;
+  // Operational axis, separate from `status` (see CLAUDE.md's Prospecto
+  // Comercial section: `won` never implies a clinic already exists).
+  // Both null until convert_commercial_prospect_to_clinic() succeeds
+  // (20260916210000_convert_commercial_prospect_to_clinic.sql), then both
+  // set together, never independently.
+  convertedClinicId: string | null;
+  convertedAt: string | null;
 };
 
 const PROSPECT_LIST_SELECT = "id, first_name, last_name, clinic_name, email, phone, city, status, created_at";
-const PROSPECT_DETAIL_SELECT = `${PROSPECT_LIST_SELECT}, updated_at`;
+const PROSPECT_DETAIL_SELECT = `${PROSPECT_LIST_SELECT}, updated_at, converted_clinic_id, converted_at`;
 
 function mapListRow(row: {
   id: string;
@@ -90,5 +97,10 @@ export async function fetchCommercialProspectById(
   if (error) throw error;
   if (!data) return null;
 
-  return { ...mapListRow(data), updatedAt: data.updated_at };
+  return {
+    ...mapListRow(data),
+    updatedAt: data.updated_at,
+    convertedClinicId: data.converted_clinic_id,
+    convertedAt: data.converted_at,
+  };
 }

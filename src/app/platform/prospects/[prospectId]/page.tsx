@@ -1,13 +1,17 @@
 import { notFound } from "next/navigation";
+import { ProspectConversionSection } from "@/components/platform/prospect-conversion-section";
 import { ProspectStatusActions } from "@/components/platform/prospect-status-actions";
 import { fetchCommercialProspectById, looksLikeCommercialProspectId } from "@/features/commercial-prospects/platform-data";
+import { fetchPlatformClinicById } from "@/features/platform/clinics-data";
 import { createClient } from "@/lib/supabase/server";
 
 // Real Platform → Prospectos detail. Read-only identity/contact (no
 // "editar prospecto" here — see CLAUDE.md's Prospecto Comercial section);
-// the only mutation this screen offers is the status transition, via
-// ProspectStatusActions. Never shows a "Convertir en clínica" action yet
-// — that's a separate, later checkpoint, even once status is `won`.
+// status transitions live in ProspectStatusActions. Once `status ===
+// 'won'`, ProspectConversionSection additionally offers the separate,
+// optional "Crear clínica" operational action (or, once converted, a
+// link to the resulting clinic) — never shown for any other status, and
+// never itself a commercial-status transition.
 export default async function PlatformProspectDetailPage({ params }: { params: Promise<{ prospectId: string }> }) {
   const { prospectId } = await params;
   if (!looksLikeCommercialProspectId(prospectId)) notFound();
@@ -22,6 +26,20 @@ export default async function PlatformProspectDetailPage({ params }: { params: P
   }
 
   if (!prospect) notFound();
+
+  // Only ever looked up once this prospect already has a linked clinic —
+  // fetchPlatformClinicById() is the same real, already-audited Platform
+  // read /platform/clinicas/[slug] itself uses for a UUID-shaped
+  // fallback lookup; reused here unmodified rather than a second clinic
+  // fetcher.
+  let convertedClinic: Awaited<ReturnType<typeof fetchPlatformClinicById>> = null;
+  if (prospect.convertedClinicId) {
+    try {
+      convertedClinic = await fetchPlatformClinicById(supabase, prospect.convertedClinicId);
+    } catch (error) {
+      console.error("[/platform/prospects/[prospectId]] fetchPlatformClinicById failed", error);
+    }
+  }
 
   // wa.me deep-link — same convention as every other real WhatsApp link
   // in this codebase (e.g. src/features/patients/patient-record-modal.tsx),
@@ -78,6 +96,20 @@ export default async function PlatformProspectDetailPage({ params }: { params: P
           </div>
         </div>
       </div>
+
+      {prospect.status === "won" && (
+        <ProspectConversionSection
+          prospectId={prospect.id}
+          defaultClinicName={prospect.clinicName}
+          defaultCity={prospect.city}
+          contactName={`${prospect.firstName} ${prospect.lastName}`}
+          contactEmail={prospect.email}
+          contactPhone={prospect.phone}
+          initialConvertedAt={prospect.convertedAt}
+          initialConvertedClinicId={prospect.convertedClinicId}
+          initialConvertedClinic={convertedClinic ? { slug: convertedClinic.slug, name: convertedClinic.name } : null}
+        />
+      )}
     </div>
   );
 }

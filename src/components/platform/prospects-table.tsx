@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { SearchIcon } from "@/components/shell/icons";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
@@ -27,6 +27,7 @@ const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
 // this checkpoint's expected volume doesn't warrant one (see
 // fetchCommercialProspects' own comment on its fixed cap).
 export function ProspectsTable({ prospects }: { prospects: CommercialProspectListItem[] }) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
 
@@ -91,14 +92,20 @@ export function ProspectsTable({ prospects }: { prospects: CommercialProspectLis
             </thead>
             <tbody>
               {filtered.map((prospect) => (
-                <tr key={prospect.id} className="border-b border-border last:border-0 hover:bg-foreground/5">
+                <tr
+                  key={prospect.id}
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => router.push(`/platform/prospects/${prospect.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") router.push(`/platform/prospects/${prospect.id}`);
+                  }}
+                  className="cursor-pointer border-b border-border last:border-0 hover:bg-foreground/5"
+                >
                   <td className="px-6 py-3">
-                    <Link
-                      href={`/platform/prospects/${prospect.id}`}
-                      className="font-medium text-foreground hover:underline"
-                    >
+                    <span className="font-medium text-foreground">
                       {prospect.firstName} {prospect.lastName}
-                    </Link>
+                    </span>
                   </td>
                   <td className="px-6 py-3 text-muted-foreground">{prospect.clinicName}</td>
                   <td className="px-6 py-3 text-muted-foreground">{prospect.city}</td>

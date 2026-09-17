@@ -29,29 +29,43 @@ const COLUMN_HEADING_CLASS = "text-xs font-semibold tracking-wide text-foregroun
 // unmodified, see clinic-logo-picker.tsx) — never a second, diverging
 // implementation of any of those.
 //
-// DISCLOSED LIMITATION, not silently decided: the selected logo file is
-// NOT uploaded anywhere by this form. In the onboarding wizard, the real
-// upload only happens as a step AFTER bootstrap_clinic() returns a real
-// clinic_id (see onboarding-wizard.tsx's handleCreate + uploadClinicLogo
-// in ../onboarding/api.ts) — wiring that same step here means extending
-// /platform/clinicas/nueva/page.tsx's own post-success handling, which
-// was explicitly out of scope for this visual-only pass ("no cambies...
-// manejo de éxito... redirect post-creación"). The picker stays fully
-// interactive purely to match the approved visual layout; onSubmit's own
-// signature/payload below are unchanged, and nothing selected here is
-// sent anywhere yet. Wiring the real upload is a small, separate,
-// explicitly-scoped follow-up once confirmed.
+// The picked logo File is handed to the caller via onSubmit's third
+// argument, never uploaded from inside this component — there is no real
+// clinic_id yet at submit time. Both real callers
+// (clinicas/nueva/page.tsx, prospect-conversion-section.tsx) upload it
+// via uploadClinicLogo() (src/features/clinic/logo.ts, unmodified) only
+// AFTER their own provisioning/conversion RPC returns a real id, same
+// order the onboarding wizard already uses. A Superadmin caller needs
+// public.is_platform_superadmin() widened onto clinics_update_admin and
+// owns_clinic_logo_path() (20260916220000) to actually write that logo,
+// since provision_clinic() deliberately gives her no membership in the
+// clinic she just created.
 export function PlatformClinicForm({
   submitting,
   submitError,
   onSubmit,
+  initialClinic = EMPTY_CLINIC,
+  initialLocation = EMPTY_CLINIC_LOCATION,
 }: {
   submitting: boolean;
   submitError: string | null;
-  onSubmit: (clinic: ClinicFormData, location: ClinicLocationData) => void;
+  // logoFile is the real, picked File (or null — the logo stays fully
+  // optional) — the component never uploads it itself (no clinic_id
+  // exists yet at submit time); the caller uploads it via
+  // uploadClinicLogo() only after its own provisioning/conversion RPC
+  // returns a real clinic id. See clinicas/nueva/page.tsx and
+  // prospect-conversion-section.tsx for the two real callers.
+  onSubmit: (clinic: ClinicFormData, location: ClinicLocationData, logoFile: File | null) => void;
+  // Optional prefill — used by "Prospecto ganado → Crear clínica"
+  // (/platform/prospects/[prospectId]) to start the SAME form with
+  // clinic_name/city already filled from the prospect, still fully
+  // editable before submit. /platform/clinicas/nueva's own call site
+  // omits both and keeps starting blank, unchanged.
+  initialClinic?: ClinicFormData;
+  initialLocation?: ClinicLocationData;
 }) {
-  const [clinic, setClinic] = useState<ClinicFormData>(EMPTY_CLINIC);
-  const [location, setLocation] = useState<ClinicLocationData>(EMPTY_CLINIC_LOCATION);
+  const [clinic, setClinic] = useState<ClinicFormData>(initialClinic);
+  const [location, setLocation] = useState<ClinicLocationData>(initialLocation);
   const [logo, setLogo] = useState(EMPTY_CLINIC_LOGO);
   const [nameError, setNameError] = useState<string | null>(null);
   const [taxIdError, setTaxIdError] = useState<string | null>(null);
@@ -103,7 +117,7 @@ export function PlatformClinicForm({
     }
     setTaxIdError(null);
 
-    onSubmit(clinic, location);
+    onSubmit(clinic, location, logo.file);
   };
 
   return (

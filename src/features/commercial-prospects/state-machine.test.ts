@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canMarkCommercialProspectLost,
   getNextCommercialProspectAction,
+  isEligibleForClinicConversion,
   isTerminalCommercialProspectStatus,
   isValidCommercialProspectTransition,
   type CommercialProspectStatus,
@@ -105,5 +106,28 @@ describe("canMarkCommercialProspectLost", () => {
   it("false once terminal", () => {
     expect(canMarkCommercialProspectLost("won")).toBe(false);
     expect(canMarkCommercialProspectLost("lost")).toBe(false);
+  });
+});
+
+// Mirrors convert_commercial_prospect_to_clinic()'s own eligibility
+// checks 1:1 (supabase/migrations/
+// 20260916210000_convert_commercial_prospect_to_clinic.sql) — that RPC
+// re-validates both halves independently against the real, locked DB
+// row; this is only the pure, testable UI-facing mirror.
+describe("isEligibleForClinicConversion", () => {
+  it("PASS: won with no linked clinic yet is eligible", () => {
+    expect(isEligibleForClinicConversion("won", null)).toBe(true);
+  });
+
+  it("FAIL: every non-won status is ineligible, regardless of converted_clinic_id", () => {
+    (["new", "contacted", "demo_scheduled", "demo_completed", "lost"] as CommercialProspectStatus[]).forEach(
+      (status) => {
+        expect(isEligibleForClinicConversion(status, null)).toBe(false);
+      },
+    );
+  });
+
+  it("FAIL: won but already converted cannot be converted again", () => {
+    expect(isEligibleForClinicConversion("won", "11111111-1111-1111-1111-111111111111")).toBe(false);
   });
 });

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ClinicLogoThumbnail } from "@/components/platform/clinic-logo-thumbnail";
 import { fetchPlatformClinics } from "@/features/platform/clinics-data";
 import { createClient } from "@/lib/supabase/server";
 
@@ -55,7 +56,11 @@ export default async function PlatformClinicsPage() {
               {clinics.map((clinic) => (
                 <tr key={clinic.id} className="border-b border-border last:border-0 hover:bg-foreground/5">
                   <td className="px-6 py-3">
-                    <Link href={`/platform/clinicas/${clinic.slug}`} className="font-medium text-foreground hover:underline">
+                    <Link
+                      href={`/platform/clinicas/${clinic.slug}`}
+                      className="flex items-center gap-3 font-medium text-foreground hover:underline"
+                    >
+                      <ClinicLogoThumbnail logoUrl={clinic.logoUrl} name={clinic.name} sizeClassName="size-8" />
                       {clinic.name}
                     </Link>
                   </td>

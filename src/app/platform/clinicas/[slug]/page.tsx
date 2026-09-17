@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { AssignClinicAdminCard } from "@/components/platform/assign-clinic-admin-card";
+import { ClinicLogoDisplay } from "@/components/platform/clinic-logo-display";
 import { PlatformEquipoSection } from "@/components/platform/platform-equipo-section";
 import { fetchPendingInvitations, fetchTeamMembers } from "@/features/clinic/data";
 import {
@@ -105,11 +106,14 @@ export default async function PlatformClinicDetailPage({ params }: { params: Pro
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-lg font-semibold text-foreground">{clinic.name}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Clínica creada el {new Date(clinic.createdAt).toLocaleDateString("es-CO")}.
-        </p>
+      <div className="flex items-center gap-3">
+        <ClinicLogoDisplay clinicName={clinic.name} clinicLogoUrl={clinic.logoUrl} />
+        <div>
+          <h1 className="text-lg font-semibold text-foreground">{clinic.name}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Clínica creada el {new Date(clinic.createdAt).toLocaleDateString("es-CO")}.
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">

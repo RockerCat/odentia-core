@@ -346,6 +346,22 @@ provisions. A clinic provisioned this way may legitimately exist with
 zero members (no Clinic Admin, no team) until a separate, later
 provisioning step assigns them — this is expected, not a broken state.
 
+Because that clinic has zero members, `clinics_update_admin` (RLS) and
+the `clinic-logos` Storage policies (all three gated through
+`owns_clinic_logo_path()`) both carry an `or is_platform_superadmin()`
+branch alongside their existing `has_clinic_role(..., ['clinic_admin'])`
+check — the same widening pattern as every other Superadmin-transversal
+capability in this file, never a new membership. This is what lets a
+Superadmin set/change a clinic's logo (`uploadClinicLogo()`,
+`src/features/clinic/logo.ts`, unmodified) for a clinic she just
+provisioned, or any other clinic, from Platform, without ever becoming
+its `clinic_admin`. Creation and logo upload are always two sequential
+steps — provision first, then upload once a real `clinic_id` exists
+(same order the onboarding wizard already uses) — and a logo upload
+failure after a successful provisioning/conversion is always non-fatal:
+it must never trigger re-provisioning or a second conversion attempt,
+only a visible warning.
+
 Provisioning a clinic's FIRST Clinic Admin is a separate, Superadmin-only
 step from creating the clinic itself: `provision_first_clinic_admin_invitation()`
 (`is_platform_superadmin()`-gated) issues a `clinic_invitations` row whose
@@ -872,6 +888,83 @@ Odentia's own internal validation passing.
 
 See `docs/rips-json-mapping.md` for the full field-by-field JSON mapping
 and PROJECT_STATUS.md's own "RIPS" section for current scope and gaps.
+
+---
+
+# Prospecto Comercial (Commercial Funnel)
+
+Permanent architectural decision, same standing as the rest of this file.
+Odentia's public commercial entry point is `/demo`
+(`src/features/commercial-prospects/`): Landing → "Quiero Odentia para mi
+clínica" → `/demo` → a Prospecto Comercial is persisted
+(`public.commercial_prospects`, via `submit_commercial_prospect()`) →
+seguimiento comercial from Platform → Prospectos
+(`/platform/prospects`) → (future checkpoint) conversion to a real
+clinic.
+
+**A Prospecto Comercial is never any Odentia identity entity.** It is not
+an `auth.users` row, not a `profiles` row, not a `clinic`, not a
+`clinic_membership`, not a `clinic_invitation`, and has no FK toward any
+of them. Submitting `/demo`'s public form never creates a Supabase Auth
+user, never asks for a password, never signs anyone in, and never calls
+`bootstrap_clinic()`/`provision_clinic()`/any membership or invitation
+RPC. `submit_commercial_prospect()` is anon-callable by design (the
+visitor has no session at all) and is the only INSERT path — RLS on
+`commercial_prospects` grants no direct anon/authenticated write at all.
+
+**Only a platform Superadmin may ever read or manage a Prospecto.** The
+table's only SELECT policy is scoped to `is_platform_superadmin()` — no
+clinic role (Clinic Admin, Dentist, Assistant) and no Patient can ever
+see this data, and anon has no SELECT at all. Platform → Prospectos
+(`/platform/prospects`, `/platform/prospects/[prospectId]`) is read-only
+identity/contact plus one mutation: status.
+
+**Status pipeline is a minimal, sequential state machine, never a free
+dropdown:** `new → contacted → demo_scheduled → demo_completed → won`,
+one step at a time — no skipping. `lost` is reachable from any
+non-terminal status. `won` and `lost` are both terminal for this MVP: no
+transition out of either is ever allowed. **`won` is reachable ONLY
+immediately after `demo_completed`** — `new`/`contacted`/`demo_scheduled`
+→ `won` are all invalid, not just unreached by the UI. This matters for
+the clinic-conversion mechanism below: it relies on `won` always meaning
+a real demo actually happened first. The single source of truth for
+these rules is `update_commercial_prospect_status()` (`SECURITY
+DEFINER`, re-validates against the row's REAL current status under a row
+lock — never a client-supplied `currentStatus`); the TypeScript mirror
+lives in `src/features/commercial-prospects/state-machine.ts` and must
+never drift from the RPC's own rules.
+
+**`won` → "Crear clínica" is a second, independent axis from the status
+pipeline — never a status value itself, and never automatic.** Marking a
+prospect `won` never creates a clinic. Whether the corresponding clinic
+already exists is tracked separately, on `commercial_prospects.
+converted_clinic_id` (nullable FK to `clinics.id`) + `converted_at` (set
+together, never independently) — never a new enum value like
+`converted`/`provisioned`/`activated`. The only write path is
+`convert_commercial_prospect_to_clinic()` (`SECURITY DEFINER`,
+Superadmin-only, `src/components/platform/prospect-conversion-section.tsx`
+on `/platform/prospects/[prospectId]`), which:
+- re-validates `status = 'won'` and `converted_clinic_id is null` against
+  the row's REAL current state under a row lock (`for update`) — never a
+  client-supplied flag, and never possible to run twice for the same
+  prospect (a concurrent/duplicate call blocks on the lock, then fails
+  closed once it sees the row already converted);
+- **reuses `provision_clinic()` directly, unchanged, as a plain nested
+  call** — never a second, duplicated clinic-creation implementation.
+  `provision_clinic()` was deliberately designed for exactly this (see
+  its own migration comment: "Ruta A from a prospecto and Ruta B direct
+  both converge here");
+- only ever prefills `clinic_name`/`city` from the prospect onto the
+  clinic/location form — the prospect's own `first_name`/`last_name`/
+  `email`/`phone` describe the commercial CONTACT, never silently copied
+  into a Clinic Admin, Auth user, membership, or invitation. The contact
+  person and the future Clinic Admin may be different people; team
+  provisioning stays the existing, separate Platform → Equipo flow, run
+  afterward, unchanged.
+
+A converted prospect stays `won` forever — the conversion link is purely
+additive, operational state, never a reason to introduce a new
+commercial status.
 
 ---
 

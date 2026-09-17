@@ -86,3 +86,18 @@ export function getNextCommercialProspectAction(status: CommercialProspectStatus
 export function canMarkCommercialProspectLost(status: CommercialProspectStatus): boolean {
   return !isTerminalCommercialProspectStatus(status);
 }
+
+// "Prospecto ganado → Crear clínica" eligibility — a SEPARATE axis from
+// the status pipeline above (see CLAUDE.md's Prospecto Comercial
+// section): `won` never by itself means a clinic exists.
+// convert_commercial_prospect_to_clinic() (supabase/migrations/
+// 20260916210000_convert_commercial_prospect_to_clinic.sql) re-validates
+// both halves of this against the real, locked DB row — this mirror is
+// only ever used to decide what the UI offers, never trusted as the
+// actual authorization boundary.
+export function isEligibleForClinicConversion(
+  status: CommercialProspectStatus,
+  convertedClinicId: string | null,
+): boolean {
+  return status === "won" && convertedClinicId === null;
+}

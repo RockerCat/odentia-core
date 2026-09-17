@@ -978,6 +978,165 @@ session with no manual DB work and no outbound email.
     regresión manual real (arriba).
   - **Conclusión general: `Platform → Equipo`: PASS funcional para este
     checkpoint.**
+- **Checkpoint 5 (2026-09-16) — Prospecto Comercial: captura pública +
+  Platform → Prospectos.** Primer tramo real del funnel comercial público
+  (ver CLAUDE.md's own "Prospecto Comercial" section para la arquitectura
+  permanente). Dos migraciones nuevas, secuenciales tras
+  `20260916180000`:
+  - `20260916190000_create_commercial_prospects.sql` — tabla
+    `public.commercial_prospects` (RLS enabled, cero policies de
+    escritura para anon/authenticated; una policy SELECT escalada a
+    `is_platform_superadmin()`) + `submit_commercial_prospect()`
+    (`SECURITY DEFINER`, anon-callable — el segundo RPC anon-callable del
+    schema, tras `preview_clinic_invitation()` — fuerza `status='new'`,
+    valida cada campo server-side independientemente del cliente).
+    **APLICADA al Supabase remoto** (`npx supabase db push`, confirmado
+    por Alex) — smoke real PASS: prospecto QA creado manualmente desde
+    `/demo` (Alex Sosa / Temporal Clinic / Tunja) y confirmado en
+    `public.commercial_prospects`.
+  - `20260916200000_create_update_commercial_prospect_status_rpc.sql` —
+    `update_commercial_prospect_status(p_prospect_id, p_new_status)`
+    (`SECURITY DEFINER`, Superadmin-only, `for update` row lock, valida
+    la transición contra el estado REAL en DB, nunca confía en un
+    `currentStatus` del cliente; solo escribe `status`/`updated_at`, sin
+    RPC de edición de identidad/contacto). **LOCAL, pendiente de `npx
+    supabase db push`** — Alex decide cuándo aplicarla; hasta entonces el
+    cambio de estado en Platform no persiste en producción.
+  - `/demo` (`src/features/commercial-prospects/prospect-form.tsx`) — 6
+    campos (Nombre, Apellido, Nombre de la clínica, Correo, Teléfono/
+    WhatsApp, Ciudad), estados idle/submitting/success/error, honeypot
+    pasivo (sin infraestructura anti-spam previa en el repo), sin
+    Supabase Auth, sin redirect a `/registro`/`/login`/`/agenda`.
+  - `/platform/prospects` (listado: búsqueda + filtro por estado,
+    client-side sobre datos ya fetched, sin paginación nueva — volumen
+    esperado bajo) y `/platform/prospects/[prospectId]` (detalle:
+    información + `mailto:`/`wa.me` + acción de estado única según
+    `getNextCommercialProspectAction()`, nunca un dropdown genérico).
+    Nav "Prospectos" agregada al sidebar de Platform, junto a Clínicas.
+  - **QA ejecutado:** `tsc --noEmit` y ESLint limpios en todos los
+    archivos tocados; suite completa (`npx vitest run`) en verde, 495
+    tests incl. los 22 nuevos (`actions.test.ts` — validación de
+    formulario; `state-machine.test.ts` — 13 casos PASS/FAIL de
+    transición, espejo exacto de las reglas del RPC). Regresión estática
+    de `/demo`/landing confirmada (rutas de Logo/Marketplace/`Iniciar
+    sesión`/`Quiero Odentia...` intactas, `/registro` sigue existiendo).
+    No se agregó test pgTAP: solo 2 de ~20 migraciones con RPC en este
+    repo tienen uno, no es convención universal.
+  - **PENDIENTE:** `Prospecto ganado → Convertir en clínica` (próximo
+    checkpoint, reutilizará `provision_clinic()`); aplicar
+    `20260916200000` al remoto; política formal de privacidad/tratamiento
+    de datos (no existe aún en el repo); hardening anti-spam real
+    (rate limiting/CAPTCHA) si el volumen lo justifica más adelante.
+  - **Fix — fila de `/platform/prospects` no navegaba al detalle.** Solo
+    el nombre dentro de la primera celda tenía `<Link>`; el resto de la
+    fila (la mayoría del área clickeable visible) no navegaba. Corregido
+    haciendo toda la `<tr>` navegable (`router.push`, `role="link"`,
+    `tabIndex`, mismo hover ya existente) — sin tocar queries/búsqueda/
+    filtros/state machine.
+- **Checkpoint 6 (2026-09-16) — Prospecto Ganado → Crear clínica
+  (conversión operacional, reutilizando `provision_clinic()`).** Smoke
+  manual real confirmó el pipeline completo hasta `won` (prospecto QA
+  Alex Sosa / Temporal Clinic / Tunja). Este checkpoint agrega la acción
+  posterior, separada del estado comercial (ver CLAUDE.md's own
+  "Prospecto Comercial" section para la regla permanente: `won` nunca
+  crea una clínica automáticamente).
+  - **Migración nueva** (secuencial tras `20260916200000`, que YA está
+    aplicada según el smoke actual):
+    `20260916210000_convert_commercial_prospect_to_clinic.sql` — agrega
+    `commercial_prospects.converted_clinic_id` (FK nullable a
+    `clinics.id`) + `converted_at` (par, nunca independiente) y
+    `convert_commercial_prospect_to_clinic()` (`SECURITY DEFINER`,
+    Superadmin-only, `for update` row lock sobre el prospecto, valida
+    `status = 'won'` y `converted_clinic_id is null` contra la fila REAL
+    antes de escribir — garantía de idempotencia a nivel DB contra doble
+    click/doble pestaña/requests concurrentes). **NO reimplementa
+    provisioning**: llama directamente a `provision_clinic()`
+    (`20260916110000`, sin modificar) — esa migración ya había sido
+    diseñada explícitamente para esto ("Ruta A desde un prospecto, Ruta B
+    directa, ambas convergen aquí"). **LOCAL, pendiente de `npx supabase
+    db push`.**
+  - `PlatformClinicForm` (`src/features/platform/clinic-form.tsx`) ganó
+    dos props opcionales (`initialClinic`/`initialLocation`, default
+    `EMPTY_CLINIC`/`EMPTY_CLINIC_LOCATION`) para poder prellenar
+    `clinic_name`/`city` desde el prospecto sin duplicar el formulario —
+    `/platform/clinicas/nueva` sigue arrancando en blanco, sin cambios.
+    `ProspectConversionSection` (`src/components/platform/`) es el nuevo
+    panel en `/platform/prospects/[prospectId]`, visible solo cuando
+    `status === 'won'`: CTA "Crear clínica" → revela el mismo formulario
+    real (prefilled, editable, con contexto read-only del contacto
+    comercial — nunca convertido en Clinic Admin/Auth user/membership/
+    invitation aquí) → al confirmar, reemplaza la sección por "Clínica
+    creada" + link "Ver clínica" → `/platform/clinicas/[slug]`. Falla
+    cerrado (nunca vuelve a ofrecer "Crear clínica") si el prospecto ya
+    está convertido pero la lectura secundaria del nombre/slug de la
+    clínica falla.
+  - `isEligibleForClinicConversion(status, convertedClinicId)`
+    (`src/features/commercial-prospects/state-machine.ts`) — espejo TS
+    puro de las mismas dos condiciones que la RPC valida server-side;
+    nunca la autoridad real, solo lo que la UI ofrece.
+  - **QA ejecutado:** `tsc --noEmit` y ESLint limpios; suite completa en
+    verde, 498 tests (3 nuevos de `isEligibleForClinicConversion`, PASS/
+    FAIL espejando la RPC). Migración revisada estructuralmente (no
+    duplica lógica de `provision_clinic()`, guard de Superadmin primero,
+    row lock antes de cualquier escritura, sin grant nuevo a `anon`). No
+    aplicada a remoto — por tanto, sin afirmar E2E de conversión real
+    todavía.
+  - **PENDIENTE:** Alex debe aplicar `20260916210000` (y `20260916200000`
+    si aún no lo hizo) y correr el smoke real: Ganado → Crear clínica →
+    verificar fila en `commercial_prospects.converted_clinic_id` →
+    "Ver clínica" abre el detalle correcto → continuar con el
+    provisioning normal del primer Clinic Admin (flujo Platform → Equipo
+    ya existente, sin cambios).
+- **Checkpoint 7 (2026-09-16) — Platform clinic logo wiring (real,
+  bloqueado por una brecha de autorización encontrada durante el smoke
+  del Checkpoint 6).** Auditoría focalizada confirmó que `PlatformClinicForm`
+  (usado por Platform → Clínicas → Crear clínica Y por Prospecto Ganado →
+  Crear clínica) tenía un picker de logo completamente real
+  (seleccionar/preview/quitar/validación) pero el `File` nunca salía del
+  estado local — UI-ONLY, ningún upload ocurría en ningún camino.
+  - **Root cause real, no solo wiring faltante:** aun conectando el
+    upload, un Superadmin habría sido rechazado por RLS/Storage. Tanto
+    `clinics_update_admin` como las tres policies `clinic_logos_*` de
+    Storage (todas detrás de un único helper, `owns_clinic_logo_path()`)
+    exigían `has_clinic_role(..., ['clinic_admin'])` — y `provision_clinic()`
+    deliberadamente NUNCA crea membership para el Superadmin que provisiona
+    (regla permanente, ver CLAUDE.md). Esto afectaba a AMBOS caminos por
+    igual, no solo a Prospectos.
+  - **Migración nueva** (secuencial tras `20260916210000`, que YA está
+    aplicada según el smoke actual):
+    `20260916220000_allow_superadmin_manage_clinic_logo.sql` —
+    `alter policy clinics_update_admin` (mismo patrón `or
+    is_platform_superadmin()` ya usado en `20260916170000`) +
+    `create or replace function owns_clinic_logo_path()` con el mismo
+    `or is_platform_superadmin()` (un solo punto de cambio cubre las tres
+    policies de Storage que ya lo comparten, incluida `clinic_logos_select_admin`).
+    Sin membership artificial, sin ampliar acceso más allá del bucket
+    `clinic-logos`, sin tocar la autorización existente de Clinic Admin.
+    **LOCAL, pendiente de `npx supabase db push`.**
+  - `PlatformClinicForm.onSubmit` ahora recibe un tercer argumento
+    (`logoFile: File | null`) — el componente sigue sin subir nada él
+    mismo (no hay `clinic_id` real en submit time). Los dos callers reales
+    (`/platform/clinicas/nueva/page.tsx`, `ProspectConversionSection`)
+    llaman `uploadClinicLogo(clinicId, logoFile)`
+    (`src/features/clinic/logo.ts`, sin modificar) SOLO después de que su
+    propia RPC de provisioning/conversión ya devolvió un `clinicId` real —
+    mismo orden que ya usa el onboarding wizard. Un fallo del upload en
+    ese punto es explícitamente no-fatal: nunca reintenta provisioning/
+    conversión (la clínica/vínculo ya existen), solo muestra un toast de
+    advertencia y continúa (redirect al detalle de la clínica / estado
+    "Clínica creada").
+  - **QA ejecutado:** `tsc --noEmit` y ESLint limpios en los archivos
+    tocados; suite completa en verde, 498 tests (sin regresión — no se
+    agregaron tests nuevos: la lógica modificada es wiring async
+    secuencial sin rama pura extraíble, mismo criterio ya aplicado antes
+    para `fetchActiveClinicAdminMembership()`). Migración revisada
+    estructuralmente (ALTER POLICY conserva nombre/comando/roles, CREATE
+    OR REPLACE mantiene firma/tipo de retorno, validación de path/uuid
+    intacta). No aplicada a remoto — sin E2E de upload real todavía.
+  - **PENDIENTE:** Alex debe aplicar `20260916220000` y retomar el smoke:
+    Temporal Clinic → seleccionar logo → Crear clínica → verificar
+    `clinics.logo_url` + objeto en el bucket `clinic-logos` → "Ver
+    clínica" muestra el logo.
 
 ## Clínica (real, Clinic Admin)
 

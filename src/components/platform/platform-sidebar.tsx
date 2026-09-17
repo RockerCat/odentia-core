@@ -26,17 +26,21 @@ type PlatformNavGroup = {
 // routing/auth. Deliberately NOT src/components/shell/sidebar-nav.tsx:
 // that component reads the MOCK role (useRole()/ROLE_NAV_ITEMS) — exactly
 // the client-side/mock authorization this checkpoint's whole initiative
-// must never depend on. Only Inicio/Clínicas have a real screen behind
-// them yet (this checkpoint); Usuarios/Suscripciones/Marketplace/
-// Configuración are real, planned sections with no functionality built
-// yet — never fake screens, just clearly inert until their own
-// checkpoint.
+// must never depend on. Inicio/Clínicas/Prospectos have a real screen
+// behind them; Usuarios/Suscripciones/Marketplace/Configuración are
+// real, planned sections with no functionality built yet — never fake
+// screens, just clearly inert until their own checkpoint. Prospectos
+// (Platform → Prospectos, see src/features/commercial-prospects/) sits
+// next to Clínicas — the two core Superadmin-operated entities of the
+// commercial funnel (pipeline vs. already-provisioned) — never a new,
+// parallel nav group.
 const NAV_GROUPS: PlatformNavGroup[] = [
   {
     label: "Plataforma",
     items: [
       { label: "Inicio", icon: DashboardIcon, href: "/platform" },
       { label: "Clínicas", icon: BuildingIcon, href: "/platform/clinicas" },
+      { label: "Prospectos", icon: ClipboardIcon, href: "/platform/prospects" },
       { label: "Usuarios", icon: UsersIcon },
     ],
   },
