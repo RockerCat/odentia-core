@@ -22,8 +22,13 @@ import { resolveClinicContext } from "@/features/session/resolve-clinic-context"
 import { createClient } from "@/lib/supabase/server";
 
 // Public marketing landing — reuses the same branding/tokens/icons as the
-// authenticated app. "Registra tu clínica" opens the real onboarding
-// wizard at /registro (see src/features/onboarding).
+// authenticated app. "Quiero Odentia para mi clínica" opens /demo —
+// Odentia's commercial model is assisted onboarding, never public
+// self-service clinic creation (/registro stays real Auth/reentry
+// infrastructure, not the commercial entry point — see
+// landing-header.tsx's own comment). "demo" stays real (it's the actual
+// URL, and the destination page still explains a product walkthrough
+// happens), just never the CTA's own primary wording.
 // The hero/marketplace "product mockups" below are plain HTML/CSS built
 // from the same visual language as the real Agenda (see mock-data.ts's
 // STATUS_STYLES) — not screenshots or generated assets.
@@ -32,10 +37,11 @@ import { createClient } from "@/lib/supabase/server";
 // every other real feature uses, see CLAUDE.md) so the header/hero/closing
 // CTA all render the correct authenticated-vs-public state on the FIRST
 // paint — never the client-side useCurrentUserContext() hook, whose
-// resolve-on-mount would flash the public "Iniciar sesión"/"Registra tu
-// clínica" CTAs to an already-signed-in visitor for as long as it takes to
-// resolve. A failed resolution (e.g. Supabase unreachable) falls back to
-// the public CTAs rather than blocking the whole landing page.
+// resolve-on-mount would flash the public "Iniciar sesión"/"Quiero
+// Odentia para mi clínica" CTAs to an already-signed-in visitor for as
+// long as it takes to resolve. A failed resolution (e.g. Supabase
+// unreachable) falls back to the public CTAs rather than blocking the
+// whole landing page.
 
 const CLINIC_FEATURES = [
   { icon: CalendarIcon, title: "Agenda", description: "Citas y disponibilidad en tiempo real." },
@@ -54,6 +60,21 @@ const MARKETPLACE_FEATURES = [
 ];
 
 const MARKETPLACE_PRODUCTS = ["Guantes de nitrilo (caja x100)", "Anestesia dental", "Resina compuesta"];
+
+// Deliberately NOT MARKETPLACE_URL (src/components/shell/nav-items.ts) —
+// that constant is Marketplace's own /auth/sso/start endpoint, meant
+// exclusively for an already-authenticated Core session handing off to
+// Marketplace (see that file's own comment); using it here would send a
+// genuinely public, unauthenticated landing visitor straight into an SSO
+// handshake, which is exactly the bug this fixes — it was landing on
+// Core's own login instead of Marketplace's public storefront. This is
+// Marketplace's bare public origin, matching the same value already
+// used as MARKETPLACE_HOME_URL in src/app/auth/logout/route.ts (the
+// Marketplace-initiated logout's own landing destination) — same plain-
+// literal convention as every other Marketplace URL in this codebase
+// (see nav-items.ts's own comment on why: no shared config for a single
+// non-secret domain).
+const MARKETPLACE_PUBLIC_URL = "https://marketplace.odentia.co/";
 
 const FLOW_STEPS = [
   { icon: CalendarIcon, label: "Agenda" },
@@ -120,10 +141,10 @@ export default async function LandingPage() {
                 ) : (
                   <>
                     <LandingCtaLink
-                      href="/registro"
-                      className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium whitespace-nowrap text-primary-foreground hover:opacity-90 sm:px-6 sm:py-3"
+                      href="/demo"
+                      className="rounded-lg bg-primary px-4 py-2.5 text-center text-sm font-medium text-primary-foreground hover:opacity-90 sm:px-6 sm:py-3"
                     >
-                      Registra tu clínica
+                      Quiero Odentia para mi clínica
                     </LandingCtaLink>
                     <LandingCtaLink
                       href="/login"
@@ -295,7 +316,17 @@ export default async function LandingPage() {
           </div>
         </section>
 
-        {/* Marketplace — near-second-hero */}
+        {/* Marketplace — near-second-hero. Two distinct navigations here,
+            never conflated: the navbar's own "Marketplace" link
+            (landing-header.tsx) only scrolls to this section's #marketplace
+            anchor; "Ir al Marketplace" below links a genuinely public,
+            unauthenticated visitor to Marketplace's own public storefront
+            (MARKETPLACE_PUBLIC_URL, defined above) — never
+            MARKETPLACE_URL (src/components/shell/nav-items.ts), which is
+            Marketplace's /auth/sso/start endpoint for an already-
+            authenticated Core session (dashboard's own MarketplaceCard,
+            the sidebar, the cart icon) and would incorrectly drop a public
+            visitor into an SSO handshake back to Core's own login. */}
         <section id="marketplace" className="relative border-t border-border px-4 py-14 sm:px-6 sm:py-20">
           <div
             aria-hidden="true"
@@ -314,6 +345,14 @@ export default async function LandingPage() {
                 odontológicos. Tus compras elegibles pueden patrocinar la suscripción de tu
                 clínica.
               </p>
+
+              <a
+                href={MARKETPLACE_PUBLIC_URL}
+                className="mt-5 inline-flex items-center gap-1.5 rounded-lg border border-primary/25 bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/15"
+              >
+                Ir al Marketplace
+                <ArrowRightIcon className="size-4" />
+              </a>
             </div>
 
             <div className="relative">
@@ -391,13 +430,13 @@ export default async function LandingPage() {
                 Tu clínica puede hacer mucho más desde un solo lugar.
               </h2>
               <p className="mx-auto mt-3 max-w-lg text-sm text-muted-foreground sm:text-base">
-                Empieza a gestionar tu clínica y descubre un ecosistema creado para odontología.
+                Da el siguiente paso para llevar Odentia a tu clínica.
               </p>
               <LandingCtaLink
-                href={isAuthenticated ? "/agenda" : "/registro"}
+                href={isAuthenticated ? "/agenda" : "/demo"}
                 className="mt-6 inline-block rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90"
               >
-                {isAuthenticated ? "Ir a mi clínica" : "Registra tu clínica"}
+                {isAuthenticated ? "Ir a mi clínica" : "Quiero Odentia para mi clínica"}
               </LandingCtaLink>
             </div>
           </div>

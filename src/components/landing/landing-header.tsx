@@ -10,10 +10,22 @@ import type { ClinicContext } from "@/features/session/types";
 
 // Shared public-site navbar — used by the landing page (src/app/page.tsx)
 // and every other public marketing page (e.g. /planes) so nav links and
-// the CTA buttons never drift between pages. "Funcionalidades" and
-// "Marketplace" are anchors into sections on the home page, so they route
-// through "/" from any other page. "Registra tu clínica" opens the real
-// onboarding wizard at /registro (see src/features/onboarding).
+// the CTA buttons never drift between pages. The logo itself always links
+// to "/" (same aria-label convention as onboarding-wizard.tsx's own
+// logo-links-home) in both branches below — real navigation, not a static
+// image. "Funcionalidades" and "Marketplace" are anchors into sections on
+// the home page, so they route through "/" from any other page. "Quiero
+// Odentia para mi clínica" opens
+// the minimal commercial landing at /demo (see src/app/demo/page.tsx) —
+// Odentia's commercial model is now assisted onboarding (Landing →
+// intención comercial → prospecto → seguimiento comercial → conversión
+// por Superadmin), never public self-service clinic creation. "demo" is
+// deliberately not part of this CTA's own wording — it stays true as the
+// implementation URL and inside /demo's own explanatory copy, never the
+// primary visible concept. /registro still exists and is unchanged (real
+// Auth/reentry infrastructure — email confirmation fallback, PKCE
+// recovery, proxy.ts's own no-membership fallback), it's just no longer
+// the commercial entry point this header advertises.
 //
 // `authContext` opts a page into replacing those CTAs with the real
 // authenticated header block (avatar/clinic/menu, same as the
@@ -50,7 +62,9 @@ export function LandingHeader({ active, authContext = null }: LandingHeaderProps
     return (
       <header className="sticky top-0 z-10 border-b border-border bg-background/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
-          <Logo className="h-7 w-auto sm:h-8" />
+          <Link href="/" aria-label="Ir al inicio de Odentia">
+            <Logo className="h-7 w-auto sm:h-8" />
+          </Link>
 
           <div className="flex items-center gap-1.5 sm:gap-3">
             <LandingCtaLink
@@ -80,7 +94,9 @@ export function LandingHeader({ active, authContext = null }: LandingHeaderProps
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-background/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
-        <Logo className="h-7 w-auto sm:h-8" />
+        <Link href="/" aria-label="Ir al inicio de Odentia">
+          <Logo className="h-7 w-auto sm:h-8" />
+        </Link>
 
         <nav className="hidden items-center gap-6 text-sm font-medium text-foreground/80 md:flex">
           <Link href="/#funcionalidades" className="hover:text-foreground">
@@ -105,10 +121,10 @@ export function LandingHeader({ active, authContext = null }: LandingHeaderProps
             Iniciar sesión
           </LandingCtaLink>
           <LandingCtaLink
-            href="/registro"
-            className="rounded-lg bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 sm:px-4 sm:py-2 sm:text-sm"
+            href="/demo"
+            className="rounded-lg bg-primary px-2.5 py-1.5 text-center text-xs font-medium text-primary-foreground hover:opacity-90 sm:px-4 sm:py-2 sm:text-sm"
           >
-            Registra tu clínica
+            Quiero Odentia para mi clínica
           </LandingCtaLink>
         </div>
       </div>

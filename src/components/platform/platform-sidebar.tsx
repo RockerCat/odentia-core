@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BuildingIcon, CreditCardIcon, DashboardIcon, SlidersIcon, StoreIcon, UsersIcon } from "@/components/shell/icons";
+import { BuildingIcon, ClipboardIcon, CreditCardIcon, DashboardIcon, SlidersIcon, StoreIcon, UsersIcon } from "@/components/shell/icons";
 import { Logo } from "@/components/shell/logo";
 
 type PlatformNavItem = {

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Image from "next/image";
-import Link from "next/link";
 import {
   ArrowRightIcon,
   BarChartIcon,
@@ -13,6 +12,7 @@ import {
   ToothIcon,
   UsersIcon,
 } from "@/components/shell/icons";
+import { LandingCtaLink } from "@/components/landing/landing-cta-link";
 import { LandingFooter } from "@/components/landing/landing-footer";
 import { LandingHeader } from "@/components/landing/landing-header";
 import { formatCOP, LOPADENT_BENEFIT_MOCK, SUBSCRIPTION_MOCK } from "@/features/subscription/mock-data";
@@ -21,9 +21,13 @@ import { formatCOP, LOPADENT_BENEFIT_MOCK, SUBSCRIPTION_MOCK } from "@/features/
 // (src/app/page.tsx). Reuses the subscription feature's mock price/goal
 // (src/features/subscription/mock-data.ts) so the numbers shown here never
 // drift from what a logged-in Clinic Admin sees in Mi Suscripción.
-// "Probar Odentia gratis" and "Comenzar mes gratis" both open the real
-// onboarding wizard at /registro, same as "Registra tu clínica" on the home
-// page (see src/features/onboarding).
+// "Quiero Odentia para mi clínica" opens /demo, same as the home page's
+// own CTA — Odentia's commercial model is assisted onboarding, never
+// public self-service clinic creation (see landing-header.tsx's own
+// comment).
+// The free-first-month pricing fact itself is still real and unchanged —
+// only the self-service PROMISE (create your own clinic instantly) is
+// what's being removed here.
 
 export const metadata: Metadata = {
   title: "Planes | Odentia",
@@ -32,7 +36,7 @@ export const metadata: Metadata = {
 };
 
 const HOW_IT_WORKS = [
-  { icon: BuildingIcon, title: "Crea tu clínica", description: "1 mes gratis desde el primer día." },
+  { icon: BuildingIcon, title: "Activamos tu clínica", description: "Tu primer mes es gratis desde el arranque." },
   { icon: CalendarIcon, title: "Usa Odentia", description: "Agenda, pacientes, historia clínica y más." },
   {
     icon: StoreIcon,
@@ -90,14 +94,14 @@ export default function PlanesPage() {
                 <p className="mt-5 text-3xl font-bold tracking-tight">$0</p>
                 <p className="mt-1 text-xs text-muted-foreground">Tu primer mes completo.</p>
 
-                <p className="mt-4 flex-1 text-sm text-muted-foreground">Prueba Odentia sin costo.</p>
+                <p className="mt-4 flex-1 text-sm text-muted-foreground">La activamos contigo, sin costo el primer mes.</p>
 
-                <Link
-                  href="/registro"
-                  className="mt-5 block w-full rounded-lg bg-primary px-4 py-2.5 text-center text-sm font-medium whitespace-nowrap text-primary-foreground hover:opacity-90"
+                <LandingCtaLink
+                  href="/demo"
+                  className="mt-5 block w-full rounded-lg bg-primary px-4 py-2.5 text-center text-sm font-medium text-primary-foreground hover:opacity-90"
                 >
-                  Probar Odentia gratis
-                </Link>
+                  Quiero Odentia para mi clínica
+                </LandingCtaLink>
               </div>
 
               <ArrowRightIcon className="mx-auto size-5 shrink-0 rotate-90 text-primary/40 lg:my-auto lg:rotate-0" />
@@ -208,17 +212,17 @@ export default function PlanesPage() {
         <section className="px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-4xl">
             <div className="rounded-2xl border border-primary/20 bg-[linear-gradient(135deg,color-mix(in_oklab,var(--primary)_8%,var(--background)),var(--background))] p-7 text-center shadow-sm sm:p-10">
-              <h2 className="text-2xl font-semibold text-balance sm:text-3xl">Empieza gratis hoy mismo.</h2>
+              <h2 className="text-2xl font-semibold text-balance sm:text-3xl">Tu primer mes puede ser gratis.</h2>
               <p className="mx-auto mt-3 max-w-lg text-sm text-muted-foreground sm:text-base">
-                Un mes gratis, sin complicaciones, y la posibilidad de que tu suscripción salga gratis
-                cada mes.
+                Da el siguiente paso para llevar Odentia a tu clínica, con la posibilidad de que tu
+                suscripción salga gratis cada mes.
               </p>
-              <Link
-                href="/registro"
+              <LandingCtaLink
+                href="/demo"
                 className="mt-6 inline-block rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90"
               >
-                Comenzar mes gratis
-              </Link>
+                Quiero Odentia para mi clínica
+              </LandingCtaLink>
             </div>
           </div>
         </section>
