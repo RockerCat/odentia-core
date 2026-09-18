@@ -11,6 +11,15 @@ import type { ReferenceValue } from "./catalog-data";
 // labels only ("Tunja — Boyacá"), never a raw code, in keeping with this
 // task's own product principle; the caller is the one who receives
 // `value` (the code) on selection and is responsible for storing it.
+// Same base look as FIELD_CLASS, character-for-character, with only the
+// border/focus-border color swapped — never both a border-border and a
+// border-danger utility present at once (Tailwind doesn't guarantee a
+// later class in the string wins over an earlier one targeting the same
+// property), so this is the reliable way to override it, not just
+// appending a danger class after FIELD_CLASS.
+const INVALID_FIELD_CLASS =
+  "w-full rounded-lg border border-danger/60 bg-background px-2.5 py-1.5 text-sm text-foreground focus:border-danger/60 focus:outline-none";
+
 export function ReferenceValueAutocomplete({
   catalogKey,
   value,
@@ -18,6 +27,7 @@ export function ReferenceValueAutocomplete({
   onChange,
   placeholder,
   disabled,
+  invalid,
 }: {
   catalogKey: string;
   value: string;
@@ -28,6 +38,10 @@ export function ReferenceValueAutocomplete({
   onChange: (value: ReferenceValue | null) => void;
   placeholder?: string;
   disabled?: boolean;
+  // Optional, purely visual — backward compatible (every existing
+  // consumer omits it, so its own rendering/behavior is byte-for-byte
+  // unchanged). Never touches search, catalog lookup, or selection.
+  invalid?: boolean;
 }) {
   // No separate "closed" query state to keep in sync with displayLabel —
   // the input just shows displayLabel until the user actually starts
@@ -62,7 +76,8 @@ export function ReferenceValueAutocomplete({
         value={open ? query : displayLabel}
         disabled={disabled}
         placeholder={placeholder}
-        className={FIELD_CLASS}
+        aria-invalid={invalid || undefined}
+        className={invalid ? INVALID_FIELD_CLASS : FIELD_CLASS}
         onFocus={() => {
           setQuery("");
           setOpen(true);

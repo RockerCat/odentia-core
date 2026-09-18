@@ -90,13 +90,13 @@ heurística de texto ni prefijo de código.
 | `modalidadGrupoServicioTecSal` | `encounter_services.modalidad_code` | — | Opcional en Odentia hoy (no bloquea readiness) | C05, p.29 |
 | `grupoServicios` | `encounter_services.grupo_servicios_code` | — | Opcional | C06, p.29 |
 | `codServicio` | `encounter_services.cod_servicio_code` | Sin cruce contra `CUPSGrServicios` — ver decisión abajo | Opcional | C07, p.29 |
-| `finalidadTecnologiaSalud` | `encounter_services.finalidad_code` | — | Opcional | C08, p.30 |
+| `finalidadTecnologiaSalud` | `encounter_services.finalidad_code` | Opcional según el DT1 tal como está documentado aquí — Odentia exige su selección como regla PROPIA de calidad antes de poder finalizar una atención NUEVA (sin default, visible en el flujo normal de "¿Qué realizaste?", `getEncounterFinalizeBlockers`), pero esto es exclusivamente una gate de finalización hacia adelante, nunca un requisito retroactivo de export readiness: `export-readiness.ts` deliberadamente NUNCA la exige, así que una atención histórica ya finalizada con `finalidad_code = null` sigue siendo un export RIPS válido y serializa `null` sin bloquear ni requerir corrección | Opcional (regulatorio); Odentia la pide solo para finalizar una atención nueva, nunca retroactivamente | C08, p.30 |
 | `causaMotivoAtencion` | `encounter_services.causa_motivo_code` | Solo aplica si `rips_service_type = 'consultation'` (CHECK constraint estructural desde RIPS #4A) | Opcional | C09, p.34 |
 | `codDiagnosticoPrincipal` | `encounter_diagnoses` (rol `principal`) | Ver "Resolución de diagnósticos por servicio" abajo | Obligatorio | C10, p.34 |
 | `codDiagnosticoPrincipalCIE11` / `nomCodDiagnosticoPrincipalCIE11` | — | Siempre `null` — Odentia es CIE10 exclusivamente | Condicional | C23/C24, p.36 |
 | `codDiagnosticoRelacionado1/2/3` | `encounter_diagnoses` (rol `related`) | Hasta 3 CAMPOS FIJOS (nunca arreglo) — se truncan los excedentes (con warning interno, nunca error) | Condicional | C11/C12/C13, p.35-37 |
 | `codDiagnosticoRelacionado{1,2,3}CIE11` / `nomCodDiagnosticoRelacionado{1,2,3}CIE11` | — | Siempre `null` | Condicional | C25-C29 |
-| `tipoDiagnosticoPrincipal` | `encounter_diagnoses.diagnosis_type_code` (fila principal) | `""` si no se capturó (no bloquea readiness hoy — gap documentado) | Obligatorio en DT1, no bloqueante en Odentia hoy | C14, p.38 |
+| `tipoDiagnosticoPrincipal` | `encounter_diagnoses.diagnosis_type_code` (fila principal) | Obligatorio para toda consulta — bloquea RIPS readiness (`CONSULTATION_DIAGNOSIS_TYPE_MISSING`, `export-readiness.ts`) si el diagnóstico principal de una consulta no lo tiene | Obligatorio en DT1 y en Odentia | C14, p.38 |
 | `tipoDocumentoIdentificacion` / `numDocumentoIdentificacion` | `professional_profiles.document_type/document_number` del profesional del servicio | — | Obligatorio | C15/C16, p.39 |
 | `vrServicio` | `encounter_services.service_value` | "Si el RIPS es sin FEV, debe informar el valor pagado por el paciente" | Obligatorio (bloquea readiness si falta) | C17, p.39 |
 | `conceptoRecaudo` | `encounter_services.concepto_recaudo_code` | — | Opcional | C18, p.40 |
@@ -118,7 +118,7 @@ Diferencias clave frente a consultas: solo **un** diagnóstico relacionado
 | `numAutorizacion` | — | Siempre `null` | Condicional | P04, p.44 |
 | `codProcedimiento` | `encounter_services.cups_code` | — | Obligatorio | P05, p.44 |
 | `viaIngresoServicioSalud` | `encounter_services.via_ingreso_code` | Solo aplica si `rips_service_type = 'procedure'` (CHECK constraint) | Opcional | P06, p.47 |
-| `modalidadGrupoServicioTecSal` / `grupoServicios` / `codServicio` / `finalidadTecnologiaSalud` | igual que consultas | — | Opcional | P07-P10 |
+| `modalidadGrupoServicioTecSal` / `grupoServicios` / `codServicio` / `finalidadTecnologiaSalud` | igual que consultas | `finalidadTecnologiaSalud` sigue la misma regla que en consultas: opcional para el DT1/export readiness, pedida por Odentia solo al finalizar un procedimiento NUEVO — el resto opcional | Opcional (regulatorio); ver nota de `finalidadTecnologiaSalud` en la tabla de consultas | P07-P10 |
 | `tipoDocumentoIdentificacion` / `numDocumentoIdentificacion` | `professional_profiles` del profesional | — | Obligatorio | P11/P12, p.49 |
 | `codDiagnosticoPrincipal` | `encounter_diagnoses` (rol `principal`) | Ver "Resolución de diagnósticos" | Obligatorio | P13, p.49 |
 | `codDiagnosticoPrincipalCIE11` / `nomCodDiagnosticoPrincipalCIE11` | — | Siempre `null` | Condicional | P21/P22 |

@@ -81,6 +81,35 @@ describe("getEncounterRipsReadiness", () => {
     expect(result.errors.map((e) => e.code)).not.toContain("SERVICE_VALUE_MISSING");
   });
 
+  // RIPS — finalidad_code (finalidadTecnologiaSalud) is OPTIONAL per the
+  // DT1 as currently documented in this repo (docs/rips-json-mapping.md)
+  // — Odentia's own internal quality rule requiring it before "Finalizar
+  // atención" for a NEW encounter (getEncounterFinalizeBlockers, see that
+  // file's own tests) is a forward-looking product decision, never an
+  // export-readiness/regulatory requirement. A historical encounter
+  // finalized before that internal rule existed, with finalidad_code
+  // still null, stays a perfectly valid RIPS export — never a retroactive
+  // blocker, never backfilled. Modalidad/Causa were never blockers either
+  // (Modalidad is auto-resolved, never user input; Causa stays an
+  // editable suggestion, not a requirement) — all three assert together
+  // here since they're the same "internal UX nicety, not an export
+  // requirement" class.
+  it("never blocks readiness for a missing finalidad_code, modalidad_code, or causa_motivo_code — none are regulatory/export requirements", () => {
+    const result = getEncounterRipsReadiness(
+      baseEncounter({ services: [baseService({ finalidadCode: null, modalidadCode: null, causaMotivoCode: null })] }),
+    );
+    expect(result).toEqual({ ready: true, errors: [] });
+  });
+
+  it("never blocks readiness for a procedure missing finalidad_code either — same rule applies regardless of service type", () => {
+    const result = getEncounterRipsReadiness(
+      baseEncounter({
+        services: [baseService({ ripsServiceType: "procedure", cupsCode: "230100", serviceValue: 0, finalidadCode: null })],
+      }),
+    );
+    expect(result.ready).toBe(true);
+  });
+
   it("flags a missing professional document identity", () => {
     const result = getEncounterRipsReadiness(baseEncounter({ services: [baseService({ professionalHasDocumentIdentity: false })] }));
     expect(result.errors.map((e) => e.code)).toContain("PROFESSIONAL_DOCUMENT_MISSING");

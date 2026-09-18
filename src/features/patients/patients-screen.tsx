@@ -205,7 +205,7 @@ export function PatientsScreen({
       {showNewPatient && clinicId && (
         <NewPatientModal
           clinicId={clinicId}
-          documentTypes={identityCatalogs.TipoDocumento}
+          identityCatalogs={identityCatalogs}
           onClose={() => setShowNewPatient(false)}
           onCreate={(created) => setPatients((prev) => [created, ...prev])}
         />

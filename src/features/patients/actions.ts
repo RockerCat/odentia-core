@@ -33,6 +33,17 @@ export type CreatePatientInput = {
   phone: string | null;
   email: string | null;
   birthDate: string | null;
+  // RIPS demographics captured at intake (this task's own Section 1) —
+  // all nullable in the DB, all validated server-side by the SAME
+  // validate_patient_rips_identity trigger PatientPatch's fields already
+  // go through on update. Required-for-a-NEW-patient is a form-level rule
+  // (see new-patient-modal.tsx's own canCreate), never a DB constraint —
+  // never enforced again here.
+  sexCode: string | null;
+  userTypeCode: string | null;
+  countryOfResidenceCode: string | null;
+  municipalityOfResidenceCode: string | null;
+  residenceZoneCode: string | null;
 };
 
 export type CreatePatientOutcome = { status: "ok"; patient: Patient } | { status: "error"; message: string };
@@ -113,6 +124,11 @@ export async function createPatient(input: CreatePatientInput): Promise<CreatePa
       phone: input.phone,
       email: input.email,
       birth_date: input.birthDate,
+      sex_code: input.sexCode,
+      user_type_code: input.userTypeCode,
+      country_of_residence_code: input.countryOfResidenceCode,
+      municipality_of_residence_code: input.municipalityOfResidenceCode,
+      residence_zone_code: input.residenceZoneCode,
     })
     .select(PATIENT_SELECT_COLUMNS)
     .single();

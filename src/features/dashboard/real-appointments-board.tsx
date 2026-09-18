@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { Tooltip } from "@/components/tooltip";
 import { UserAvatar } from "@/components/user-avatar";
-import { ChevronDownIcon, ChevronIcon, CloseIcon, PlusIcon } from "@/components/shell/icons";
+import { CheckCircleIcon, ChevronDownIcon, ChevronIcon, CloseIcon, PlusIcon } from "@/components/shell/icons";
 import { firstName } from "@/lib/format";
 import type { MembershipRole } from "@/features/session/types";
 import type { Patient } from "@/features/patients/data";
@@ -41,7 +41,7 @@ import { RealNewAppointmentModal } from "./real-new-appointment-modal";
 export { toBoardProfessional, type BoardProfessional };
 
 const LEGEND = [
-  { label: "Libre", className: "border border-dashed border-border" },
+  { label: "Libre", className: "border border-border bg-background" },
   { label: "Confirmada", className: "bg-primary" },
   { label: "Pendiente", className: "bg-warning" },
   { label: "En curso", className: "bg-info" },
@@ -522,6 +522,13 @@ export function RealAppointmentsBoard({
                     );
                     if (!appointment) {
                       const past = isPastSlot(selectedDay, slot);
+                      // Visual hierarchy only (no behavior change): a
+                      // bookable slot reads as a real, clickable surface
+                      // (solid border, white bg, normal-contrast hour,
+                      // teal hover) instead of the old dashed-border
+                      // "disabled placeholder" look; a past slot recedes
+                      // instead (faint bg, no border, light-gray hour, no
+                      // hover) — disabled/aria-disabled/onClick unchanged.
                       return (
                         <button
                           key={slot}
@@ -529,10 +536,10 @@ export function RealAppointmentsBoard({
                           disabled={past}
                           aria-disabled={past}
                           onClick={() => openNewAppointment({ professionalProfileId: professional.professionalProfileId, dayKey: selectedDay, time: slot })}
-                          className={`flex h-12 flex-col items-center justify-center rounded-md border border-dashed transition-colors ${
+                          className={`flex h-12 flex-col items-center justify-center rounded-md border transition-colors ${
                             past
-                              ? "cursor-not-allowed border-border/60 text-muted-foreground/30"
-                              : "border-border text-muted-foreground/70 hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                              ? "cursor-not-allowed border-transparent bg-foreground/[0.03] text-muted-foreground/40"
+                              : "border-border bg-background text-foreground/80 hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
                           }`}
                         >
                           <span className="text-[10px] font-medium">{slot}</span>
@@ -548,6 +555,18 @@ export function RealAppointmentsBoard({
                     // flag drove, just keyed off the real status now that
                     // patient_arrived/waiting_room actually mean that.
                     const hasArrived = appointment.status === "patient_arrived" || appointment.status === "waiting_room";
+                    // REAL_STATUS_STYLES.completed is already a real,
+                    // deliberate treatment (border-border bg-foreground/[0.03]
+                    // text-muted-foreground) — shared with the appointment
+                    // detail modal/portal/summary cards, so left untouched
+                    // here. Color alone reads too close to an ordinary
+                    // slot at a glance, though, so a completed appointment
+                    // additionally gets the same small corner-badge pattern
+                    // hasArrived already uses just above — a real,
+                    // already-imported CheckCircleIcon, absolutely
+                    // positioned (no slot growth) — plus its label on
+                    // hover, same as hasArrived's own tooltip line.
+                    const isCompleted = appointment.status === "completed";
                     return (
                       <Tooltip
                         key={slot}
@@ -555,7 +574,9 @@ export function RealAppointmentsBoard({
                           <>
                             <span className="block font-semibold">{appointment.patientName}</span>
                             {appointment.reason && <span className="block text-background/75">{appointment.reason}</span>}
-                            {hasArrived && <span className="block text-background/75">{REAL_STATUS_LABELS[appointment.status]}</span>}
+                            {(hasArrived || isCompleted) && (
+                              <span className="block text-background/75">{REAL_STATUS_LABELS[appointment.status]}</span>
+                            )}
                           </>
                         }
                       >
@@ -568,6 +589,14 @@ export function RealAppointmentsBoard({
                         >
                           {hasArrived && (
                             <span aria-hidden="true" className="absolute -top-1 -right-1 size-3 rounded-full border-2 border-background bg-success" />
+                          )}
+                          {isCompleted && (
+                            <span
+                              aria-hidden="true"
+                              className="absolute -top-1.5 -right-1.5 flex size-3.5 items-center justify-center rounded-full bg-background"
+                            >
+                              <CheckCircleIcon className="size-3 text-primary" />
+                            </span>
                           )}
                           <span className="text-[9px] font-medium opacity-80">{slot}</span>
                           <span className="max-w-full truncate text-[11px] font-semibold">{firstName(appointment.patientName)}</span>

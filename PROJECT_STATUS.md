@@ -2,7 +2,7 @@
 
 # Odentia Core
 
-**Last Updated:** 2026-09-15
+**Last Updated:** 2026-09-18
 
 ---
 
@@ -174,6 +174,56 @@ entry point is unchanged and still lands on Marketplace's `/` as before.
 Core does not interpret, persist, or validate `return_to` in any way; none
 of Core's SSO routes, RPCs, or database were touched. See "SSO Core →
 Marketplace" below for the full detail and Production smoke results.
+
+**Checkpoint 2026-09-18 — Clinical/RIPS structured-workflow closeout.**
+Consolidates a batch of work landed since the 09-17 A4/A4B checkpoint into
+one coherent, QA-gated commit.
+
+**Completed / validated:**
+- "Servicios realizados" (`encounter_services`) is now the sole write path
+  for what happened in an atención; the legacy "Procedimientos realizados"
+  UI (add/edit/remove) is removed, its historical data preserved read-only.
+  Modalidad auto-resolved, Causa/Motivo defaulted for new consultations,
+  Finalidad required at finalize-time only (export readiness stays
+  unaffected — historical encounters are never retroactively blocked).
+- Patient Portal (`/portal/historia`) reads her own finalized structured
+  services/diagnoses via new additive RLS (see below).
+- Reportes' "Tratamientos más realizados" is structured-first with no
+  double-counting against the legacy fallback.
+- New-patient creation collects RIPS identity (Sexo, Tipo de usuario, País,
+  Municipio/Zona) up front, reducing future `/rips` contextual corrections.
+- Agenda visual polish: available vs. unavailable slot contrast, a
+  completed-appointment corner badge.
+- Fixed a real cross-host logout bug: logout from localhost/preview was
+  silently redirecting to real production via hardcoded URLs; now
+  host-aware (`isCoreProductionHostname()`), federates to Marketplace only
+  on real production, else a local relative `/login`.
+- Full QA: `tsc --noEmit` clean, ESLint clean on all 22 modified/new
+  files, Vitest 382/382 passing across dashboard/patients/reports/rips/
+  session, `git diff --check` clean, `next build` succeeded (40 routes).
+
+**Applied migrations (confirmed synced, `supabase migration list --linked`,
+local == remote):**
+- `20260917100000_create_confirm_clinic_specialty_rips_service_rpc.sql`
+- `20260917110000_create_apply_confirmed_specialty_rips_service_rpc.sql`
+- `20260918100000_patient_select_own_encounter_services_diagnoses.sql`
+
+**RIPS current state:** Odentia internal RIPS pipeline validated; first
+official MUV/SISPRO validation remains the next external milestone.
+
+**Próximo hito (next validation flow, not a pending implementation task):**
+a real pilot run — SUPERADMIN crea una clínica real → se asigna un
+Admin-Odontólogo → configura identidad/especialidad RIPS → se registra un
+paciente real → cita → atención → finalizar → `/rips` → generar JSON →
+subir a MUV/SISPRO — is the next end-to-end validation, distinct from and
+beyond this checkpoint's own scope.
+
+**Known issue (non-blocking):** an intermittent localhost login freeze was
+observed during QA in an earlier session; not consistently reproducible;
+root cause unconfirmed; no speculative fix retained. All diagnostic
+instrumentation added while investigating it was fully reverted
+(`src/app/login/page.tsx` carries zero diff from its pre-investigation
+state).
 
 ---
 
@@ -2003,14 +2053,63 @@ re-verified in this update.
   advanced view or shrinks to only the fields with no institutional/
   derivable source. Not implemented in this pass.
 - **Legacy `Procedimientos realizados` vs. new `Servicios realizados` —
-  known, still-open duplication.** The clinical encounter screen still
-  shows both: the free-text, non-CUPS legacy list
-  (`patient_clinical_encounter_procedures`) and the real RIPS-backed
-  `encounter_services` list ("¿Qué realizaste?"/manual CUPS). The A3 smoke
-  deliberately did not add a legacy procedure row and did not attempt to
-  resolve this duplication — which one stays, which is deprecated, or how
-  they reconcile is still an open decision, not something today's work
-  touched.
+  resolved for NEW atenciones (Master "consolidar Servicios realizados
+  como única fuente de verdad").** `encounter_services` ("¿Qué
+  realizaste?"/manual CUPS) is now the only write-path for "qué se
+  realizó" — the clinical encounter screen no longer offers `+ Agregar
+  procedimiento`; `addProcedure`/`updateProcedure`/`removeProcedure` are
+  gone. Forward-only, never destructive:
+  - A resumed draft that already had legacy `patient_clinical_encounter_procedures`
+    rows (created before this change) keeps showing them, read-only, in a
+    "Procedimientos realizados (histórico)" block that only ever renders
+    when that specific encounter already has legacy rows — never for a
+    genuinely new atención, and the rows themselves are re-sent unchanged
+    on every save rather than silently dropped.
+  - Historia Clínica (`AtencionesTab`)/PDF already hid each block
+    per-encounter based on real data presence (`treatment`/`services`
+    conditionally rendered) — no code change was needed there; they
+    already behave correctly for both a legacy-only historical encounter
+    and a structured-only new one.
+  - The Patient Portal (`/portal/historia`) can now read her own finalized
+    `encounter_diagnoses`/`encounter_services` — new additive RLS
+    (`encounter_diagnoses_select_own_via_patient_link`/
+    `encounter_services_select_own_via_patient_link`,
+    `20260918100000_patient_select_own_encounter_services_diagnoses.sql`),
+    same shape as `patient_clinical_encounters_select_own_finalized_via_patient_link`.
+    SELECT-only, `finalized_at is not null` baked into the policy itself,
+    joined through `patient_clinical_encounters` (neither table has its
+    own `patient_id` column). **Migration applied to the shared/linked
+    project** (`supabase db push --linked`, confirmed in sync via
+    `supabase migration list --linked` — local and remote timestamps match
+    through `20260918100000`) — the Portal now reads her own finalized
+    Diagnósticos/Servicios for real. The SQL regression test
+    (`supabase/tests/patient_select_own_encounter_services_diagnoses.test.sql`,
+    7 cases covering own-visible/draft-invisible/cross-patient/cross-clinic
+    isolation/write-rejection) is **NOT TESTED locally — environment
+    unavailable** (no local Postgres/Docker) — never treat it as a passing
+    regression suite; the real evidence for this policy is the applied
+    migration plus manual Portal smoke, not this file.
+  - Reportes' "Tratamientos más realizados" (`computeTreatmentRanking`)
+    now prefers `encounter_services` per encounter (label:
+    `clinical_concept_name_snapshot` [+ variante] when present, else
+    `cups_code` — never a new CUPS-description lookup, never an invented
+    name) and only falls back to legacy `patient_clinical_encounter_procedures`
+    for an encounter that has zero structured services — never both for
+    the same encounter, so a transition-window atención can never be
+    double-counted.
+  - RIPS generator/readiness: unchanged, still exclusively `encounter_services`
+    — this was already true and stays true.
+  - `patient_clinical_encounter_procedures`/`patient_clinical_encounters.treatment`
+    tables/columns: untouched, no DROP, no backfill, no historical data
+    rewritten — still the read path for every atención finalized before
+    this change.
+  - Known, deliberately out-of-scope residual gap: a clinic-configured
+    treatment (`public.treatments`) with no confirmed clinical-concept/CUPS
+    mapping has no representation in `encounter_services` today (CUPS is
+    a NOT NULL column) — "Agregar servicio manual (CUPS)" is today's only
+    escape valve, and it always requires a real code. Not resolved here;
+    flagged for a future product decision, not a blocker for this
+    consolidation given CUPS' own broad real-world coverage.
 - **A4 — Especialidad → Servicio RIPS write path (implemented and
   smoke-PASSED, 2026-09-17, migration applied to remote).**
   `clinic_specialty_rips_services` (previously select-only) now has its

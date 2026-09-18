@@ -159,13 +159,19 @@ export async function fetchFinalizedEncounters(
 
 export type ReportProcedure = { encounterId: string; name: string };
 
-// Structured "procedimientos realizados" — patient_clinical_encounter_procedures,
-// never the treatments catalog (a treatment can be planned/offered without
-// ever being performed) and never a treatment plan (a plan is not a
-// record of work done). Scoped to a specific set of already-period-and-
+// Legacy "Procedimientos realizados" — patient_clinical_encounter_procedures.
+// Master "consolidar Servicios realizados": the write-path that populated
+// this table is retired for NEW atenciones, so this only ever returns rows
+// for encounters finalized BEFORE that change — historical-only from here
+// on, never the treatments catalog (a treatment can be planned/offered
+// without ever being performed) and never a treatment plan (a plan is not
+// a record of work done). Scoped to a specific set of already-period-and-
 // professional-filtered encounter ids (see fetchFinalizedEncounters above)
 // rather than its own date/professional filter — this table has neither
-// column, only encounter_id.
+// column, only encounter_id. computeTreatmentRanking (report-selectors.ts)
+// is what actually decides, per encounter, whether this or
+// fetchServicesForEncounters below wins — never both counted for the same
+// encounter.
 export async function fetchProceduresForEncounters(
   supabase: SupabaseClient,
   clinicId: string,
@@ -179,4 +185,41 @@ export async function fetchProceduresForEncounters(
     .in("encounter_id", encounterIds);
   if (error) throw error;
   return (data ?? []).map((row) => ({ encounterId: row.encounter_id, name: row.name }));
+}
+
+export type ReportService = { encounterId: string; label: string };
+
+// Structured "Servicios realizados" — encounter_services, the canonical
+// source for what was done in a NEW atención (Master "consolidar
+// Servicios realizados"). Same encounter-id scoping convention as
+// fetchProceduresForEncounters above. Label preference, cheapest-first,
+// never a new lookup added just for this ranking chart (no CUPS
+// description fetch here — that data isn't already available in this
+// read path, so it's deliberately skipped rather than adding one):
+//   1. clinical_concept_name_snapshot (+ variant when present) — the
+//      natural-language concept the odontólogo actually picked
+//      ("¿Qué realizaste?"), already snapshotted onto the row;
+//   2. cups_code — always present (NOT NULL column), the safe fallback
+//      for a manually-picked CUPS service with no concept snapshot.
+// Never a raw catalog lookup, never an invented name.
+export async function fetchServicesForEncounters(
+  supabase: SupabaseClient,
+  clinicId: string,
+  encounterIds: string[],
+): Promise<ReportService[]> {
+  if (encounterIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("encounter_services")
+    .select("encounter_id, cups_code, clinical_concept_name_snapshot, clinical_variant_name_snapshot")
+    .eq("clinic_id", clinicId)
+    .in("encounter_id", encounterIds);
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    encounterId: row.encounter_id,
+    label: row.clinical_concept_name_snapshot
+      ? row.clinical_variant_name_snapshot
+        ? `${row.clinical_concept_name_snapshot} (${row.clinical_variant_name_snapshot})`
+        : row.clinical_concept_name_snapshot
+      : row.cups_code,
+  }));
 }

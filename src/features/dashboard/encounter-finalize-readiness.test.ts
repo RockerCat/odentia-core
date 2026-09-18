@@ -7,11 +7,22 @@ import { getEncounterFinalizeBlockers, type FinalizeReadinessInput } from "./enc
 // handleFinalizeClick uses to block "Finalizar atención" outright,
 // mirroring export-readiness.ts's ENCOUNTER_INCAPACITY_MISSING/
 // SERVICE_VALUE_MISSING rules on purpose (see that file's own tests).
+//
+// RIPS — Modalidad/Causa/Finalidad: Finalidad joined this same gate as
+// Odentia's own internal quality rule for NEW encounters, never a
+// regulatory/export requirement — finalidad_code stays optional per the
+// DT1 as documented (see docs/rips-json-mapping.md), so
+// export-readiness.ts's getEncounterRipsReadiness deliberately never
+// checks it (a historical encounter finalized before this internal rule
+// existed, with finalidad_code null, stays a perfectly valid export).
+// Modalidad/Causa were never blockers here or there either — Modalidad
+// is now resolved automatically (never user input to begin with) and
+// Causa stays an editable suggestion, not a requirement.
 
 function base(overrides: Partial<FinalizeReadinessInput> = {}): FinalizeReadinessInput {
   return {
     incapacityCode: "02",
-    services: [{ cupsCode: "890203", ripsServiceType: "consultation", serviceValue: "50000" }],
+    services: [{ cupsCode: "890203", ripsServiceType: "consultation", serviceValue: "50000", finalidadCode: "15" }],
     ...overrides,
   };
 }
@@ -35,28 +46,28 @@ describe("getEncounterFinalizeBlockers", () => {
 
   it("blocks when a consultation's serviceValue is empty", () => {
     const blockers = getEncounterFinalizeBlockers(
-      base({ services: [{ cupsCode: "890203", ripsServiceType: "consultation", serviceValue: "" }] }),
+      base({ services: [{ cupsCode: "890203", ripsServiceType: "consultation", serviceValue: "", finalidadCode: "15" }] }),
     );
     expect(blockers.some((b) => b.includes("890203"))).toBe(true);
   });
 
   it("blocks when a consultation's serviceValue is only whitespace", () => {
     const blockers = getEncounterFinalizeBlockers(
-      base({ services: [{ cupsCode: "890203", ripsServiceType: "consultation", serviceValue: "   " }] }),
+      base({ services: [{ cupsCode: "890203", ripsServiceType: "consultation", serviceValue: "   ", finalidadCode: "15" }] }),
     );
     expect(blockers.length).toBeGreaterThan(0);
   });
 
   it("never blocks a procedure for an empty serviceValue (0 is the regulatory default, not user input)", () => {
     const blockers = getEncounterFinalizeBlockers(
-      base({ services: [{ cupsCode: "230100", ripsServiceType: "procedure", serviceValue: "" }] }),
+      base({ services: [{ cupsCode: "230100", ripsServiceType: "procedure", serviceValue: "", finalidadCode: "15" }] }),
     );
     expect(blockers).toEqual([]);
   });
 
   it("never blocks an unclassified (unknown) CUPS service for an empty serviceValue — that's a separate readiness error", () => {
     const blockers = getEncounterFinalizeBlockers(
-      base({ services: [{ cupsCode: "999999", ripsServiceType: "unknown", serviceValue: "" }] }),
+      base({ services: [{ cupsCode: "999999", ripsServiceType: "unknown", serviceValue: "", finalidadCode: "" }] }),
     );
     expect(blockers).toEqual([]);
   });
@@ -67,18 +78,21 @@ describe("getEncounterFinalizeBlockers", () => {
     // FinalizeReadinessService has no valorPagoModerador field on
     // purpose — there's nothing to accidentally read here.
     const blockers = getEncounterFinalizeBlockers(
-      base({ services: [{ cupsCode: "890203", ripsServiceType: "consultation", serviceValue: "" }] }),
+      base({ services: [{ cupsCode: "890203", ripsServiceType: "consultation", serviceValue: "", finalidadCode: "15" }] }),
     );
     expect(blockers.some((b) => b.includes("890203"))).toBe(true);
   });
 
-  it("is ready (no blockers) when incapacidad is answered and every consultation has a serviceValue", () => {
+  it("is ready (no blockers) when incapacidad is answered and every consultation has a serviceValue and finalidad", () => {
     expect(getEncounterFinalizeBlockers(base())).toEqual([]);
   });
 
   it("reports both blockers together when both are missing", () => {
     const blockers = getEncounterFinalizeBlockers(
-      base({ incapacityCode: null, services: [{ cupsCode: "890203", ripsServiceType: "consultation", serviceValue: "" }] }),
+      base({
+        incapacityCode: null,
+        services: [{ cupsCode: "890203", ripsServiceType: "consultation", serviceValue: "", finalidadCode: "15" }],
+      }),
     );
     expect(blockers.length).toBe(2);
   });
@@ -92,5 +106,40 @@ describe("getEncounterFinalizeBlockers", () => {
   // nothing here that COULD read it — this test pins that invariant.
   it("is ready (no blockers) even when the Servicio RIPS configuration is missing for every service", () => {
     expect(getEncounterFinalizeBlockers(base())).toEqual([]);
+  });
+
+  // RIPS — Finalidad: a real clinical decision, never defaulted, required
+  // for every classified (consultation or procedure) service — this is
+  // the new gate real-clinical-encounter-screen.tsx's own "¿Qué
+  // realizaste?" flow relies on before "Finalizar atención" ever opens
+  // the confirm dialog.
+  describe("finalidad", () => {
+    it("blocks a new consultation without finalidad selected", () => {
+      const blockers = getEncounterFinalizeBlockers(
+        base({ services: [{ cupsCode: "890203", ripsServiceType: "consultation", serviceValue: "50000", finalidadCode: "" }] }),
+      );
+      expect(blockers.some((b) => b.includes("finalidad") && b.includes("890203"))).toBe(true);
+    });
+
+    it("blocks an applicable procedure without finalidad selected — the field is required at the service level, not only for consultas", () => {
+      const blockers = getEncounterFinalizeBlockers(
+        base({ services: [{ cupsCode: "230100", ripsServiceType: "procedure", serviceValue: "", finalidadCode: "" }] }),
+      );
+      expect(blockers.some((b) => b.includes("finalidad") && b.includes("230100"))).toBe(true);
+    });
+
+    it("never blocks an unclassified (unknown) CUPS service for a missing finalidad — that's a separate, pre-existing readiness problem", () => {
+      const blockers = getEncounterFinalizeBlockers(
+        base({ services: [{ cupsCode: "999999", ripsServiceType: "unknown", serviceValue: "", finalidadCode: "" }] }),
+      );
+      expect(blockers).toEqual([]);
+    });
+
+    it("finalización continues normally (no blocker) once a valid finalidad is selected", () => {
+      const blockers = getEncounterFinalizeBlockers(
+        base({ services: [{ cupsCode: "230100", ripsServiceType: "procedure", serviceValue: "", finalidadCode: "15" }] }),
+      );
+      expect(blockers).toEqual([]);
+    });
   });
 });

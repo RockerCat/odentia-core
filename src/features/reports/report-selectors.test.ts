@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Patient } from "@/features/patients/data";
 import type { DateRange } from "./report-period";
 import { computeDentistActivity, computeKpis, computePatientsStats, computeTreatmentRanking } from "./report-selectors";
-import type { ReportAppointment, ReportEncounter, ReportProcedure, ReportProfessional } from "./reports-data";
+import type { ReportAppointment, ReportEncounter, ReportProcedure, ReportProfessional, ReportService } from "./reports-data";
 
 // Regression coverage for "PROMPT NINJA — Reportes reales": every rule the
 // task states explicitly (completed/cancelled/no_show respected as-is,
@@ -132,20 +132,56 @@ describe("computeDentistActivity", () => {
 });
 
 describe("computeTreatmentRanking", () => {
-  it("aggregates real procedure names, ranked by frequency", () => {
+  // Master "consolidar Servicios realizados" — structured (encounter_services)
+  // is now the canonical source; legacy (patient_clinical_encounter_procedures)
+  // is historical-only, used per-encounter ONLY when that encounter has no
+  // structured services at all. See report-selectors.ts's own comment.
+
+  it("aggregates real legacy procedure names, ranked by frequency, when no structured services exist at all", () => {
     const procedures: ReportProcedure[] = [
       { encounterId: "e1", name: "Limpieza dental" },
       { encounterId: "e1", name: "Resina compuesta" },
       { encounterId: "e2", name: "Limpieza dental" },
       { encounterId: "e3", name: "Limpieza dental" },
     ];
-    const ranking = computeTreatmentRanking(procedures);
+    const ranking = computeTreatmentRanking([], procedures);
     expect(ranking[0]).toEqual({ treatment: "Limpieza dental", count: 3 });
     expect(ranking[1]).toEqual({ treatment: "Resina compuesta", count: 1 });
   });
 
-  it("returns empty when no procedures were passed (e.g. zero finalized encounters this period)", () => {
-    expect(computeTreatmentRanking([])).toEqual([]);
+  it("aggregates real structured service labels, ranked by frequency, when no legacy procedures exist at all", () => {
+    const services: ReportService[] = [
+      { encounterId: "e1", label: "Limpieza dental" },
+      { encounterId: "e2", label: "Limpieza dental" },
+      { encounterId: "e3", label: "Resina compuesta" },
+    ];
+    const ranking = computeTreatmentRanking(services, []);
+    expect(ranking[0]).toEqual({ treatment: "Limpieza dental", count: 2 });
+    expect(ranking[1]).toEqual({ treatment: "Resina compuesta", count: 1 });
+  });
+
+  it("never double-counts an encounter that has BOTH structured services and legacy procedures — structured wins for that encounter", () => {
+    const services: ReportService[] = [{ encounterId: "e1", label: "Limpieza dental (estructurado)" }];
+    // Same encounter (e1) also has a legacy row — from the transition
+    // window, or a resumed draft that predates the write-path retirement.
+    // It must be completely ignored for e1: structured wins, never both.
+    const procedures: ReportProcedure[] = [
+      { encounterId: "e1", name: "Limpieza dental (legacy)" },
+      { encounterId: "e2", name: "Resina compuesta" }, // different encounter, no structured services — counts normally
+    ];
+    const ranking = computeTreatmentRanking(services, procedures);
+    expect(ranking).toEqual(
+      expect.arrayContaining([
+        { treatment: "Limpieza dental (estructurado)", count: 1 },
+        { treatment: "Resina compuesta", count: 1 },
+      ]),
+    );
+    expect(ranking.find((r) => r.treatment === "Limpieza dental (legacy)")).toBeUndefined();
+    expect(ranking.reduce((sum, r) => sum + r.count, 0)).toBe(2); // never 3 — e1 only counted once
+  });
+
+  it("returns empty when neither services nor procedures were passed (e.g. zero finalized encounters this period)", () => {
+    expect(computeTreatmentRanking([], [])).toEqual([]);
   });
 });
 

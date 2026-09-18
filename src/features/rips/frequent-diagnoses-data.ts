@@ -18,8 +18,29 @@ import { findDiagnosesByCodes, type DiagnosisCode } from "./catalog-data";
 // naturally recency-biased (this task's own stated priority: tenant
 // safety > real frequency > simple implementation, in that order) without
 // a raw SQL aggregate or a new RPC.
+//
+// A later UX pass wanted this list padded up to FREQUENT_DIAGNOSES_LIMIT
+// with "common odontológico" suggestions from the CIE-10 catalog whenever
+// a clinic has fewer than that many real frequent codes. That fallback
+// was deliberately NOT built: `diagnosis_catalog.chapter`/`category` are
+// optional import columns (see docs/rips-catalogs.md §6) and nothing in
+// this repo confirms the loaded CIE-10 import actually populated them
+// with a machine-readable "oral cavity" classification, a direct
+// read-only check against the real table was blocked by this
+// environment's own production-read safety guard, and no other mechanism
+// in the codebase maps a CIE-10 code/chapter to "common dental diagnosis"
+// today. Filtering by a hardcoded code range (e.g. K00–K14) would be
+// introducing new clinical semantics Odentia's data model doesn't
+// actually encode anywhere — exactly what this file's own header above
+// already refuses to do for the real-usage list. Revisit only once
+// chapter/category population is verified (or a clinic/specialty-scoped
+// "common diagnoses" concept is deliberately added elsewhere first).
 const DIAGNOSIS_HISTORY_WINDOW = 500;
-const FREQUENT_DIAGNOSES_LIMIT = 10;
+// Diagnóstico principal's own initial-suggestions UI (see
+// real-clinical-encounter-screen.tsx's DIAGNOSIS_INITIAL_SUGGESTIONS) is
+// meant to show at most 5 options on focus — exported so that cap is
+// pinned by a real test, not just implied by call-site behavior.
+export const FREQUENT_DIAGNOSES_LIMIT = 5;
 
 export type FrequentDiagnosesResult =
   | { status: "ok"; diagnoses: DiagnosisCode[] }

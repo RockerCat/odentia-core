@@ -213,6 +213,43 @@ client state. "Finalizar atención" always persists the encounter
 (`public.patient_clinical_encounters`, linked 1:1 to its Cita via a unique
 `appointment_id`) before marking the Cita `completed`, never the reverse.
 
+**"Servicios realizados" (`encounter_services`) is the single write path
+for what happened in an atención.** It replaced the legacy free-text
+"Procedimientos realizados" (`patient_clinical_encounter_procedures`),
+which is now read-only history: `RealClinicalEncounterScreen` seeds
+`procedures` once from `existingProcedures` and renders it, when non-empty,
+as a read-only "Procedimientos realizados (histórico)" section — no
+add/edit/remove UI remains for it, and no new atención ever writes to it.
+Every service row gets Modalidad auto-resolved to `"01"` at creation (no
+manual selector), Causa/Motivo defaulted to `"38"` for a new consultation
+row only (never overwritten once set), and Finalidad required with no
+default (inline warning until set) — all three live directly in the
+"Servicios realizados" card flow, not tucked in the "Detalles RIPS"
+accordion. Modalidad/Causa-Motivo/Finalidad stay regulatorily optional for
+RIPS export readiness (`export-readiness.ts` never blocks on them,
+preserving historical encounters) — only `getEncounterFinalizeBlockers`
+enforces Finalidad as an Odentia-only, forward-only rule at "Finalizar
+atención" time. See RIPS section below for the CUPS-resolution mechanics,
+unchanged by this consolidation. Reportes' treatment ranking
+(`computeTreatmentRanking`, `src/features/reports/report-selectors.ts`)
+mirrors this: structured `encounter_services` wins per-encounter, legacy
+`patient_clinical_encounter_procedures` only counts for an encounter with
+zero structured services, never double-counted. The Patient Portal's
+`/portal/historia` reads structured services/diagnoses through the same
+additive `..._select_own_via_patient_link` RLS pattern as the rest of the
+expediente (finalized-only, joined through `patient_clinical_encounters`/
+`patient_user_links`).
+
+Real logout (`useShellLogout`'s `signOut()` and `/auth/logout`) is
+host-aware via `isCoreProductionHostname()`
+(`src/features/session/decide-logout-destination.ts`, exact-match against
+`["odentia.co", "www.odentia.co"]`, never a substring/suffix check): only
+on real production Core does logout federate to Marketplace's own
+`/auth/logout`/home; any other host (localhost, a preview deploy) lands on
+a local relative `/login` instead, never a hardcoded production URL — a
+non-production visitor being silently stranded on real production was a
+real regression this fixed.
+
 The front-desk arrival flow ("Paciente llegó"/"Enviar a sala de espera")
 must never be a hard PREREQUISITE for "Iniciar/Continuar atención" — it's
 optional operational tracking, not a gate. `showStartEncounter` in
@@ -808,6 +845,19 @@ against the official SISPRO catalogs (`cups_catalog`/`diagnosis_catalog`/
 `rips_reference_values`) at write time — never inferred from free text,
 never accepted merely because the UI offered it, and never validated by
 loading a full catalog into the client (search is always server-side).
+
+New-patient creation (`NewPatientModal`/`createPatient()`) collects RIPS
+identity up front — Sexo, Tipo de usuario, País de residencia, and (when
+Colombia) Municipio/Zona — rather than deferring every one of them to the
+contextual `/rips` correction modal. `getMissingNewPatientFields()`
+(`src/features/patients/new-patient-completeness.ts`) is the single source
+of truth for which fields are required and when Municipio/Zona apply
+(Colombia-conditional); the modal's per-field invalid styling and its
+footer blocker message both derive from it alone, never a second parallel
+check. This does not replace the `/rips` correction modal — it only
+reduces how often a NEW patient ever needs it; an existing patient created
+before this, or missing a field regardless, is still corrected the same
+way as before, in-place from `/rips`.
 
 A clinic with more than one `clinic_location` cannot generate an export
 yet — nothing in the schema links a specific atención to a specific sede

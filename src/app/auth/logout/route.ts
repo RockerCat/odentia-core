@@ -1,13 +1,24 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { isCoreProductionHostname } from "@/features/session/decide-logout-destination";
 import { createClient } from "@/lib/supabase/server";
 
-// Exactly two possible destinations, both fixed literals — never a URL
-// accepted or interpolated from the request. `source` is a closed
-// discriminator, not a redirect parameter: any value other than the exact
-// literal "marketplace" (missing, unknown, or even a URL-shaped string
-// like "https://evil.example") resolves to the SAME default below, never
-// to itself. This is what makes an open redirect structurally impossible
-// here, not just unlikely.
+// Exactly two possible PRODUCTION destinations, both fixed literals —
+// never a URL accepted or interpolated from the request. `source` is a
+// closed discriminator, not a redirect parameter: any value other than
+// the exact literal "marketplace" (missing, unknown, or even a URL-shaped
+// string like "https://evil.example") resolves to the SAME default below,
+// never to itself. This is what makes an open redirect structurally
+// impossible here, not just unlikely.
+//
+// Both are only ever used when this request's own host IS the real
+// production Core (isCoreProductionHostname below) — a request landing
+// here on any other host (localhost, a preview/staging deploy) gets a
+// local relative redirect instead: there is no real Marketplace
+// counterpart to federate with off of production (see
+// decide-logout-destination.ts's own comment), so hardcoding these two
+// absolute URLs unconditionally would strand a non-production visitor on
+// the real production site — the same class of bug already fixed in
+// use-shell-logout.ts's own signOut().
 const CORE_LOGIN_URL = "https://www.odentia.co/login";
 const MARKETPLACE_HOME_URL = "https://marketplace.odentia.co/";
 
@@ -42,6 +53,19 @@ export async function GET(request: NextRequest) {
   // that already has no session here simply has nothing left to clear, and
   // still lands on the same destination a normal logout would.
   await supabase.auth.signOut({ scope: "local" });
+
+  // Not the real production Core (localhost, a preview/staging deploy) —
+  // never redirect to either hardcoded production URL. A relative /login
+  // on THIS SAME host/port is the only sane destination here: there is no
+  // local Marketplace to redirect to instead (see
+  // decide-logout-destination.ts's own comment), and this request could
+  // only realistically be a direct/manual visit or a misconfigured
+  // non-production Marketplace pointed at this deploy — never a real
+  // production Marketplace hop, which always targets the real production
+  // hostname.
+  if (!isCoreProductionHostname(request.nextUrl.hostname)) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
 
   const isMarketplaceInitiated = request.nextUrl.searchParams.get("source") === "marketplace";
   return NextResponse.redirect(isMarketplaceInitiated ? MARKETPLACE_HOME_URL : CORE_LOGIN_URL);

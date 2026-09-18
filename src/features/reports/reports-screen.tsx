@@ -30,11 +30,13 @@ import {
   fetchAppointmentsInRange,
   fetchFinalizedEncounters,
   fetchProceduresForEncounters,
+  fetchServicesForEncounters,
   fetchUpcomingAppointments,
   type ReportAppointment,
   type ReportEncounter,
   type ReportProcedure,
   type ReportProfessional,
+  type ReportService,
 } from "./reports-data";
 
 // Real /reportes — replaces the old mock-data.ts's single synthetic
@@ -89,6 +91,7 @@ type LoadState =
       finalizedEncounters: ReportEncounter[];
       allFinalizedEncounters: ReportEncounter[];
       procedures: ReportProcedure[];
+      services: ReportService[];
       patients: Patient[];
     };
 
@@ -150,11 +153,11 @@ export function ReportsScreen({
           fetchFinalizedEncounters(supabase, clinicId, null, scopedProfileId),
           fetchPatients(supabase, clinicId),
         ]);
-        const procedures = await fetchProceduresForEncounters(
-          supabase,
-          clinicId,
-          finalizedEncounters.map((e) => e.id),
-        );
+        const encounterIds = finalizedEncounters.map((e) => e.id);
+        const [procedures, services] = await Promise.all([
+          fetchProceduresForEncounters(supabase, clinicId, encounterIds),
+          fetchServicesForEncounters(supabase, clinicId, encounterIds),
+        ]);
         if (!cancelled) {
           setLoadState({
             status: "ok",
@@ -164,6 +167,7 @@ export function ReportsScreen({
             finalizedEncounters,
             allFinalizedEncounters,
             procedures,
+            services,
             patients,
           });
         }
@@ -184,7 +188,8 @@ export function ReportsScreen({
     loadState.status === "ok" ? computeActivitySeries(loadState.finalizedEncounters, range) : [];
   const dentistActivity =
     loadState.status === "ok" ? computeDentistActivity(dentistRows, loadState.appointments, loadState.finalizedEncounters) : [];
-  const treatmentRanking = loadState.status === "ok" ? computeTreatmentRanking(loadState.procedures) : [];
+  const treatmentRanking =
+    loadState.status === "ok" ? computeTreatmentRanking(loadState.services, loadState.procedures) : [];
   const patientsStats =
     loadState.status === "ok"
       ? computePatientsStats(

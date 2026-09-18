@@ -2,15 +2,23 @@
 
 import { useState } from "react";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
+import { isCoreProductionHostname } from "@/features/session/decide-logout-destination";
 import { signOutSupabase } from "@/features/session/sign-out";
 
 // Coordinated logout (Core <-> Marketplace, see src/app/auth/logout/
-// route.ts's own comment for the full picture): the ONLY destination this
-// flow ever navigates to — a fixed literal, never derived from any caller
-// input. Marketplace's own /auth/logout clears odentia_customer_session
-// there and redirects back to Core's login page; it never redirects back
-// to this endpoint, so no Core <-> Marketplace <-> Core loop is possible.
+// route.ts's own comment for the full picture): on the REAL production
+// Core, the ONLY destination this flow ever navigates to — a fixed
+// literal, never derived from any caller input. Marketplace's own
+// /auth/logout clears odentia_customer_session there and redirects back
+// to Core's login page; it never redirects back to this endpoint, so no
+// Core <-> Marketplace <-> Core loop is possible.
 const MARKETPLACE_LOGOUT_URL = "https://marketplace.odentia.co/auth/logout";
+// On any OTHER host (localhost, a preview/staging deploy) there is no
+// real Marketplace counterpart to federate with — see
+// decide-logout-destination.ts's own comment. A plain, same-origin,
+// relative destination: never hardcodes a port, works whatever
+// host/port this actually is.
+const LOCAL_LOGIN_PATH = "/login";
 
 // Real logout for the authenticated app shell (Header/MobileHeader) and
 // the Patient Portal (PortalShell) — signs out of Supabase Auth for real,
@@ -37,10 +45,13 @@ export function useShellLogout() {
     setSigningOut(true);
     await signOutSupabase();
     clearBridgedMockSession();
-    // window.location.assign, not router.push: the destination is a
-    // different origin entirely, which next/navigation's router has no
-    // way to navigate to.
-    window.location.assign(MARKETPLACE_LOGOUT_URL);
+    // window.location.assign, not router.push: the production destination
+    // is a different origin entirely, which next/navigation's router has
+    // no way to navigate to (the local destination is same-origin, but
+    // this still uses a full navigation either way, keeping the two
+    // branches symmetric and guaranteeing a hard reload clears any
+    // remaining client-side state regardless of which one runs).
+    window.location.assign(isCoreProductionHostname(window.location.hostname) ? MARKETPLACE_LOGOUT_URL : LOCAL_LOGIN_PATH);
   };
 
   return { signOut, signingOut };

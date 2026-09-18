@@ -1,7 +1,7 @@
 import type { Patient } from "@/features/patients/data";
 import { isUnattendedSixMonths } from "@/features/patients/patient-kpis";
 import { MS_PER_DAY, mostRecentMonday, type DateRange } from "./report-period";
-import type { ReportAppointment, ReportEncounter, ReportProcedure, ReportProfessional } from "./reports-data";
+import type { ReportAppointment, ReportEncounter, ReportProcedure, ReportProfessional, ReportService } from "./reports-data";
 
 // Real Reportes selectors — pure functions over already-fetched, already-
 // scoped real rows (reports-data.ts). No mock entity here anymore: the old
@@ -131,13 +131,26 @@ export function computeDentistActivity(
 
 export type TreatmentRankingRow = { treatment: string; count: number };
 
-// "Procedimientos realizados" — patient_clinical_encounter_procedures rows
-// for the already period-and-professional-scoped finalized encounters (see
-// fetchProceduresForEncounters), never the treatments catalog or a
-// treatment plan (rule 3, explicit).
-export function computeTreatmentRanking(procedures: ReportProcedure[], limit = 6): TreatmentRankingRow[] {
+// "Tratamientos más realizados" — Master "consolidar Servicios
+// realizados": structured-first, per ENCOUNTER, never per row. An
+// encounter that has any encounter_services rows counts ONLY those
+// (services); an encounter with zero encounter_services rows falls back
+// to its legacy patient_clinical_encounter_procedures rows, if any
+// (procedures) — this is what lets an atención from before the write-path
+// was retired keep contributing its real historical procedures, while a
+// NEW atención (structured-only from here on) is never joined by a
+// leftover/empty legacy read. An encounter is NEVER counted from both
+// sources at once — the whole point is to avoid double-counting a single
+// atención just because, during the transition window, one row of each
+// model might exist for it.
+export function computeTreatmentRanking(services: ReportService[], procedures: ReportProcedure[], limit = 6): TreatmentRankingRow[] {
+  const encountersWithServices = new Set(services.map((s) => s.encounterId));
   const counts = new Map<string, number>();
+  for (const s of services) {
+    counts.set(s.label, (counts.get(s.label) ?? 0) + 1);
+  }
   for (const p of procedures) {
+    if (encountersWithServices.has(p.encounterId)) continue;
     counts.set(p.name, (counts.get(p.name) ?? 0) + 1);
   }
   return [...counts.entries()]

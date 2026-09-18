@@ -92,13 +92,15 @@ export default async function PortalMedicalRecordPage() {
   }
 
   // RIPS #4 — same batched diagnósticos/servicios fetch the staff page
-  // uses. NOTE: encounter_diagnoses/encounter_services only have an
-  // is_clinic_member(clinic_id) SELECT policy today (see the migration) —
-  // a Patient isn't a clinic member, so RLS silently returns zero rows
-  // here and AtencionesTab simply shows no Diagnósticos/Servicios lines
-  // for now. Not a crash, not a leak — just not yet exposed to the
-  // Patient Portal specifically; extending that read would need its own
-  // additive RLS policy, out of this task's scope.
+  // uses. Master "consolidar Servicios realizados" —
+  // encounter_diagnoses/encounter_services now also carry an additive
+  // patient-self-read policy (encounter_{diagnoses,services}_select_own_via_patient_link,
+  // 20260918100000), joined through patient_clinical_encounters
+  // (finalized_at is not null baked into the policy itself, same as that
+  // table's own patient policy) — same shape as every other Portal read
+  // in this file. AtencionesTab now shows real Diagnósticos/Servicios
+  // lines for a Patient's own finalized atenciones, exactly as staff
+  // already sees them.
   let encounterClinicalData: Awaited<ReturnType<typeof fetchEncounterClinicalDataForEncounters>> = new Map();
   try {
     encounterClinicalData = await fetchEncounterClinicalDataForEncounters(

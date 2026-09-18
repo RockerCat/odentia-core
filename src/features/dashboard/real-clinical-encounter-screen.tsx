@@ -59,7 +59,6 @@ import { OdontogramPreview } from "./odontogram-teeth";
 import type { BoardProfessional } from "./real-appointments-board";
 import { endTimeIso, formatDateLabel, formatTimeLabel, initialsOf } from "./real-format";
 import { getDisplayStatus, getHistoryStatusBadgeClass, getStatusLabel } from "./real-status";
-import { RealNewAppointmentModal } from "./real-new-appointment-modal";
 import type { WeekDay } from "./real-week";
 
 // Real "Iniciar/Continuar atención" screen — reached at
@@ -173,12 +172,6 @@ const DIAGNOSIS_INITIAL_SUGGESTIONS = {
 export function RealClinicalEncounterScreen({
   appointment,
   professional,
-  clinicId,
-  patients,
-  professionals,
-  weekDays,
-  treatmentOptions,
-  roomOptions,
   initialToothFindings,
   existingEncounter,
   existingProcedures,
@@ -187,7 +180,6 @@ export function RealClinicalEncounterScreen({
   diagnosisTypeOptions,
   incapacityOptions,
   viaIngresoOptions,
-  modalidadOptions,
   grupoServiciosOptions,
   serviciosOptions,
   finalidadOptions,
@@ -202,10 +194,24 @@ export function RealClinicalEncounterScreen({
 }: {
   appointment: Appointment;
   professional: BoardProfessional | null;
+  // Próxima cita (the "Sí/No" + "Agendar próxima cita" mini-scheduling
+  // flow, which used to create a real appointment right from Atención)
+  // was removed outright — Agenda is the only place a new Cita gets
+  // created (see CLAUDE.md's own Appointment Lifecycle/Primary Use Case).
+  // clinicId/patients/professionals/weekDays/roomOptions existed
+  // exclusively to power that flow's own RealNewAppointmentModal — kept
+  // in the prop contract (still fetched/passed unchanged by page.tsx)
+  // since none of them are used anywhere else in this screen, but no
+  // longer destructured/rendered here.
   clinicId: string;
   patients: Patient[];
   professionals: BoardProfessional[];
   weekDays: WeekDay[];
+  // Master "consolidar Servicios realizados" — kept in the prop contract
+  // (still fetched/passed unchanged by page.tsx) even though the legacy
+  // "Procedimientos realizados" write-path that used to populate this
+  // <select> is gone; treatments (public.treatments) still needs its own
+  // fetch call to exist for page.tsx's unrelated reasons, if any.
   treatmentOptions: string[];
   roomOptions: string[];
   initialToothFindings: ToothFindingRecord[];
@@ -216,6 +222,9 @@ export function RealClinicalEncounterScreen({
   diagnosisTypeOptions: ReferenceValue[];
   incapacityOptions: ReferenceValue[];
   viaIngresoOptions: ReferenceValue[];
+  // Kept in the prop contract (still fetched/passed by page.tsx) even
+  // though the screen no longer destructures/renders it — Modalidad is
+  // resolved automatically to "01" now, never a manual selection.
   modalidadOptions: ReferenceValue[];
   grupoServiciosOptions: ReferenceValue[];
   serviciosOptions: ReferenceValue[];
@@ -246,7 +255,20 @@ export function RealClinicalEncounterScreen({
   // header comment) — never blank just because the screen remounted.
   const [notes, setNotes] = useState(existingEncounter?.notes ?? "");
   const [indications, setIndications] = useState(existingEncounter?.indications ?? "");
-  const [procedures, setProcedures] = useState<ProcedureRow[]>(() =>
+  // Legacy "Procedimientos realizados" (patient_clinical_encounter_procedures)
+  // — the write-path UI (Section, addProcedure/updateProcedure/removeProcedure)
+  // is gone; "Servicios realizados"/encounter_services is now the ONLY way
+  // to record what was done in a NEW atención. This state stays read-only
+  // from here on, seeded once from whatever this encounter already had
+  // (existingProcedures — [] for any atención that never used the legacy
+  // block, non-empty only for an already-in-progress draft resumed from
+  // before this change) and re-sent completely unchanged on every save —
+  // never mutated, never added to, never cleared. This is what keeps an
+  // already-persisted legacy row safe from being silently wiped by
+  // "Guardar borrador"/"Finalizar atención" on a resumed draft, without
+  // reviving the ability to create new ones. See clinical-encounter-draft.ts's
+  // buildProceduresPayload/buildTreatmentText, still called unchanged below.
+  const [procedures] = useState<ProcedureRow[]>(() =>
     existingProcedures.map((p) => ({ id: p.id, name: p.name, note: p.note ?? "" })),
   );
 
@@ -365,7 +387,10 @@ export function RealClinicalEncounterScreen({
         professionalProfileId: appointment.professionalProfileId,
         serviceValue: "",
         viaIngresoCode: "",
-        modalidadCode: "",
+        // Odentia solo soporta atención presencial en sede — "01
+        // Intramural" se resuelve automáticamente, nunca una elección
+        // manual del odontólogo (ver Detalles RIPS, que ya no la ofrece).
+        modalidadCode: "01",
         grupoServiciosCode: "",
         codServicioCode: "",
         finalidadCode: "",
@@ -417,14 +442,22 @@ export function RealClinicalEncounterScreen({
         professionalProfileId: appointment.professionalProfileId,
         serviceValue: "",
         viaIngresoCode: "",
-        modalidadCode: "",
+        // Odentia solo soporta atención presencial en sede — "01
+        // Intramural" se resuelve automáticamente, nunca una elección
+        // manual del odontólogo (ver Detalles RIPS, que ya no la ofrece).
+        modalidadCode: "01",
         // Prellenado desde la configuración RIPS CONFIRMADA de la clínica
         // cuando existe — nunca desde specialty_rips_service_defaults.
         // Sigue siendo editable en "Detalles RIPS" caso a caso.
         grupoServiciosCode: resolved.grupoServiciosCode ?? "",
         codServicioCode: resolved.codServicioCode ?? "",
         finalidadCode: "",
-        causaMotivoCode: "",
+        // Sugerencia inicial únicamente para consultas — dato clínico
+        // real, nunca una derivación silenciosa irreversible: sigue
+        // siendo editable justo debajo de "¿Qué realizaste?" y, una vez
+        // elegido, nunca se vuelve a sobrescribir (ver este mismo archivo,
+        // el picker de CUPS manual, y encounter-finalize-readiness.ts).
+        causaMotivoCode: resolved.ripsServiceType === "consultation" ? "38" : "",
         conceptoRecaudoCode: "",
         valorPagoModerador: "",
         detailsOpen: false,
@@ -487,8 +520,6 @@ export function RealClinicalEncounterScreen({
         mappingStatus: s.mappingStatus,
       }));
 
-  const [needsNextAppointment, setNeedsNextAppointment] = useState<boolean | null>(null);
-  const [nextTreatment, setNextTreatment] = useState("");
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [showFinalizeConfirm, setShowFinalizeConfirm] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
@@ -498,21 +529,16 @@ export function RealClinicalEncounterScreen({
   const [toothFindings, setToothFindings] = useState<ToothFindingRecord[]>(initialToothFindings);
   const [odontogramOpen, setOdontogramOpen] = useState(false);
   const [timerVisible, setTimerVisible] = useState(true);
-  const [showNewAppointmentModal, setShowNewAppointmentModal] = useState(false);
-  const [scheduledNextAppointment, setScheduledNextAppointment] = useState<Appointment | null>(null);
-  // Purely cosmetic pending flags for the two plain "navigate away"
-  // buttons below ("Volver a Agenda" header link, "Ver o modificar cita")
-  // — separate from `finalizing` (Finalizar atención's own contextual
-  // pending, already correct, never touched here) since either of these
-  // can be clicked independently of that flow. Neither is ever reset back
-  // to false on success: this whole screen unmounts once /agenda lands,
-  // so there's nothing left to reset it for (resetting early would flash
-  // the plain label back before the navigation actually leaves).
+  // Purely cosmetic pending flag for the plain "navigate away" button
+  // below ("Volver a Agenda" header link) — separate from `finalizing`
+  // (Finalizar atención's own contextual pending, already correct, never
+  // touched here). Never reset back to false on success: this whole
+  // screen unmounts once /agenda lands, so there's nothing left to reset
+  // it for (resetting early would flash the plain label back before the
+  // navigation actually leaves).
   const [leavingToAgenda, setLeavingToAgenda] = useState(false);
-  const [openingScheduledAppointment, setOpeningScheduledAppointment] = useState(false);
   const [startedAt] = useState(() => new Date());
   const [now, setNow] = useState(() => new Date());
-  const nextProcedureId = useRef(0);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 1000);
@@ -522,10 +548,6 @@ export function RealClinicalEncounterScreen({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (showNewAppointmentModal) {
-        setShowNewAppointmentModal(false);
-        return;
-      }
       if (odontogramOpen) {
         setOdontogramOpen(false);
         return;
@@ -537,7 +559,7 @@ export function RealClinicalEncounterScreen({
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [showFinalizeConfirm, odontogramOpen, showNewAppointmentModal]);
+  }, [showFinalizeConfirm, odontogramOpen]);
 
   const [history, setHistory] = useState<Appointment[] | null>(null);
   useEffect(() => {
@@ -555,19 +577,6 @@ export function RealClinicalEncounterScreen({
       cancelled = true;
     };
   }, [appointment.clinicId, appointment.patientId, appointment.id]);
-
-  const addProcedure = () => {
-    nextProcedureId.current += 1;
-    setProcedures((prev) => [...prev, { id: `proc-${nextProcedureId.current}`, name: "", note: "" }]);
-  };
-
-  const updateProcedure = (id: string, patch: Partial<ProcedureRow>) => {
-    setProcedures((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-  };
-
-  const removeProcedure = (id: string) => {
-    setProcedures((prev) => prev.filter((p) => p.id !== id));
-  };
 
   const handleSaveDraft = async () => {
     setSavingDraft(true);
@@ -729,14 +738,6 @@ export function RealClinicalEncounterScreen({
 
       <div className="flex-1 overflow-y-auto bg-[#F4F7F6]">
         <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-          {finalizeError && (
-            <div className="mb-4 flex items-start justify-between gap-2 rounded-lg border border-danger/25 bg-danger/10 px-3 py-2 text-xs font-medium text-danger">
-              <span>{finalizeError}</span>
-              <button type="button" onClick={() => setFinalizeError(null)} aria-label="Cerrar aviso" className="shrink-0">
-                <CloseIcon className="size-3.5" />
-              </button>
-            </div>
-          )}
           {draftError && (
             <div className="mb-4 flex items-start justify-between gap-2 rounded-lg border border-danger/25 bg-danger/10 px-3 py-2 text-xs font-medium text-danger">
               <span>{draftError}</span>
@@ -989,7 +990,20 @@ export function RealClinicalEncounterScreen({
                                   updateService(
                                     s.id,
                                     picked
-                                      ? { cupsCode: picked.code, description: picked.description, ripsServiceType: picked.ripsServiceType }
+                                      ? {
+                                          cupsCode: picked.code,
+                                          description: picked.description,
+                                          ripsServiceType: picked.ripsServiceType,
+                                          // Sugerencia inicial de causa/motivo — solo cuando el
+                                          // servicio resulta ser una consulta y el odontólogo
+                                          // todavía no eligió nada; nunca sobrescribe un valor
+                                          // ya elegido (ver DEFAULT DE CAUSA en este mismo
+                                          // flujo).
+                                          causaMotivoCode:
+                                            picked.ripsServiceType === "consultation" && !s.causaMotivoCode
+                                              ? "38"
+                                              : s.causaMotivoCode,
+                                        }
                                       : { cupsCode: "", description: "", ripsServiceType: "unknown" },
                                   )
                                 }
@@ -1065,6 +1079,53 @@ export function RealClinicalEncounterScreen({
                           </div>
                         )}
 
+                        {/* RIPS — Causa/Motivo (solo consultas, sugerida
+                            "38 — Enfermedad general" pero editable) y
+                            Finalidad (toda consulta/procedimiento,
+                            siempre requerida, sin default: es una
+                            decisión clínica real). Parte del flujo
+                            normal de "¿Qué realizaste?", nunca escondidas
+                            en "Detalles RIPS" — ver
+                            getEncounterFinalizeBlockers, que ya bloquea
+                            "Finalizar atención" si falta Finalidad. */}
+                        {s.cupsCode && s.ripsServiceType !== "unknown" && (
+                          <div className="mt-2 flex flex-wrap items-start gap-2">
+                            {s.ripsServiceType === "consultation" && (
+                              <select
+                                value={s.causaMotivoCode}
+                                onChange={(e) => updateService(s.id, { causaMotivoCode: e.target.value })}
+                                className={FIELD_CLASS}
+                              >
+                                <option value="">Causa externa</option>
+                                {causaMotivoOptions.map((o) => (
+                                  <option key={o.code} value={o.code}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            <div className="flex flex-col gap-1">
+                              <select
+                                value={s.finalidadCode}
+                                onChange={(e) => updateService(s.id, { finalidadCode: e.target.value })}
+                                className={FIELD_CLASS}
+                              >
+                                <option value="">Finalidad de la atención</option>
+                                {finalidadOptions.map((o) => (
+                                  <option key={o.code} value={o.code}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                              {!s.finalidadCode && (
+                                <span className="text-xs text-warning">
+                                  Selecciona la finalidad — es obligatoria para poder finalizar la atención.
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
                         {/* RIPS #A3 — nunca bloquea guardar/finalizar (ver
                             getEncounterFinalizeBlockers, que no depende de
                             esto): la verdad clínica ya quedó registrada vía
@@ -1101,32 +1162,14 @@ export function RealClinicalEncounterScreen({
                                 ))}
                               </select>
                             )}
-                            {s.ripsServiceType === "consultation" && (
-                              <select
-                                value={s.causaMotivoCode}
-                                onChange={(e) => updateService(s.id, { causaMotivoCode: e.target.value })}
-                                className={FIELD_CLASS}
-                              >
-                                <option value="">Causa externa</option>
-                                {causaMotivoOptions.map((o) => (
-                                  <option key={o.code} value={o.code}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                              </select>
-                            )}
-                            <select
-                              value={s.modalidadCode}
-                              onChange={(e) => updateService(s.id, { modalidadCode: e.target.value })}
-                              className={FIELD_CLASS}
-                            >
-                              <option value="">Modalidad de atención</option>
-                              {modalidadOptions.map((o) => (
-                                <option key={o.code} value={o.code}>
-                                  {o.label}
-                                </option>
-                              ))}
-                            </select>
+                            {/* Causa/Motivo y Finalidad viven ahora en el
+                                flujo normal, no aquí — ver el bloque justo
+                                debajo de la clasificación Consulta/
+                                Procedimiento, arriba. Modalidad ya no
+                                requiere interacción manual: siempre "01 —
+                                Intramural" (única modalidad soportada hoy),
+                                fijada automáticamente al crear el servicio
+                                — ver addService/addConceptService. */}
                             <select
                               value={s.grupoServiciosCode}
                               onChange={(e) => updateService(s.id, { grupoServiciosCode: e.target.value, codServicioCode: "" })}
@@ -1147,18 +1190,6 @@ export function RealClinicalEncounterScreen({
                             >
                               <option value="">{s.grupoServiciosCode ? "Servicio" : "Selecciona primero un grupo"}</option>
                               {filteredServicios.map((o) => (
-                                <option key={o.code} value={o.code}>
-                                  {o.label}
-                                </option>
-                              ))}
-                            </select>
-                            <select
-                              value={s.finalidadCode}
-                              onChange={(e) => updateService(s.id, { finalidadCode: e.target.value })}
-                              className={FIELD_CLASS}
-                            >
-                              <option value="">Finalidad</option>
-                              {finalidadOptions.map((o) => (
                                 <option key={o.code} value={o.code}>
                                   {o.label}
                                 </option>
@@ -1202,66 +1233,33 @@ export function RealClinicalEncounterScreen({
                 </div>
               </Section>
 
-              {/* RIPS #A3 — duplicidad pendiente conocida, no resuelta en
-                  esta fase: este bloque (free-text, patient_clinical_encounter_procedures,
-                  nunca CUPS-coded — ver ProcedureRow's own comment) y
-                  "Servicios realizados" arriba ahora pueden describir la
-                  misma acción dos veces (p.ej. "Limpieza dental" elegida
-                  arriba vía el picker, y otra vez tecleada aquí). Fusionar
-                  ambos modelos es un refactor amplio del modelo legacy,
-                  fuera de este alcance (ver este task's own scope) —
-                  queda documentado para una fase posterior, manteniendo
-                  ambos bloques funcionando exactamente como antes. */}
-              <Section title="Procedimientos realizados" icon={ClipboardIcon}>
-                <div className="flex flex-col gap-2.5">
-                  {procedures.length === 0 && (
-                    <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
-                      Aún no se han agregado procedimientos.
+              {/* Legacy "Procedimientos realizados" (patient_clinical_encounter_procedures)
+                  — write-path retired (Master "consolidar Servicios
+                  realizados"): "Servicios realizados" above is now the only
+                  way to record what was done in a NEW atención. This block
+                  itself only ever renders when `procedures` is non-empty —
+                  i.e. an already-in-progress draft resumed from before this
+                  change that already had legacy rows — read-only, so that
+                  data stays visible (never silently hidden) without
+                  reviving the ability to add/edit/remove it. A genuinely
+                  new atención never populates `procedures`, so this section
+                  never renders for one — satisfies "no debe aparecer un
+                  bloque vacío". */}
+              {procedures.length > 0 && (
+                <Section title="Procedimientos realizados (histórico)" icon={ClipboardIcon}>
+                  <div className="flex flex-col gap-2.5">
+                    <p className="text-xs text-muted-foreground">
+                      Registrados antes de que &quot;Servicios realizados&quot; se convirtiera en la única fuente — solo lectura.
                     </p>
-                  )}
-                  {procedures.map((proc) => (
-                    <div key={proc.id} className="flex items-start gap-2 rounded-lg border border-border p-2.5">
-                      <div className="grid flex-1 gap-2 sm:grid-cols-2">
-                        <select
-                          value={proc.name}
-                          onChange={(e) => updateProcedure(proc.id, { name: e.target.value })}
-                          className={FIELD_CLASS}
-                        >
-                          <option value="">Selecciona un procedimiento</option>
-                          {treatmentOptions.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          type="text"
-                          value={proc.note}
-                          onChange={(e) => updateProcedure(proc.id, { note: e.target.value })}
-                          placeholder="Observación (opcional)"
-                          className={FIELD_CLASS}
-                        />
+                    {procedures.map((proc) => (
+                      <div key={proc.id} className="rounded-lg border border-border p-2.5">
+                        <p className="text-sm font-medium text-foreground">{proc.name}</p>
+                        {proc.note && <p className="mt-0.5 text-xs text-muted-foreground">{proc.note}</p>}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => removeProcedure(proc.id)}
-                        aria-label="Quitar procedimiento"
-                        className="mt-1.5 shrink-0 text-muted-foreground/60 hover:text-danger"
-                      >
-                        <CloseIcon className="size-4" />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={addProcedure}
-                    className="flex items-center justify-center gap-1.5 self-start rounded-lg border border-dashed border-border px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
-                  >
-                    <PlusIcon className="size-3.5" />
-                    Agregar procedimiento
-                  </button>
-                </div>
-              </Section>
+                    ))}
+                  </div>
+                </Section>
+              )}
 
               <Section title="Odontograma" icon={ToothIcon}>
                 <div className="rounded-lg border border-dashed border-border px-4 py-4">
@@ -1315,81 +1313,6 @@ export function RealClinicalEncounterScreen({
                 {incapacityCode === null && (
                   <p className="mt-2 text-xs text-warning">Selecciona Sí o No — es obligatorio para poder finalizar la atención.</p>
                 )}
-              </Section>
-
-              <Section title="Próxima cita" icon={CalendarIcon}>
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2">
-                    {([true, false] as const).map((option) => (
-                      <button
-                        key={String(option)}
-                        type="button"
-                        onClick={() => setNeedsNextAppointment(option)}
-                        className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                          needsNextAppointment === option
-                            ? "border-primary/30 bg-primary/10 text-primary"
-                            : "border-border text-foreground/70 hover:bg-foreground/5"
-                        }`}
-                      >
-                        {option ? "Sí" : "No"}
-                      </button>
-                    ))}
-                  </div>
-                  {needsNextAppointment && (
-                    <>
-                      <div>
-                        <label className="text-[11px] text-label-foreground" htmlFor="next-treatment">
-                          Tratamiento recomendado
-                        </label>
-                        <select
-                          id="next-treatment"
-                          value={nextTreatment}
-                          onChange={(e) => setNextTreatment(e.target.value)}
-                          className={`${FIELD_CLASS} mt-1`}
-                        >
-                          <option value="">Selecciona un tratamiento</option>
-                          {treatmentOptions.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {scheduledNextAppointment ? (
-                        <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5">
-                          <p className="text-xs font-medium text-primary">Próxima cita agendada</p>
-                          <p className="mt-1 text-xs text-foreground/80">
-                            {formatDateLabel(scheduledNextAppointment.startsAt)} ·{" "}
-                            {formatTimeLabel(scheduledNextAppointment.startsAt)} ·{" "}
-                            {scheduledNextAppointment.reason ?? "Sin tratamiento definido"}
-                          </p>
-                          <button
-                            type="button"
-                            disabled={openingScheduledAppointment}
-                            onClick={() => {
-                              if (openingScheduledAppointment) return;
-                              setOpeningScheduledAppointment(true);
-                              router.push("/agenda");
-                            }}
-                            className="mt-2 text-xs font-medium text-primary hover:underline disabled:opacity-60"
-                          >
-                            {openingScheduledAppointment ? "Abriendo cita…" : "Ver o modificar cita"}
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setShowNewAppointmentModal(true)}
-                          className="flex items-center justify-center gap-1.5 self-start rounded-lg border border-dashed border-border px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
-                        >
-                          <PlusIcon className="size-3.5" />
-                          Agendar próxima cita
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
               </Section>
             </div>
 
@@ -1509,23 +1432,43 @@ export function RealClinicalEncounterScreen({
       </div>
 
       <footer className="shrink-0 border-t border-border bg-background p-4 sm:px-6">
-        <div className="mx-auto flex max-w-6xl justify-end gap-2">
-          <button
-            type="button"
-            onClick={handleSaveDraft}
-            disabled={savingDraft}
-            className="rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-foreground/5 disabled:opacity-60 sm:px-6"
-          >
-            {savingDraft ? "Guardando…" : "Guardar borrador"}
-          </button>
-          <button
-            type="button"
-            onClick={handleFinalizeClick}
-            disabled={savingDraft || finalizing}
-            className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60 sm:px-6"
-          >
-            {finalizing ? "Finalizando…" : "Finalizar atención"}
-          </button>
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2">
+          {/* Feedback de bloqueo de "Finalizar atención" (ver
+              getEncounterFinalizeBlockers) vive aquí, junto a los
+              botones que lo disparan — no arriba, donde en una pantalla
+              larga queda fuera del viewport y el odontólogo no ve por
+              qué no avanzó. Mismo tratamiento visual danger que el resto
+              de los avisos de esta pantalla (draftError/infoMessage,
+              arriba). flex-1/min-w-0 deja que el texto crezca y se
+              envuelva sin empujar los botones fuera de pantalla;
+              ml-auto en el grupo de botones los mantiene alineados a la
+              derecha incluso si el aviso envuelve a su propia línea. */}
+          {finalizeError && (
+            <div className="flex min-w-0 flex-1 items-start gap-2 rounded-lg border border-danger/25 bg-danger/10 px-3 py-2 text-xs font-medium text-danger">
+              <span className="min-w-0 break-words">{finalizeError}</span>
+              <button type="button" onClick={() => setFinalizeError(null)} aria-label="Cerrar aviso" className="shrink-0">
+                <CloseIcon className="size-3.5" />
+              </button>
+            </div>
+          )}
+          <div className="ml-auto flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={handleSaveDraft}
+              disabled={savingDraft}
+              className="rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-foreground/5 disabled:opacity-60 sm:px-6"
+            >
+              {savingDraft ? "Guardando…" : "Guardar borrador"}
+            </button>
+            <button
+              type="button"
+              onClick={handleFinalizeClick}
+              disabled={savingDraft || finalizing}
+              className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60 sm:px-6"
+            >
+              {finalizing ? "Finalizando…" : "Finalizar atención"}
+            </button>
+          </div>
         </div>
       </footer>
 
@@ -1577,28 +1520,6 @@ export function RealClinicalEncounterScreen({
           findings={toothFindings}
           onChanged={setToothFindings}
           onClose={() => setOdontogramOpen(false)}
-        />
-      )}
-
-      {showNewAppointmentModal && (
-        <RealNewAppointmentModal
-          clinicId={clinicId}
-          patients={patients}
-          professionals={professionals}
-          lockedProfessional={null}
-          weekDays={weekDays}
-          treatmentOptions={treatmentOptions}
-          roomOptions={roomOptions}
-          prefill={{
-            professionalProfileId: appointment.professionalProfileId,
-            patientId: appointment.patientId,
-            reason: nextTreatment || undefined,
-          }}
-          onClose={() => setShowNewAppointmentModal(false)}
-          onCreated={(created) => {
-            setScheduledNextAppointment(created);
-            setShowNewAppointmentModal(false);
-          }}
         />
       )}
     </div>
