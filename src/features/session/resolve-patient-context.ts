@@ -58,7 +58,7 @@ export async function resolvePatientContext(supabase: SupabaseClient): Promise<P
 
   const { data: profileRow, error: profileError } = await supabase
     .from("profiles")
-    .select("id, first_name, last_name, email, avatar_url")
+    .select("id, first_name, last_name, email, phone, avatar_url")
     .eq("id", user.id)
     .maybeSingle();
   if (profileError) throw profileError;
@@ -69,6 +69,7 @@ export async function resolvePatientContext(supabase: SupabaseClient): Promise<P
     firstName: profileRow.first_name,
     lastName: profileRow.last_name,
     email: profileRow.email,
+    phone: profileRow.phone,
     avatarUrl: profileRow.avatar_url,
   };
   const patient: PatientInfo = {

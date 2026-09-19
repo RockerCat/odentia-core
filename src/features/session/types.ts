@@ -14,7 +14,19 @@ export type Profile = {
   firstName: string;
   lastName: string;
   email: string;
+  phone: string | null;
   avatarUrl: string | null;
+};
+
+// Canonical, real (never mock/DEV-tool) display label per MembershipRole —
+// the single source every real "Mi perfil" surface (AdminProfileModal/
+// AssistantProfileModal) reads instead of hardcoding a role string or
+// reusing src/dev/role.ts's own ROLE_LABELS (a mock-Role-keyed map for the
+// DEV role switcher, a different type entirely).
+export const MEMBERSHIP_ROLE_LABELS: Record<MembershipRole, string> = {
+  clinic_admin: "Administrador de clínica",
+  dentist: "Odontólogo",
+  assistant: "Asistente",
 };
 
 export type Membership = {

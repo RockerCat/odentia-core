@@ -27,7 +27,11 @@ export function bridgeClinicContextIntoMockSession(context: Extract<ClinicContex
   // clinic_admin; a real dentist/assistant already gets their own branch in
   // use-authenticated-identity.ts regardless of this flag.
   const soloDentistClinic = role === "clinic-admin" && context.professionalProfile !== null;
-  writeSession({ role, soloDentistClinic });
+  // authUserId: context.profile.id IS the real auth.uid() (profiles.id
+  // references auth.users.id 1:1) — see use-route-guard.ts's self-heal,
+  // the one consumer that reads this back to detect a stale cache left by
+  // a DIFFERENT real user in the same browser.
+  writeSession({ role, soloDentistClinic, authUserId: context.profile.id });
 }
 
 // Same bridge, for a real Patient — the Portal's own ~6 screens still read
@@ -37,12 +41,10 @@ export function bridgeClinicContextIntoMockSession(context: Extract<ClinicContex
 // portal-shell.tsx's own real usePatientContext() for that), so this is
 // deliberately narrower than bridgeClinicContextIntoMockSession above —
 // just enough for that one shared gate to keep recognizing a real Patient
-// as "role: patient", nothing else rides along.
-// Kept as a (currently unused) parameter for API symmetry with
-// bridgeClinicContextIntoMockSession above — nothing per-patient rides
-// along the mock session yet, only the role itself.
-export function bridgePatientContextIntoMockSession(_context: Extract<PatientContext, { status: "ok" }>): void {
-  writeSession({ role: "patient" });
+// as "role: patient", plus the same authUserId staleness marker every
+// bridged session carries.
+export function bridgePatientContextIntoMockSession(context: Extract<PatientContext, { status: "ok" }>): void {
+  writeSession({ role: "patient", authUserId: context.profile.id });
 }
 
 export function clearBridgedMockSession(): void {

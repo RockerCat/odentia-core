@@ -18,6 +18,9 @@ import { signUpAccount, type SignUpOutcome } from "@/features/onboarding/api";
 import { EmailConfirmationPending } from "@/features/onboarding/email-confirmation-pending";
 import { INPUT_CLASS } from "@/features/onboarding/field-classes";
 import { EMPTY_ACCOUNT } from "@/features/onboarding/types";
+import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
+import { resolvePatientContext } from "@/features/session/resolve-patient-context";
+import { bridgeAuthenticatedContext } from "@/features/session/role-bridge";
 import { signOutSupabase } from "@/features/session/sign-out";
 import { createClient } from "@/lib/supabase/client";
 
@@ -283,6 +286,21 @@ export default function InvitationPage() {
       return;
     }
 
+    // Bridge the REAL membership this acceptance just created into the
+    // mock session (same resolution/bridge /login itself uses — see
+    // role-bridge.ts) before ever navigating away. This activation flow
+    // signs in directly (never through /login's own form submit), so
+    // without this, the shell (nav/route guards/"Mi perfil") depended
+    // entirely on use-route-guard.ts's self-heal running for the very
+    // first time in this browser — which silently failed to happen at all
+    // whenever this browser already had ANY other real user's bridged
+    // session cached (see that file's own regression comment).
+    const [clinicContext, patientContext] = await Promise.all([
+      resolveClinicContext(supabase),
+      resolvePatientContext(supabase),
+    ]);
+    bridgeAuthenticatedContext(clinicContext, patientContext);
+
     setView({ kind: "accepted" });
   };
 
@@ -310,6 +328,18 @@ export default function InvitationPage() {
       setView({ kind: "error", message: outcome.message });
       return;
     }
+
+    // Same real-context bridge as handleActivateAccount above — this is
+    // the "existing account, already signed in, accepts manually" path
+    // (see the "ready" view), which never goes through /login's own form
+    // submit either.
+    const supabase = createClient();
+    const [clinicContext, patientContext] = await Promise.all([
+      resolveClinicContext(supabase),
+      resolvePatientContext(supabase),
+    ]);
+    bridgeAuthenticatedContext(clinicContext, patientContext);
+
     setView({ kind: "accepted" });
   };
 

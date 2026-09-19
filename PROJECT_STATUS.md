@@ -1685,6 +1685,39 @@ implementation.
   every user-facing name/avatar must read from (Header, `PatientsGreeting`,
   `Greeting`) — never the raw mock `useAuthenticatedIdentity()` alone, which the
   real role-bridge never feeds a real name/avatar into.
+- **Role/session bridge stale-cache fix (real, post-pilot).** The mock
+  `odentia:session` bridge is a single global `localStorage` key, never scoped
+  per real Supabase user; a real pilot found that a brand-new user activating
+  her own invitation in a browser that already had a DIFFERENT real user's
+  bridged role cached silently inherited that stale role. `DemoSession` now
+  carries `authUserId` (`src/features/auth/session.ts`) — the real
+  `profiles.id`/`auth.uid()` the bridge was written for, never itself an
+  authorization signal. `use-route-guard.ts`'s self-heal (`shouldRunSelfHeal`)
+  compares the cached `authUserId` against the real, currently-signed-in
+  `auth.getSession().user.id` and re-bridges whenever they differ (or the cache
+  is empty/legacy) — real authorization still comes from Supabase/RLS alone.
+  `/invitacion/[token]` (both the brand-new-account and already-has-an-account
+  acceptance paths) now explicitly reconstructs the bridge via
+  `resolveClinicContext()`/`resolvePatientContext()` +
+  `bridgeAuthenticatedContext()` right after acceptance — the same resolution
+  `/login` itself uses — instead of depending on the self-heal effect's first
+  run.
+- **Mi perfil (Admin/Assistant) now real.** `AdminProfileModal`/
+  `AssistantProfileModal` (`src/features/dashboard/`) used to render the
+  hardcoded mocks `CURRENT_USER`/`CURRENT_ASSISTANT` — a real pilot user saw
+  "María Gómez"/"Laura Torres" instead of her own name. Both now read
+  `useCurrentUserContext()` (the same resolved `resolveClinicContext()` data
+  `useShellIdentity()` already trusts) for nombre/correo/teléfono/rol/clínica,
+  and are read-only: the previous "Editar perfil" only ever wrote to an
+  in-memory, never-persisted override and never called a real backend, so it
+  was removed rather than kept as a fake "Guardar cambios" that silently lost
+  the edit on refresh. `profiles.phone` was added to `resolveClinicContext()`/
+  `resolvePatientContext()`/`resolveSuperadminContext()`'s existing profile
+  read for this. No new profile-edit persistence exists yet.
+
+**Pending finding, next checkpoint:** Real pilot found finalized encounters
+can reach RIPS without a principal diagnosis; diagnosis prevention/recovery is
+the next clinical checkpoint.
 
 ## RIPS (Colombian regulatory reporting)
 
@@ -2230,12 +2263,6 @@ See OUT OF SCOPE ACTUAL.
 ## `/portal/salud` (Mi salud dental) — fully mock
 
 See OUT OF SCOPE ACTUAL.
-
-## Identity & Profile (mock parts)
-
-Per-role mock profile modals/screens still exist for the DEV role switcher's own
-preview (`AdminProfileModal`/`AssistantProfileModal` in `src/features/dashboard/`)
-— these back development-only tooling, not any real screen a real user reaches.
 
 ## Public pages (real, but not backend-tied)
 

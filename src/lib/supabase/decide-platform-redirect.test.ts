@@ -9,7 +9,7 @@ import type { SuperadminContext } from "@/features/session/types";
 
 const OK: SuperadminContext = {
   status: "ok",
-  profile: { id: "p1", firstName: "Ana", lastName: "Superadmin", email: "ana@odentia.co", avatarUrl: null },
+  profile: { id: "p1", firstName: "Ana", lastName: "Superadmin", email: "ana@odentia.co", phone: null, avatarUrl: null },
 };
 
 describe("decidePlatformRedirect", () => {

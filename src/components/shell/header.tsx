@@ -18,16 +18,11 @@ export function Header() {
   // DEV TOOL — see src/dev/role.ts. useShellIdentity() overlays real
   // profile/clinic data on the same mock derivation the Agenda's greeting
   // reads (useAuthenticatedIdentity) — see use-shell-identity.ts. useRole()
-  // is only needed here for the setters AdminProfileModal/
-  // AssistantProfileModal (identity fields — still mock, out of this
-  // task's scope) write back through.
-  const {
-    role,
-    adminIdentityOverride,
-    setAdminIdentityOverride,
-    assistantIdentityOverride,
-    setAssistantIdentityOverride,
-  } = useRole();
+  // is only needed here for `role` (which modal onProfileClick opens) —
+  // AdminProfileModal/AssistantProfileModal now read their own real
+  // identity directly (useCurrentUserContext()), so no override state is
+  // threaded through here anymore.
+  const { role } = useRole();
   const identity = useShellIdentity();
   const { signOut, signingOut } = useShellLogout();
   const isClinicAdmin = role === "clinic-admin";
@@ -86,18 +81,10 @@ export function Header() {
             setShowAdminProfile(false);
             router.push("/mi-perfil-profesional");
           }}
-          adminIdentityOverride={adminIdentityOverride}
-          setAdminIdentityOverride={setAdminIdentityOverride}
         />
       )}
 
-      {showAssistantProfile && (
-        <AssistantProfileModal
-          onClose={() => setShowAssistantProfile(false)}
-          assistantIdentityOverride={assistantIdentityOverride}
-          setAssistantIdentityOverride={setAssistantIdentityOverride}
-        />
-      )}
+      {showAssistantProfile && <AssistantProfileModal onClose={() => setShowAssistantProfile(false)} />}
     </header>
   );
 }

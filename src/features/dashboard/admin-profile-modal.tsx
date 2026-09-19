@@ -1,83 +1,52 @@
-"use client"; // owns the identity/professional-profile edit drafts below.
+"use client";
 
-import { useRef, useState, type ChangeEvent } from "react";
-import { CloseIcon, PencilIcon } from "@/components/shell/icons";
+import { CloseIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
-import { CURRENT_USER } from "@/lib/current-user";
-import { FIELD_CLASS } from "./appointment-detail-modal";
-import type { AdminIdentityOverride } from "@/dev/role-context";
+import { MEMBERSHIP_ROLE_LABELS } from "@/features/session/types";
+import { useCurrentUserContext } from "@/features/session/use-current-user-context";
 
-// The Clinic Admin's own "Mi perfil" — identity fields only (Nombre/
-// Correo/Teléfono/Foto, still mock/local, out of this task's scope). The
-// "Perfil profesional" card below is no longer a second, local, non-
-// persistent form (see PROMPT NINJA "Clinic Admin → crear perfil
-// profesional real"): "Configurar perfil profesional" now navigates
-// straight to /mi-perfil-profesional's own real creation flow
-// (MyProfessionalProfileSection → create_my_professional_profile(), see
-// that migration) — the same real experience an existing Dentist/Admin-
-// odontóloga already edits from, never a second, divergent form. This
-// modal never changes RoleContext's `role`: an admin who creates one stays
-// "Administrador de Clínica", additionally visible as a professional once
-// the real professional_profiles row exists.
+// The Clinic Admin's own "Mi perfil" — real identity only (see PROMPT
+// MASTER "Odentia: corregir role bridge stale + Mi perfil real"). Used to
+// read a hardcoded mock (CURRENT_USER, "María Gómez") for every field —
+// removed entirely: this now reads the exact same real, resolved context
+// useShellIdentity()/the Header itself already trust
+// (useCurrentUserContext() → resolveClinicContext()), so "Mi perfil" can
+// never again show a different person than the shell chrome around it.
+//
+// Read-only, deliberately: the previous "Editar perfil" only ever wrote to
+// an in-memory (never persisted, lost on refresh) override — it never
+// called any real backend. Now that this modal shows REAL profile data,
+// keeping that affordance would let someone type a new name/email, see
+// "Guardar cambios" succeed, and believe it's saved — it never was. Rather
+// than build new profile-edit persistence (out of this task's scope), the
+// edit UI is removed until a real one exists.
+//
+// The "Perfil profesional" card below is unrelated and unchanged —
+// "Configurar perfil profesional" already navigates to the real
+// /mi-perfil-profesional creation flow.
 export function AdminProfileModal({
   onClose,
   onConfigureProfessionalProfile,
-  adminIdentityOverride,
-  setAdminIdentityOverride,
 }: {
   onClose: () => void;
   // "Configurar perfil profesional" — closes this modal and navigates to
   // the real /mi-perfil-profesional creation flow (see header.tsx).
   onConfigureProfessionalProfile: () => void;
-  adminIdentityOverride: AdminIdentityOverride;
-  setAdminIdentityOverride: (patch: AdminIdentityOverride) => void;
 }) {
-  const displayName = adminIdentityOverride.name ?? CURRENT_USER.name;
-  const displayEmail = adminIdentityOverride.email ?? CURRENT_USER.email;
-  const displayPhone = adminIdentityOverride.phone ?? CURRENT_USER.phone;
-  const displayAvatar = adminIdentityOverride.avatar_url ?? CURRENT_USER.avatar_url;
+  const context = useCurrentUserContext();
+  const ok = context?.status === "ok" ? context : null;
+  const loading = context === null;
 
-  const [editingIdentity, setEditingIdentity] = useState(false);
-  const [nameDraft, setNameDraft] = useState(displayName);
-  const [emailDraft, setEmailDraft] = useState(displayEmail);
-  const [phoneDraft, setPhoneDraft] = useState(displayPhone);
-  const [photoDraft, setPhotoDraft] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const startEditingIdentity = () => {
-    setNameDraft(displayName);
-    setEmailDraft(displayEmail);
-    setPhoneDraft(displayPhone);
-    setPhotoDraft(null);
-    setEditingIdentity(true);
-  };
-
-  const cancelIdentityEdit = () => {
-    setPhotoDraft(null);
-    setEditingIdentity(false);
-  };
-
-  const saveIdentityEdit = () => {
-    setAdminIdentityOverride({
-      name: nameDraft.trim() || displayName,
-      email: emailDraft.trim() || displayEmail,
-      phone: phoneDraft.trim() || displayPhone,
-      ...(photoDraft ? { avatar_url: photoDraft } : {}),
-    });
-    setPhotoDraft(null);
-    setEditingIdentity(false);
-  };
-
-  const handlePhotoSelect = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // lets the same file be picked again later
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") setPhotoDraft(reader.result);
-    };
-    reader.readAsDataURL(file);
-  };
+  const firstName = ok?.profile.firstName ?? "";
+  const lastName = ok?.profile.lastName ?? "";
+  const fallback = loading ? "Cargando…" : "—";
+  const displayName = ok ? `${firstName} ${lastName}`.trim() || fallback : fallback;
+  const initials = ok ? `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase() : "";
+  const displayEmail = ok ? ok.profile.email : fallback;
+  const displayPhone = ok ? (ok.profile.phone ?? "—") : fallback;
+  const displayAvatar = ok?.profile.avatarUrl ?? undefined;
+  const roleLabel = ok ? MEMBERSHIP_ROLE_LABELS[ok.membership.role] : fallback;
+  const clinicName = ok ? ok.clinic.name : fallback;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4" onClick={onClose}>
@@ -102,126 +71,32 @@ export function AdminProfileModal({
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          {/* Identidad administrativa */}
           <div className="flex flex-col items-center gap-2 text-center">
-            {editingIdentity ? (
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                aria-label="Cambiar foto de perfil"
-                className="group relative rounded-full"
-              >
-                <UserAvatar
-                  name={displayName}
-                  initials={CURRENT_USER.initials}
-                  avatar_url={photoDraft ?? displayAvatar}
-                  sizeClassName="size-16"
-                />
-                <span className="pointer-events-none absolute inset-0 rounded-full bg-foreground/0 transition-colors group-hover:bg-foreground/40" />
-                <span className="pointer-events-none absolute -right-0.5 -bottom-0.5 flex size-5 items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground">
-                  <PencilIcon className="size-2.5" />
-                </span>
-              </button>
-            ) : (
-              <UserAvatar
-                name={displayName}
-                initials={CURRENT_USER.initials}
-                avatar_url={displayAvatar}
-                sizeClassName="size-16"
-              />
-            )}
-
-            {editingIdentity && (
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/jpg,image/png,image/webp"
-                onChange={handlePhotoSelect}
-                className="hidden"
-              />
-            )}
-
-            {!editingIdentity && (
-              <button
-                type="button"
-                onClick={startEditingIdentity}
-                className="text-xs font-medium text-primary hover:underline"
-              >
-                Editar perfil
-              </button>
-            )}
+            <UserAvatar name={displayName} initials={initials} avatar_url={displayAvatar} sizeClassName="size-16" />
           </div>
 
-          <dl
-            className={`mt-5 flex flex-col gap-3 text-sm ${
-              editingIdentity ? "rounded-lg border border-primary/15 bg-primary/[0.03] p-3" : ""
-            }`}
-          >
+          <dl className="mt-5 flex flex-col gap-3 text-sm">
             <div className="flex items-center justify-between gap-3">
               <dt className="text-label-foreground">Nombre</dt>
-              {editingIdentity ? (
-                <input
-                  value={nameDraft}
-                  onChange={(e) => setNameDraft(e.target.value)}
-                  className={`${FIELD_CLASS} max-w-[60%]`}
-                />
-              ) : (
-                <dd className="truncate font-medium">{displayName}</dd>
-              )}
+              <dd className="truncate font-medium">{displayName}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-label-foreground">Correo</dt>
-              {editingIdentity ? (
-                <input
-                  value={emailDraft}
-                  onChange={(e) => setEmailDraft(e.target.value)}
-                  className={`${FIELD_CLASS} max-w-[60%]`}
-                />
-              ) : (
-                <dd className="truncate font-medium">{displayEmail}</dd>
-              )}
+              <dd className="truncate font-medium">{displayEmail}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-label-foreground">Teléfono</dt>
-              {editingIdentity ? (
-                <input
-                  value={phoneDraft}
-                  onChange={(e) => setPhoneDraft(e.target.value)}
-                  className={`${FIELD_CLASS} max-w-[60%]`}
-                />
-              ) : (
-                <dd className="truncate font-medium">{displayPhone}</dd>
-              )}
+              <dd className="truncate font-medium">{displayPhone}</dd>
             </div>
-            {/* Rol y Clínica actual are always fixed — never editable here. */}
             <div className="flex items-center justify-between gap-3">
               <dt className="text-label-foreground">Rol</dt>
-              <dd className="truncate font-medium">Administrador de Clínica</dd>
+              <dd className="truncate font-medium">{roleLabel}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-label-foreground">Clínica actual</dt>
-              <dd className="truncate font-medium">{CURRENT_USER.clinicName}</dd>
+              <dd className="truncate font-medium">{clinicName}</dd>
             </div>
           </dl>
-
-          {editingIdentity && (
-            <div className="mt-4 flex justify-end gap-1.5">
-              <button
-                type="button"
-                onClick={cancelIdentityEdit}
-                className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-foreground/70 hover:bg-foreground/5"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={saveIdentityEdit}
-                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
-              >
-                Guardar cambios
-              </button>
-            </div>
-          )}
 
           {/* Perfil profesional — independent card, opt-in, additive.
               "Configurar perfil profesional" navigates straight to the

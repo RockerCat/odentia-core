@@ -13,7 +13,7 @@ import type { ClinicContext, MembershipRole } from "@/features/session/types";
 function okCtx(role: MembershipRole, profileActive: boolean | null): ClinicContext {
   return {
     status: "ok",
-    profile: { id: "profile-1", firstName: "Test", lastName: "User", email: "t@example.com", avatarUrl: null },
+    profile: { id: "profile-1", firstName: "Test", lastName: "User", email: "t@example.com", phone: null, avatarUrl: null },
     clinic: { id: "clinic-1", name: "Test", slug: "test", logoUrl: null, status: "active" },
     membership: { id: "membership-1", clinicId: "clinic-1", role, status: "active" },
     professionalProfile: profileActive === null ? null : { id: "prof-1", active: profileActive },

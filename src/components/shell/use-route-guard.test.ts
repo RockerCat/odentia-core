@@ -65,16 +65,31 @@ describe("decideRouteGuardRedirect", () => {
 // `sessionOk` and now correctly read the REAL `hasSession` instead — proven
 // here without mounting the hook or mocking Supabase/useSyncExternalStore.
 describe("shouldRunSelfHeal", () => {
-  it("REGRESSION: must run even when sessionOk would be dev-bypassed to true — hasSession (never sessionOk) gates this", () => {
-    expect(shouldRunSelfHeal(true, false)).toBe(true);
+  it("REGRESSION: must run even when sessionOk would be dev-bypassed to true — a missing cached session always self-heals", () => {
+    expect(shouldRunSelfHeal(true, undefined, null)).toBe(true);
   });
 
   it("never runs before hydration", () => {
-    expect(shouldRunSelfHeal(false, false)).toBe(false);
+    expect(shouldRunSelfHeal(false, undefined, null)).toBe(false);
   });
 
-  it("never re-runs once a real mock session already exists (a DEV role-switcher pick, or an already-completed bridge)", () => {
-    expect(shouldRunSelfHeal(true, true)).toBe(false);
+  it("never re-runs once a bridged session already exists for the SAME real auth user", () => {
+    expect(shouldRunSelfHeal(true, "user-1", "user-1")).toBe(false);
+  });
+
+  // REGRESSION (real production report, "Prompt Master — Odentia:
+  // auditoría post-piloto"): the mock role bridge is a single global
+  // localStorage key, never scoped per real Supabase user. A brand-new
+  // admin activating her own invitation in a browser that already had a
+  // DIFFERENT real user's bridged role cached silently inherited that
+  // stale role forever, because the old gate only checked "does a cached
+  // session exist at all", never "does it belong to ME".
+  it("REGRESSION: self-heals when the cached session belongs to a DIFFERENT real auth user", () => {
+    expect(shouldRunSelfHeal(true, "user-1", "user-2")).toBe(true);
+  });
+
+  it("self-heals a legacy cached session written before authUserId existed", () => {
+    expect(shouldRunSelfHeal(true, undefined, "user-1")).toBe(true);
   });
 });
 

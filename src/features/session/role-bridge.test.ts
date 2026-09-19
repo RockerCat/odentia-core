@@ -19,7 +19,7 @@ const UNAUTHENTICATED_PATIENT: PatientContext = { status: "unauthenticated" };
 
 const OK_CLINIC: ClinicContext = {
   status: "ok",
-  profile: { id: "p1", firstName: "E2E", lastName: "Admin", email: "e2e@example.com", avatarUrl: null },
+  profile: { id: "p1", firstName: "E2E", lastName: "Admin", email: "e2e@example.com", phone: null, avatarUrl: null },
   membership: { id: "m1", clinicId: "c1", role: "clinic_admin", status: "active" },
   clinic: { id: "c1", name: "Clínica E2E", slug: "clinica-e2e", logoUrl: null, status: "active" },
   professionalProfile: null,
@@ -27,7 +27,14 @@ const OK_CLINIC: ClinicContext = {
 
 const OK_PATIENT: PatientContext = {
   status: "ok",
-  profile: { id: "p2", firstName: "E2E", lastName: "Patient", email: "e2e-patient@example.com", avatarUrl: null },
+  profile: {
+    id: "p2",
+    firstName: "E2E",
+    lastName: "Patient",
+    email: "e2e-patient@example.com",
+    phone: null,
+    avatarUrl: null,
+  },
   patient: {
     id: "pat1",
     firstName: "E2E",
@@ -45,19 +52,27 @@ describe("bridgeAuthenticatedContext", () => {
   it("bridges the clinic session when only clinic context resolves", () => {
     writeSession.mockClear();
     bridgeAuthenticatedContext(OK_CLINIC, UNAUTHENTICATED_PATIENT);
-    expect(writeSession).toHaveBeenCalledExactlyOnceWith({ role: "clinic-admin", soloDentistClinic: false });
+    expect(writeSession).toHaveBeenCalledExactlyOnceWith({
+      role: "clinic-admin",
+      soloDentistClinic: false,
+      authUserId: "p1",
+    });
   });
 
   it("bridges the patient session when only patient context resolves", () => {
     writeSession.mockClear();
     bridgeAuthenticatedContext(UNAUTHENTICATED_CLINIC, OK_PATIENT);
-    expect(writeSession).toHaveBeenCalledExactlyOnceWith({ role: "patient" });
+    expect(writeSession).toHaveBeenCalledExactlyOnceWith({ role: "patient", authUserId: "p2" });
   });
 
   it("clinic wins when both somehow resolve — matches decideAuthenticatedRedirect's own priority", () => {
     writeSession.mockClear();
     bridgeAuthenticatedContext(OK_CLINIC, OK_PATIENT);
-    expect(writeSession).toHaveBeenCalledExactlyOnceWith({ role: "clinic-admin", soloDentistClinic: false });
+    expect(writeSession).toHaveBeenCalledExactlyOnceWith({
+      role: "clinic-admin",
+      soloDentistClinic: false,
+      authUserId: "p1",
+    });
   });
 
   it("writes nothing when neither context is real — never fabricates a session", () => {

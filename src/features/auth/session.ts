@@ -6,7 +6,16 @@ const SESSION_STORAGE_KEY = "odentia:session";
 // still role "clinic-admin" (see src/dev/role-context.tsx), never a
 // separate Role value, so it rides along in the same session object
 // instead of needing its own storage key.
-export type DemoSession = { role: Role; soloDentistClinic?: boolean };
+//
+// authUserId: the real Supabase auth.uid() this bridged session was
+// written for (see src/features/session/role-bridge.ts) — undefined for a
+// DEV role-switcher pick (never tied to a real account) or a legacy
+// session written before this field existed. NEVER an authorization
+// signal (it's plain localStorage, trivially spoofable) — used only by
+// use-route-guard.ts's self-heal to detect "this cached role belongs to a
+// DIFFERENT real user than the one currently signed in" and re-resolve;
+// every real authorization decision still comes from Supabase/RLS.
+export type DemoSession = { role: Role; soloDentistClinic?: boolean; authUserId?: string };
 
 // Mock "auth" persistence — a role saved to localStorage, nothing more.
 // No tokens, no backend call: just enough to survive a refresh until real
@@ -16,9 +25,13 @@ export function readSession(): DemoSession | null {
   try {
     const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { role?: unknown; soloDentistClinic?: unknown };
+    const parsed = JSON.parse(raw) as { role?: unknown; soloDentistClinic?: unknown; authUserId?: unknown };
     if (typeof parsed.role !== "string") return null;
-    return { role: parsed.role as Role, soloDentistClinic: parsed.soloDentistClinic === true };
+    return {
+      role: parsed.role as Role,
+      soloDentistClinic: parsed.soloDentistClinic === true,
+      authUserId: typeof parsed.authUserId === "string" ? parsed.authUserId : undefined,
+    };
   } catch {
     return null;
   }

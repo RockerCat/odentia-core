@@ -47,14 +47,32 @@ export function decideRouteGuardRedirect({
   return null;
 }
 
-// Whether the self-heal effect below may run yet — deliberately keyed on
-// the REAL `hasSession` (readSession() !== null), never on `sessionOk`
-// (which is unconditionally true in development — see that constant's own
-// comment). Extracted as a pure function for the same reason
-// decideRouteGuardRedirect is: see this function's own regression test for
-// the exact bug this fixes.
-export function shouldRunSelfHeal(hydrated: boolean, hasSession: boolean): boolean {
-  return hydrated && !hasSession;
+// Whether the self-heal effect below should (re-)bridge the real context.
+// Deliberately keyed on WHO the cached bridge session belongs to, never on
+// merely "does a cached session exist" (see this file's own comment on the
+// real production bug that gap caused — role-bridge.ts's session cache is
+// a single global localStorage key, never scoped per real Supabase user).
+//
+// - No stored session at all, or a legacy one written before authUserId
+//   existed (`storedAuthUserId` falsy either way) → always self-heal.
+// - A stored session tied to a DIFFERENT real auth user than the one
+//   currently signed in → self-heal (this is the exact stale-cache bug:
+//   a prior account's bridged role otherwise sticks around forever).
+// - A stored session tied to the SAME real auth user → trust it, no-op.
+//
+// `currentAuthUserId` is a cheap, local-only read (see the effect below)
+// — never treated as authorization here or anywhere downstream; it exists
+// purely to detect a stale client cache. Extracted as a pure function for
+// the same reason decideRouteGuardRedirect is: see this function's own
+// regression tests.
+export function shouldRunSelfHeal(
+  hydrated: boolean,
+  storedAuthUserId: string | null | undefined,
+  currentAuthUserId: string | null,
+): boolean {
+  if (!hydrated) return false;
+  if (!storedAuthUserId) return true;
+  return storedAuthUserId !== currentAuthUserId;
 }
 
 // Whether the redirect decision below may run yet. Mirrors
@@ -144,19 +162,21 @@ export function useRouteGuard(allowedRoles?: Role[]): boolean {
   // one-tick hydration flash `hydrated` above already handles — it's a
   // real, permanent absence of data).
   //
-  // Self-heal: once hydrated, if there's still no REAL mock session, re-
-  // resolve the real context exactly the same way /login itself does and
-  // bridge it right here before ever concluding a redirect. hasSession
-  // above is subscribed to subscribeToSession, so writeSession (inside
-  // bridgeAuthenticatedContext) triggers a normal re-render with the
-  // corrected value once this resolves. `checkedRealSession` only exists
-  // to keep the REDIRECT decision from firing while this one-time check
-  // is still in flight (a real network round trip, unlike the synchronous
-  // hydration correction above) — it's only ever set from inside the async
-  // callback, never synchronously in the effect body.
+  // Self-heal: once hydrated, re-resolve the real context exactly the same
+  // way /login itself does and (re-)bridge it before ever concluding a
+  // redirect — either because there's no cached bridge session at all, or
+  // because the one that's cached belongs to a DIFFERENT real user than
+  // whoever is actually signed in right now (see shouldRunSelfHeal's own
+  // comment). hasSession above is subscribed to subscribeToSession, so
+  // writeSession (inside bridgeAuthenticatedContext) triggers a normal
+  // re-render with the corrected value once this resolves.
+  // `checkedRealSession` only exists to keep the REDIRECT decision from
+  // firing while this check is still in flight (a real network round
+  // trip) — it's only ever set from inside the async callback, never
+  // synchronously in the effect body.
   //
-  // REGRESSION (found via "Prompt Master — Corregir invitación/acceso de
-  // Patient": a real Patient landing on /portal/citas immediately after
+  // REGRESSION #1 (found via "Prompt Master — Corregir invitación/acceso
+  // de Patient": a real Patient landing on /portal/citas immediately after
   // activating a brand-new Portal invitation — no /login, no DEV role
   // switcher — looped /portal/citas -> /agenda -> /portal ->
   // /portal/citas forever in development): this used to gate on
@@ -168,14 +188,42 @@ export function useRouteGuard(allowedRoles?: Role[]): boolean {
   // got a chance to resolve the real "patient" role. Gating on `hasSession`
   // instead fixes this in every environment while leaving the DEV role
   // switcher untouched: writeSession() (called by the switcher, same as by
-  // this self-heal) makes hasSession true immediately, so an explicit
-  // dev-picked role is never overwritten by this effect.
+  // this self-heal) makes hasSession true immediately.
+  //
+  // REGRESSION #2 (real production report, "Prompt Master — Odentia:
+  // auditoría post-piloto"): gating solely on `hasSession` meant this
+  // effect only ever ran while the cache was completely EMPTY — once
+  // written for ANY real user, it stayed "trusted" forever, even for a
+  // DIFFERENT real user who later authenticates in the same browser (e.g.
+  // an earlier invitation/login test, then a brand-new admin activating
+  // her own invitation via /invitacion/[token], which never itself wrote a
+  // bridge — see that page's own comment). The new admin silently
+  // inherited whatever role was last cached for the earlier account, with
+  // no automatic correction short of an explicit logout + real /login
+  // submit. Fix: read the cached session's own `authUserId` (see
+  // session.ts) and compare it against the REAL currently-signed-in user
+  // (a cheap, LOCAL-only `auth.getSession()` read — never used for
+  // authorization, only to detect a stale cache) before trusting it.
   const [checkedRealSession, setCheckedRealSession] = useState(false);
   useEffect(() => {
-    if (!shouldRunSelfHeal(hydrated, hasSession)) return;
+    if (!hydrated) return;
     let cancelled = false;
     (async () => {
       const supabase = createClient();
+      // Local-only, no network round trip in the common case — purely for
+      // the staleness comparison below, never as an authorization check
+      // (resolveClinicContext/resolvePatientContext below still use the
+      // real, server-validated auth.getUser() for that).
+      const {
+        data: { session: authSession },
+      } = await supabase.auth.getSession();
+      if (cancelled) return;
+      const currentAuthUserId = authSession?.user.id ?? null;
+      const storedAuthUserId = readSession()?.authUserId;
+      if (!shouldRunSelfHeal(hydrated, storedAuthUserId, currentAuthUserId)) {
+        setCheckedRealSession(true);
+        return;
+      }
       const [clinicContext, patientContext] = await Promise.all([
         resolveClinicContext(supabase),
         resolvePatientContext(supabase),

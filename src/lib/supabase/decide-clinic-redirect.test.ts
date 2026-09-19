@@ -12,7 +12,7 @@ import type { ClinicContext } from "@/features/session/types";
 
 const OK: ClinicContext = {
   status: "ok",
-  profile: { id: "p1", firstName: "Ana", lastName: "Admin", email: "ana@example.com", avatarUrl: null },
+  profile: { id: "p1", firstName: "Ana", lastName: "Admin", email: "ana@example.com", phone: null, avatarUrl: null },
   membership: { id: "m1", clinicId: "c1", role: "clinic_admin", status: "active" },
   clinic: { id: "c1", name: "Clínica", slug: "clinica", logoUrl: null, status: "active" },
   professionalProfile: null,
