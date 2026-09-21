@@ -19,7 +19,7 @@ function baseService(overrides: Partial<EncounterReadinessInput["services"][numb
     performedAtUtc: "2026-07-05T13:00:00.000Z",
     serviceValue: 50000,
     viaIngresoCode: null,
-    modalidadCode: null,
+    modalidadCode: "01",
     grupoServiciosCode: null,
     codServicioCode: null,
     finalidadCode: "11",
@@ -81,14 +81,32 @@ describe("getEncounterRipsReadiness", () => {
     expect(result.errors.map((e) => e.code)).not.toContain("SERVICE_VALUE_MISSING");
   });
 
-  // RIPS #5B — modalidad_code stays genuinely optional (DT1 v003's own
-  // Tamaño for modalidadGrupoServicioTecSal is a variable size admitting
-  // 0, unlike finalidad/causa below — out of this checkpoint's scope,
-  // untouched) — asserted alone so a future change to finalidad/causa
-  // never accidentally couples back to it.
-  it("never blocks readiness for a missing modalidad_code — DT1 v003 declares it variable-size, unlike finalidad/causa below", () => {
+  // RIPS export-schema nullability audit (2026-09-21) — corrects a prior
+  // checkpoint's own mistaken reading: DT1 v003's C05/P07
+  // modalidadGrupoServicioTecSal declares a bare fixed Tamaño "2" (never
+  // "0-2"), the SAME §1.5 fixed-size-admits-no-null rule already applied
+  // to Finalidad/Causa — modalidad_code is NOT variable-size, and this is
+  // NOT genuinely optional. Every real service-creation path already
+  // hardcodes "01" unconditionally (no manual selector) — this only ever
+  // fires for a historical encounter finalized before that rule existed.
+  it("flags a missing modalidad_code for a consultation", () => {
     const result = getEncounterRipsReadiness(baseEncounter({ services: [baseService({ modalidadCode: null })] }));
-    expect(result.ready).toBe(true);
+    expect(result.ready).toBe(false);
+    expect(result.errors.map((e) => e.code)).toContain("SERVICE_MODALIDAD_MISSING");
+  });
+
+  it("flags a missing modalidad_code for a procedure too — same rule regardless of service type", () => {
+    const result = getEncounterRipsReadiness(
+      baseEncounter({
+        services: [baseService({ ripsServiceType: "procedure", cupsCode: "230100", serviceValue: 0, modalidadCode: null })],
+      }),
+    );
+    expect(result.errors.map((e) => e.code)).toContain("SERVICE_MODALIDAD_MISSING");
+  });
+
+  it("is ready (regarding this check) once modalidad_code is present", () => {
+    const result = getEncounterRipsReadiness(baseEncounter({ services: [baseService({ modalidadCode: "01" })] }));
+    expect(result.errors.map((e) => e.code)).not.toContain("SERVICE_MODALIDAD_MISSING");
   });
 
   // RIPS #5B — finalidadTecnologiaSalud (C08 consulta / P10
@@ -298,6 +316,7 @@ function readyPatient(overrides: Partial<ExportReadinessPatient> = {}): ExportRe
     countryOfResidenceCode: "170",
     municipalityOfResidenceCode: "11001",
     residenceZoneCode: "01",
+    countryOfOriginCode: "170",
     ...overrides,
   };
 }
@@ -422,6 +441,7 @@ describe("getRipsExportReadiness", () => {
     ["sexCode", "PATIENT_SEX_MISSING"],
     ["userTypeCode", "PATIENT_USER_TYPE_MISSING"],
     ["countryOfResidenceCode", "PATIENT_COUNTRY_RESIDENCE_MISSING"],
+    ["countryOfOriginCode", "PATIENT_COUNTRY_ORIGIN_MISSING"],
   ] as const)("flags a missing patient.%s", (field, code) => {
     const result = getRipsExportReadiness({
       clinicTaxId: "900123456",

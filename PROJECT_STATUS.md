@@ -2669,9 +2669,88 @@ re-verified in this update.
     re-run is idempotent — **NOT RUN locally**, no Postgres/Docker in
     this dev environment, same caveat as every other SQL test in this
     file. Migration applied and confirmed in sync regardless.
+- **RESOLVED (2026-09-21) — export-schema nullable-field audit beyond
+  Finalidad/Causa, against the real DT1 v003 text.** A focused re-audit of
+  every remaining `nullableString(...)` call in `export-schema.ts`
+  (Usuario/Consulta/Procedimiento), classified `CORRECTLY NULLABLE` /
+  `TOO PERMISSIVE` / `AMBIGUOUS` against DT1 v003's §1.5 Tamaño rule (a
+  bare fixed size never admits null; an explicit "0," prefix does).
+  - **`TOO PERMISSIVE`, fixed — `modalidadGrupoServicioTecSal`** (Consulta
+    `C05`/Procedimiento `P07`): DT1 Tamaño is a bare "2", not variable —
+    this corrects an incorrect claim made in an earlier checkpoint (and
+    still in `CLAUDE.md` until this same checkpoint, see below) that it
+    was variable-size. Safe to enforce because every service-creation
+    site (`real-clinical-encounter-screen.tsx`) already hardcodes `"01"`
+    with no manual selector — there is no live path that could produce a
+    null here for a NEW encounter. `export-schema.ts` now
+    `requiredString(..., {exactLength:2})`; `export-readiness.ts` gained
+    a new `SERVICE_MODALIDAD_MISSING` blocker (mirrors the existing
+    Finalidad check) so a historical encounter missing it is readiness-
+    blocked before generation, never silently rejected only at schema
+    time.
+  - **`TOO PERMISSIVE`, fixed — Usuario `codPaisOrigen`** (`U11`): DT1
+    Tamaño is a bare "3", not conditional — tightened to
+    `requiredString({exactLength:3})`. `export-readiness.ts` gained
+    `PATIENT_COUNTRY_ORIGIN_MISSING`; `ExportReadinessPatient` and
+    `toExportReadinessPatients()` (`export-data.ts`) now carry
+    `countryOfOriginCode` (the raw read already existed, it just wasn't
+    threaded into the readiness-facing shape). Note: `completeness.ts`
+    (a separate, non-blocking "identity completeness" helper, not
+    modified here) still carries the same incorrect assumption in its own
+    comments — a second place this should eventually be corrected, out of
+    this checkpoint's scope.
+  - **`TOO PERMISSIVE`, fixed — Usuario `codMunicipioResidencia`/
+    `codZonaTerritorialResidencia`** (`U09`/`U10`): DT1 makes both
+    required only when `codPaisResidencia = "170"` (Colombia) — were
+    unconditionally nullable before. `export-schema.ts` now branches on
+    `codPaisResidencia`: `requiredString` for Colombia, `nullableString`
+    otherwise (this pair was already readiness-blocked for the Colombia
+    case via existing `PATIENT_*_MISSING` checks — no new readiness code
+    needed).
+  - **`AMBIGUOUS`, left unchanged — `conceptoRecaudo`** (Consulta `C18`/
+    Procedimiento `P17`): a real, cited conflicting claim already exists
+    in this file's own DT1 §1.8 cross-validation notes; not resolved here
+    per the checkpoint's explicit instruction to leave `AMBIGUOUS` fields
+    untouched.
+  - **`CORRECTLY NULLABLE`, unchanged — `codDiagnosticoRelacionado*`**:
+    DT1 Tamaño carries an explicit "0," option — genuinely optional,
+    confirmed, no change.
+  - **`TOO PERMISSIVE` in principle but deliberately NOT fixed yet —
+    `grupoServiciosCode`/`codServicioCode`/`viaIngresoServicioSalud`
+    (manual-CUPS gap)**: these three are only ever populated when a
+    service is created through the "¿Qué realizaste?" clinical-concept
+    flow; a manually-picked CUPS row (bypassing that flow) is created
+    with all three empty by design and is only ever completable
+    afterward through the "Detalles RIPS" accordion
+    (`s.detailsOpen`) — nothing currently requires filling them before
+    finalizing an atención or before RIPS readiness, because the existing
+    `RIPS_SERVICE_CONFIGURATION_MISSING` readiness check only fires when
+    `clinicalConceptId` is truthy, so it structurally never catches a
+    manual-CUPS row. Tightening `export-schema.ts` for these three right
+    now would break this live, intentional escape valve for brand-new
+    encounters, not just old ones. **Concrete pending item, not built in
+    this checkpoint**: (1) a new readiness check that also fires for a
+    manual-CUPS row missing these fields, and (2) — only if historical
+    manual-CUPS rows already exist with these fields empty — a
+    historical-correction mechanism in the same add-only/finalized-only/
+    clinically-authorized shape as the existing Finalidad/Causa and
+    principal-diagnosis corrections, never built automatically inside a
+    read-only-scoped checkpoint like this one.
+  - QA: `npx tsc --noEmit` clean; `npx vitest run src/features/rips
+    src/features/dashboard src/features/patients` — 415/415 passed
+    (fixtures updated: `readyPatient()` gained `countryOfOriginCode`,
+    `baseService()`'s default `modalidadCode` changed from `null` to
+    `"01"` since `null` now fails the new blocker); `eslint` on all four
+    changed files clean; `git diff --check` clean. No migration — nothing
+    in this checkpoint touched the database, only JS validation/readiness
+    logic.
 - **Explicitly not built yet (future phase)**: MUV integration, CUV
   generation/inference, ProcesoId auto-capture, submission states beyond
   a manually-recorded result, retries/polling, FEV/DIAN, glosas, SIIFA.
+  Also pending: manual-CUPS `grupoServicios`/`codServicio`/
+  `viaIngresoServicioSalud` readiness gap (above) — the last known
+  material item before "first official MUV/SISPRO validation" becomes
+  the sole remaining regulatory-pilot milestone.
 
 ---
 

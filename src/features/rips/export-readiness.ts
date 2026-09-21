@@ -30,6 +30,7 @@ export type RipsReadinessErrorCode =
   | "PATIENT_COUNTRY_RESIDENCE_MISSING"
   | "PATIENT_MUNICIPALITY_MISSING"
   | "PATIENT_ZONE_MISSING"
+  | "PATIENT_COUNTRY_ORIGIN_MISSING"
   | "PROFESSIONAL_DOCUMENT_MISSING"
   | "ENCOUNTER_PRINCIPAL_DIAGNOSIS_MISSING"
   | "ENCOUNTER_SERVICE_MISSING"
@@ -37,6 +38,7 @@ export type RipsReadinessErrorCode =
   | "SERVICE_CUPS_UNCLASSIFIED"
   | "SERVICE_VALUE_MISSING"
   | "SERVICE_FINALIDAD_MISSING"
+  | "SERVICE_MODALIDAD_MISSING"
   | "CONSULTATION_DIAGNOSIS_TYPE_MISSING"
   | "CONSULTATION_CAUSA_MOTIVO_MISSING"
   | "CLINICAL_SERVICE_MAPPING_UNRESOLVED"
@@ -260,6 +262,26 @@ export function getEncounterRipsReadiness(input: EncounterReadinessInput): RipsR
       });
     }
 
+    // C05/P07 modalidadGrupoServicioTecSal — DT1 v003 declares a bare
+    // fixed Tamaño "2" (§1.5's own fixed-size-admits-no-null rule, same
+    // one already applied to Finalidad/Causa), for both consulta and
+    // procedimiento. Every real service-creation path already hardcodes
+    // "01" here unconditionally (real-clinical-encounter-screen.tsx's
+    // addService/addConceptService, no manual selector exists) — this
+    // can only ever fire for a historical encounter finalized before
+    // that rule existed. No correction mechanism exists for this gap
+    // yet — fixHref stays null, same as every other not-yet-correctable
+    // gap in this file.
+    if (!service.modalidadCode) {
+      errors.push({
+        ...serviceBase,
+        code: "SERVICE_MODALIDAD_MISSING",
+        scope: "service",
+        message: `${encounterLabel} — falta indicar la modalidad de ${service.ripsServiceType === "consultation" ? "la consulta" : "el procedimiento"} ${service.cupsCode}.`,
+        fixHref: null,
+      });
+    }
+
     if (!service.professionalHasDocumentIdentity) {
       errors.push({
         ...serviceBase,
@@ -295,6 +317,7 @@ export type ExportReadinessPatient = {
   countryOfResidenceCode: string | null;
   municipalityOfResidenceCode: string | null;
   residenceZoneCode: string | null;
+  countryOfOriginCode: string | null;
 };
 
 export type RipsExportReadinessInput = {
@@ -336,6 +359,17 @@ function getPatientReadinessErrors(patient: ExportReadinessPatient): RipsReadine
     if (!patient.residenceZoneCode) {
       errors.push({ ...base, code: "PATIENT_ZONE_MISSING", scope: "patient", message: `${label} — falta la zona de residencia.` });
     }
+  }
+  // U11 codPaisOrigen — DT1 v003 declares a bare fixed Tamaño "3" (never
+  // "0, 3"), same §1.5 fixed-size rule already applied to Finalidad/
+  // Causa/codPaisOrigen's own schema check — unconditional, unlike
+  // Municipio/Zona above. No existing UI writes this field yet (checked:
+  // no /pacientes form references it) — fixHref still points at
+  // /pacientes, the same general patient-edit surface every other
+  // patient-scope gap here already uses, even though this specific field
+  // has no dedicated control there today.
+  if (!patient.countryOfOriginCode) {
+    errors.push({ ...base, code: "PATIENT_COUNTRY_ORIGIN_MISSING", scope: "patient", message: `${label} — falta el país de origen.` });
   }
   return errors;
 }

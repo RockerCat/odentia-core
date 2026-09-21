@@ -234,15 +234,18 @@ Known, not-yet-resolved limitation: this cannot distinguish a `"40"` the
 professional picked manually from one this logic derived, so leaving that
 Finalidad can clear a manually-chosen `"40"` too. All of this lives
 directly in the "Servicios realizados" card flow, not tucked in the
-"Detalles RIPS" accordion. **Modalidad** stays regulatorily optional for
-RIPS export readiness (DT1 v003 declares it a variable-size field) —
-`export-readiness.ts` never blocks on it. **Finalidad and, for a
+"Detalles RIPS" accordion. **Modalidad, Finalidad, and, for a
 consultation, Causa/Motivo are NOT regulatorily optional**: DT1 v003
-declares both with a bare fixed Tamaño `"2"` (§1.5's own rule for a
+declares all three with a bare fixed Tamaño `"2"` (§1.5's own rule for a
 fixed-size field), which admits no `null` — `export-readiness.ts` enforces
-this with `SERVICE_FINALIDAD_MISSING`/`CONSULTATION_CAUSA_MOTIVO_MISSING`,
-and `export-schema.ts`'s runtime validation rejects a `null` value on
-either as defense-in-depth. `getEncounterFinalizeBlockers` additionally
+this with `SERVICE_MODALIDAD_MISSING`/`SERVICE_FINALIDAD_MISSING`/
+`CONSULTATION_CAUSA_MOTIVO_MISSING`, and `export-schema.ts`'s runtime
+validation rejects a `null` value on any of the three as defense-in-depth.
+Modalidad is safe to enforce this way because every service-creation site
+hardcodes `"01"` with no manual selector, so there is no live path that
+could produce a null here for a new encounter — only a historical
+encounter predating this enforcement can hit the readiness block.
+`getEncounterFinalizeBlockers` additionally
 enforces, as Odentia-only, forward-only rules at "Finalizar atención"
 time (so a NEW encounter can never even reach the readiness checks
 above): Finalidad and (for a consultation) Causa/Motivo on every

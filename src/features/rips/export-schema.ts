@@ -154,7 +154,33 @@ function validateConsultation(v: Validator, path: string, raw: unknown) {
   v.dateTimeMinute(`${path}.fechaInicioAtencion`, c.fechaInicioAtencion);
   v.mustBeNull(`${path}.numAutorizacion`, c.numAutorizacion);
   v.requiredString(`${path}.codConsulta`, c.codConsulta, { exactLength: 6 });
-  v.nullableString(`${path}.modalidadGrupoServicioTecSal`, c.modalidadGrupoServicioTecSal, { exactLength: 2 });
+  // C05 modalidadGrupoServicioTecSal — DT1 v003 declares a bare fixed
+  // Tamaño "2" (never "0-2"), same §1.5 rule as Finalidad/Causa below —
+  // safe to tighten now (unlike grupoServicios/codServicio right below,
+  // still deliberately left nullable): every real service-creation path
+  // (concept-based or manual CUPS, real-clinical-encounter-screen.tsx's
+  // own addService/addConceptService) already hardcodes "01" here
+  // unconditionally, no manual selector exists — a null value can only
+  // ever come from a historical encounter predating that rule. See
+  // export-readiness.ts's own SERVICE_MODALIDAD_MISSING for the
+  // readiness-layer half of this fix.
+  v.requiredString(`${path}.modalidadGrupoServicioTecSal`, c.modalidadGrupoServicioTecSal, { exactLength: 2 });
+  // grupoServicios (C06) / codServicio (C07) — DT1 v003 ALSO declares
+  // both with a bare fixed Tamaño ("2" / "3, 4" respectively — the
+  // latter additionally typed N/numeric there, never validated as such
+  // here), which by the same §1.5 rule would mean neither admits null
+  // either. Deliberately NOT tightened in this pass: unlike Modalidad
+  // above, a manual-CUPS service (real-clinical-encounter-screen.tsx's
+  // own "Detalles RIPS" accordion) can be saved and finalized TODAY with
+  // both fields genuinely blank — there is no readiness check covering
+  // that gap (RIPS_SERVICE_CONFIGURATION_MISSING only ever fires for a
+  // concept-based service, clinicalConceptId is not null) — tightening
+  // schema here first would turn an already-working manual-CUPS export
+  // into a hard failure with no prior readiness warning, for NEW
+  // encounters too, not just historical ones. Flagged as a real,
+  // evidenced TOO PERMISSIVE finding, deliberately left as-is pending a
+  // dedicated readiness+correction checkpoint (same shape as the
+  // Finalidad/Causa/principal-diagnosis work, not built here).
   v.nullableString(`${path}.grupoServicios`, c.grupoServicios, { exactLength: 2 });
   v.nullableString(`${path}.codServicio`, c.codServicio, { minLength: 1, maxLength: 4 });
   // RIPS #5B — DT1 v003 declares both C08/C09 with a bare fixed Tamaño
@@ -200,8 +226,22 @@ function validateProcedure(v: Validator, path: string, raw: unknown) {
   v.mustBeNull(`${path}.idMIPRES`, p.idMIPRES);
   v.mustBeNull(`${path}.numAutorizacion`, p.numAutorizacion);
   v.requiredString(`${path}.codProcedimiento`, p.codProcedimiento, { exactLength: 6 });
+  // P06 viaIngresoServicioSalud — DT1 v003 declares a bare fixed Tamaño
+  // "2". Deliberately NOT tightened here: same manual-CUPS "Detalles
+  // RIPS" gap as grupoServicios/codServicio below — see this file's own
+  // Consulta-side comment on why (no readiness coverage for that path
+  // today). Flagged, not fixed.
   v.nullableString(`${path}.viaIngresoServicioSalud`, p.viaIngresoServicioSalud, { exactLength: 2 });
-  v.nullableString(`${path}.modalidadGrupoServicioTecSal`, p.modalidadGrupoServicioTecSal, { exactLength: 2 });
+  // P07 modalidadGrupoServicioTecSal — same §1.5 fixed-size rule, same
+  // "always auto-set to 01, no manual selector, historical-only null
+  // risk" safety as the Consulta side — see that file's own comment.
+  // Readiness-layer half: export-readiness.ts's SERVICE_MODALIDAD_MISSING
+  // (applies to both consultation and procedure).
+  v.requiredString(`${path}.modalidadGrupoServicioTecSal`, p.modalidadGrupoServicioTecSal, { exactLength: 2 });
+  // P08 grupoServicios / P09 codServicio — same manual-CUPS "Detalles
+  // RIPS" gap as the Consulta side (see that file's own comment) —
+  // deliberately left nullable, flagged as a pending finding, not fixed
+  // in this pass.
   v.nullableString(`${path}.grupoServicios`, p.grupoServicios, { exactLength: 2 });
   v.nullableString(`${path}.codServicio`, p.codServicio, { minLength: 1, maxLength: 4 });
   // RIPS #5B — P10, same bare fixed Tamaño "2" rule as C08 above.
@@ -233,11 +273,30 @@ function validateUser(v: Validator, path: string, raw: unknown) {
   v.dateOnly(`${path}.fechaNacimiento`, u.fechaNacimiento);
   v.requiredString(`${path}.codSexo`, u.codSexo, { exactLength: 1 });
   v.requiredString(`${path}.codPaisResidencia`, u.codPaisResidencia, { exactLength: 3 });
-  v.nullableString(`${path}.codMunicipioResidencia`, u.codMunicipioResidencia, { exactLength: 5 });
-  v.nullableString(`${path}.codZonaTerritorialResidencia`, u.codZonaTerritorialResidencia, { exactLength: 2 });
+  // U07/U08 — DT1 v003 declares both Tamaño "0, 5"/"0, 2" (the comma-list
+  // explicitly includes 0, so a bare-country patient CAN leave these
+  // null) — but each row's own Observaciones adds "Obligatorio cuando el
+  // campo codPaisResidencia sea igual a 170 'Colombia'". Same conditional
+  // rule export-readiness.ts's own PATIENT_MUNICIPALITY_MISSING/
+  // PATIENT_ZONE_MISSING already enforce (that's the real, friendly
+  // blocker — this is defense-in-depth only, same "readiness first,
+  // schema as the last gate" split as every other RIPS field here).
+  if (u.codPaisResidencia === "170") {
+    v.requiredString(`${path}.codMunicipioResidencia`, u.codMunicipioResidencia, { exactLength: 5 });
+    v.requiredString(`${path}.codZonaTerritorialResidencia`, u.codZonaTerritorialResidencia, { exactLength: 2 });
+  } else {
+    v.nullableString(`${path}.codMunicipioResidencia`, u.codMunicipioResidencia, { exactLength: 5 });
+    v.nullableString(`${path}.codZonaTerritorialResidencia`, u.codZonaTerritorialResidencia, { exactLength: 2 });
+  }
   v.requiredString(`${path}.incapacidad`, u.incapacidad, { exactLength: 2 });
   v.positiveInteger(`${path}.consecutivo`, u.consecutivo, { maxDigits: 7 });
-  v.nullableString(`${path}.codPaisOrigen`, u.codPaisOrigen, { exactLength: 3 });
+  // U11 codPaisOrigen — DT1 v003 declares a bare fixed Tamaño "3" (never
+  // "0, 3"), same fixed-size-admits-no-null rule (§1.5) already applied
+  // to Finalidad/Causa — no conditional wording anywhere near this field
+  // either, unlike Municipio/Zona above. See export-readiness.ts's own
+  // PATIENT_COUNTRY_ORIGIN_MISSING for the readiness-layer half of this
+  // fix.
+  v.requiredString(`${path}.codPaisOrigen`, u.codPaisOrigen, { exactLength: 3 });
   v.mustBeNull(`${path}.registroSIRAS`, u.registroSIRAS);
 
   const serviciosPath = `${path}.servicios`;

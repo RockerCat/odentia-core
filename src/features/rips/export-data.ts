@@ -252,6 +252,7 @@ export function toExportReadinessPatients(raw: RipsExportRawData): ExportReadine
     countryOfResidenceCode: p.countryOfResidenceCode || null,
     municipalityOfResidenceCode: p.municipalityOfResidenceCode,
     residenceZoneCode: p.residenceZoneCode,
+    countryOfOriginCode: p.countryOfOriginCode,
   }));
 }
 
