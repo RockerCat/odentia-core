@@ -2535,6 +2535,82 @@ re-verified in this update.
     `canEditClinicalData={false}` explicitly, same convention as every
     other write-capable prop that screen already forces off for a
     Patient — so this indicator can never appear there.
+- **RESOLVED (2026-09-21) — historical finalized encounter missing
+  principal diagnosis correction.** Same shape as the Finalidad/Causa
+  correction directly above, extended to
+  `ENCOUNTER_PRINCIPAL_DIAGNOSIS_MISSING` (export-readiness.ts,
+  unchanged): a new `add_missing_finalized_encounter_principal_diagnosis(
+  p_encounter_id, p_cie10_code, p_diagnosis_type_code)` RPC (migration
+  `20260921110000`, applied to remote, `supabase migration list`
+  confirmed local = remote) is the one sanctioned write path — **add-only**
+  (fills an encounter that currently has NO principal diagnosis at all,
+  in any scope; rejects a second attempt outright, never an overwrite/
+  replace), **finalized-only**, gated by
+  `is_active_clinical_professional(clinic_id)` (same tier as the
+  Finalidad/Causa RPC, same reasoning: a principal diagnosis is
+  unambiguously real clinical content, never the relaxed
+  clinic_admin-only gate #6D/A4B use for their own administrative
+  fields), never requires the encounter's original attending
+  professional, never references `is_platform_superadmin()`. CIE-10
+  validated against `diagnosis_catalog` and `diagnosis_type_code` (when
+  provided) against `RIPSTipoDiagnosticoPrincipalVersion2` — the exact
+  same two checks `upsert_patient_clinical_encounter` already performs
+  for the same fields, never a stricter/looser rule. `diagnosis_type_code`
+  is never inferred or defaulted — **not even for Z012**, per this
+  session's own regulatory finding (no defensible official mapping
+  exists) — it stays nullable at the RPC/table level, required only in
+  the UI when the encounter has a consultation-classified service
+  (mirroring `CONSULTATION_DIAGNOSIS_TYPE_MISSING`'s own condition).
+  New append-only audit table `encounter_principal_diagnosis_corrections`
+  (`clinic_id`, `encounter_id`, `encounter_diagnosis_id` FK to the row it
+  created, `cie10_code`, `diagnosis_type_code`, `corrected_by`,
+  `corrected_at`) — zero client grants, RPC is sole writer, no query UI
+  yet (same deliberate deferral as every other correction audit table).
+  - **Selector reuse**: the CIE-10 dental-first search/browse config
+    (Frecuentes → Examen odontológico → Odontología → Todos, explicit
+    typed-search expansion) was extracted from
+    `real-clinical-encounter-screen.tsx` into a new shared module
+    (`src/features/rips/diagnosis-search-config.ts`) so this correction
+    surface reuses the EXACT same behavior instead of a second, drifting
+    copy — the real clinical encounter screen itself now imports from
+    this shared module too, no behavior change there.
+  - **UX**: same "Información RIPS incompleta" / "Completar" indicator
+    Historia Clínica's Atenciones tab already shows for Finalidad/Causa
+    now also covers a missing principal diagnosis — one shared indicator,
+    two independent gap kinds; missing principal is checked and resolved
+    FIRST when both apply to the same encounter (the more fundamental
+    gap), Finalidad/Causa surfaces on a subsequent "Completar" click if
+    still needed. New focused modal
+    (`CompleteEncounterPrincipalDiagnosisModal`) — single-shot (unlike the
+    multi-field Finalidad/Causa modal, it auto-closes on success, since
+    there's nothing else to complete for this one gap), re-fetches fresh
+    context from the DB on every open (same "never trust stale client
+    state" property), never shows an already-populated principal as
+    editable.
+  - **`/rips` reuse, no widening**: the same RPC/modal is reachable from
+    `/rips`'s own pendientes list for a `clinic_admin` who is ALSO
+    clinically active — `allowedRoles={["clinic-admin"]}` on
+    `/rips/page.tsx` is unchanged; no dentist was added to `/rips`, its
+    navigation, monthly readiness, export, or MUV history. A dentist
+    non-admin uses Historia Clínica only, same as the Finalidad/Causa
+    precedent.
+  - **Read-gate reuse**: `fetchEncounterPrincipalDiagnosisGapContextAction`
+    uses the same minimum-privilege `clinic_admin` OR `dentist` read gate
+    (never `assistant`) as `fetchEncounterRipsFieldGapContextAction` —
+    write capability (`canCorrect`) still comes exclusively from
+    `canEditClinicalData()`.
+  - SQL regression test
+    (`supabase/tests/add_missing_finalized_encounter_principal_diagnosis.test.sql`)
+    covers success (active dentist, encounter-wide insert, audit-row
+    shape), authorization (purely administrative clinic_admin, assistant,
+    cross-clinic dentist — all rejected), safety (not-finalized,
+    already-has-principal, invalid CIE-10, invalid diagnosis type, a
+    pre-existing related diagnosis left untouched) — **NOT RUN locally**,
+    no Postgres/Docker in this dev environment, same caveat as every
+    other SQL test in this file. Migration applied and confirmed in sync
+    regardless.
+  - No backfill: a historical encounter this RPC hasn't been used on yet
+    stays exactly as blocked as before.
 - **Follow-up — dental CIE-10 scope should eventually be versioned.** The
   `{Z012} ∪ K00–K14` universe prioritized above is explicitly a UX
   narrowing, not a claim of completeness: prior audit work found K00–K14

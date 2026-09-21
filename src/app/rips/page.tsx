@@ -22,13 +22,15 @@ import { RipsScreen } from "@/features/rips/rips-screen";
 // /rips. Never re-fetched per patient/per modal open — one fetch for the
 // whole screen, matching that existing convention.
 //
-// finalidadOptions/causaMotivoOptions (RIPSFinalidadConsultaVersion2/
-// RIPSCausaExternaVersion2) are the SAME two reference catalogs the real
-// clinical encounter screen already loads for its own Finalidad/Causa
-// <select>s (see src/app/agenda/atencion/[appointmentId]/page.tsx) —
-// fetched here too, once, so "Completar Finalidad/Causa" on a historical
-// finalized encounter never hardcodes a catalog and never re-fetches per
-// modal open.
+// finalidadOptions/causaMotivoOptions/diagnosisTypeOptions
+// (RIPSFinalidadConsultaVersion2/RIPSCausaExternaVersion2/
+// RIPSTipoDiagnosticoPrincipalVersion2) are the SAME three reference
+// catalogs the real clinical encounter screen already loads for its own
+// Finalidad/Causa/Tipo de diagnóstico <select>s (see
+// src/app/agenda/atencion/[appointmentId]/page.tsx) — fetched here too,
+// once, so "Completar Finalidad/Causa"/"Completar diagnóstico principal"
+// on a historical finalized encounter never hardcodes a catalog and
+// never re-fetches per modal open.
 export default async function RipsPage() {
   let identityCatalogs = EMPTY_PATIENT_IDENTITY_CATALOGS;
   try {
@@ -40,14 +42,20 @@ export default async function RipsPage() {
     console.error("[/rips] fetchPatientIdentityCatalogs failed", error);
   }
 
-  const [finalidadOptions, causaMotivoOptions] = await Promise.all([
+  const [finalidadOptions, causaMotivoOptions, diagnosisTypeOptions] = await Promise.all([
     getActiveReferenceValues("RIPSFinalidadConsultaVersion2"),
     getActiveReferenceValues("RIPSCausaExternaVersion2"),
+    getActiveReferenceValues("RIPSTipoDiagnosticoPrincipalVersion2"),
   ]);
 
   return (
     <AppShell activeNavLabel="RIPS" heading="RIPS" allowedRoles={["clinic-admin"]}>
-      <RipsScreen identityCatalogs={identityCatalogs} finalidadOptions={finalidadOptions} causaMotivoOptions={causaMotivoOptions} />
+      <RipsScreen
+        identityCatalogs={identityCatalogs}
+        finalidadOptions={finalidadOptions}
+        causaMotivoOptions={causaMotivoOptions}
+        diagnosisTypeOptions={diagnosisTypeOptions}
+      />
     </AppShell>
   );
 }

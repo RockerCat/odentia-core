@@ -87,6 +87,7 @@ export function PatientClinicalRecordScreen({
   canEditClinicalData,
   finalidadOptions = [],
   causaMotivoOptions = [],
+  diagnosisTypeOptions = [],
 }: {
   patient: Patient;
   clinicId: string | null;
@@ -102,11 +103,13 @@ export function PatientClinicalRecordScreen({
   treatmentOptions: Treatment[];
   appointments: Appointment[];
   canEditClinicalData: boolean;
-  // Historical Finalidad/Causa correction (AtencionesTab) — fetched once,
-  // server-side, same convention as every other catalog/option list this
-  // screen already receives as a prop.
+  // Historical Finalidad/Causa + missing-principal-diagnosis correction
+  // (AtencionesTab) — fetched once, server-side, same convention as
+  // every other catalog/option list this screen already receives as a
+  // prop.
   finalidadOptions?: ReferenceValue[];
   causaMotivoOptions?: ReferenceValue[];
+  diagnosisTypeOptions?: ReferenceValue[];
 }) {
   const [activeTab, setActiveTab] = useState<Tab>("Resumen");
   const [medicalHistory, setMedicalHistory] = useState(initialMedicalHistory);
@@ -368,6 +371,7 @@ export function PatientClinicalRecordScreen({
           canEditClinicalData={canEditClinicalData}
           finalidadOptions={finalidadOptions}
           causaMotivoOptions={causaMotivoOptions}
+          diagnosisTypeOptions={diagnosisTypeOptions}
         />
       )}
       {activeTab === "Documentos" && (

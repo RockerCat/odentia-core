@@ -269,7 +269,17 @@ professional-scoped), and never platform Superadmin by virtue of being
 Superadmin. No backfill, no DT1 Finalidad↔Causa cross-validation engine
 (that doesn't exist anywhere in this codebase — the one confirmed pairing,
 promoción/mantenimiento → Causa 40, stays a client-side UX nudge only,
-never enforced server-side). See RIPS section below for the
+never enforced server-side). A finalized encounter's missing PRINCIPAL
+DIAGNOSIS follows the exact same shape via a sibling RPC,
+`add_missing_finalized_encounter_principal_diagnosis()` — add-only (fills
+an encounter with NO principal at all, in any scope; rejects outright if
+one already exists, never a replace), same `is_active_clinical_professional()`
+gate, `diagnosis_type_code` never inferred or defaulted (not even for
+Z012 — no defensible official mapping exists for it). Both corrections
+share one surface: Historia Clínica → Atenciones' own "Información RIPS
+incompleta" indicator (a dentist non-admin's only entry point — `/rips`
+stays Clinic Admin only) also reachable from `/rips` itself for a
+clinically-active Clinic Admin. See RIPS section below for the
 CUPS-resolution mechanics, unchanged by this consolidation. Reportes' treatment ranking
 (`computeTreatmentRanking`, `src/features/reports/report-selectors.ts`)
 mirrors this: structured `encounter_services` wins per-encounter, legacy

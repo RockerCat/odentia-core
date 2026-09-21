@@ -134,15 +134,17 @@ export default async function PatientClinicalRecordPage({ params }: { params: Pr
     console.error("[/pacientes/[id]/historia-clinica] fetchAppointmentsForPatient failed", error);
   }
 
-  // Historical Finalidad/Causa correction (AtencionesTab, reusing
-  // CompleteEncounterRipsFieldModal from /rips) — same two reference
-  // catalogs /rips/page.tsx already loads, same pattern: fetched once
-  // here, never per encounter/modal open, never hardcoded.
+  // Historical Finalidad/Causa + missing-principal-diagnosis correction
+  // (AtencionesTab, reusing CompleteEncounterRipsFieldModal/
+  // CompleteEncounterPrincipalDiagnosisModal from /rips) — same three
+  // reference catalogs /rips/page.tsx already loads, same pattern:
+  // fetched once here, never per encounter/modal open, never hardcoded.
   // getActiveReferenceValues already fails closed to [] on error, no
   // try/catch needed (same as /rips/page.tsx).
-  const [finalidadOptions, causaMotivoOptions] = await Promise.all([
+  const [finalidadOptions, causaMotivoOptions, diagnosisTypeOptions] = await Promise.all([
     getActiveReferenceValues("RIPSFinalidadConsultaVersion2"),
     getActiveReferenceValues("RIPSCausaExternaVersion2"),
+    getActiveReferenceValues("RIPSTipoDiagnosticoPrincipalVersion2"),
   ]);
 
   return (
@@ -164,6 +166,7 @@ export default async function PatientClinicalRecordPage({ params }: { params: Pr
         canEditClinicalData={canEditClinicalData(context)}
         finalidadOptions={finalidadOptions}
         causaMotivoOptions={causaMotivoOptions}
+        diagnosisTypeOptions={diagnosisTypeOptions}
       />
     </AppShell>
   );

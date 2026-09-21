@@ -4,8 +4,13 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { findCupsByCodeAction, findDiagnosisByCodeAction } from "@/features/rips/actions";
 import type { ReferenceValue } from "@/features/rips/catalog-data";
+import {
+  CompleteEncounterPrincipalDiagnosisModal,
+  type AddedPrincipalDiagnosis,
+} from "@/features/rips/complete-encounter-principal-diagnosis-modal";
 import { CompleteEncounterRipsFieldModal, type FieldKey } from "@/features/rips/complete-encounter-rips-field-modal";
 import type { ClinicalEncounterRecord, EncounterClinicalData } from "./clinical-encounters-data";
+import { applyPrincipalDiagnosisCorrection, shouldShowMissingPrincipalDiagnosisIndicator } from "./encounter-principal-diagnosis-gap";
 import { applyRipsFieldCorrection, shouldShowRipsFieldGapIndicator } from "./encounter-service-rips-field-gap";
 import { resolveUpdatedByProfessional, type UpdatedByProfessional } from "./resolve-updated-by";
 
@@ -51,6 +56,7 @@ export function AtencionesTab({
   canEditClinicalData,
   finalidadOptions = [],
   causaMotivoOptions = [],
+  diagnosisTypeOptions = [],
 }: {
   clinicId: string | null;
   encounters: ClinicalEncounterRecord[];
@@ -74,6 +80,9 @@ export function AtencionesTab({
   canEditClinicalData: boolean;
   finalidadOptions?: ReferenceValue[];
   causaMotivoOptions?: ReferenceValue[];
+  // Historical missing-principal-diagnosis correction — same reuse
+  // convention as finalidadOptions/causaMotivoOptions above.
+  diagnosisTypeOptions?: ReferenceValue[];
 }) {
   // Resolves each encounter's attended_by (a profiles.id) to a real
   // name/specialty — reuses fetchTeamMembers via resolveUpdatedByProfessional
@@ -92,9 +101,18 @@ export function AtencionesTab({
   // null. Reuses CompleteEncounterRipsFieldModal exactly as /rips does —
   // never a second modal, never a duplicated correction flow.
   const [correctingEncounterId, setCorrectingEncounterId] = useState<string | null>(null);
+  // The one encounter currently open for missing-principal-diagnosis
+  // correction, or null. A SEPARATE modal/state from correctingEncounterId
+  // above (a different gap, a different RPC) — an encounter can have
+  // both gaps at once; each is resolved with its own explicit click (see
+  // the "Completar" handler below), never a combined form.
+  const [correctingPrincipalDiagnosisEncounterId, setCorrectingPrincipalDiagnosisEncounterId] = useState<string | null>(null);
 
   const handleFieldCorrected = (encounterId: string, serviceId: string, field: FieldKey, value: string) => {
     setLocalClinicalData((prev) => applyRipsFieldCorrection(prev, encounterId, serviceId, field, value));
+  };
+  const handlePrincipalDiagnosisCorrected = (encounterId: string, added: AddedPrincipalDiagnosis) => {
+    setLocalClinicalData((prev) => applyPrincipalDiagnosisCorrection(prev, encounterId, added));
   };
   useEffect(() => {
     let cancelled = false;
@@ -244,17 +262,25 @@ export function AtencionesTab({
                   if (!data || (data.diagnoses.length === 0 && data.services.length === 0)) return null;
                   const principal = data.diagnoses.find((d) => d.role === "principal");
                   const related = data.diagnoses.filter((d) => d.role === "related");
-                  // Historical Finalidad/Causa gap indicator — visible
-                  // ONLY for an active clinical professional (Section 11's
-                  // own Option B, never C: an Assistant or a purely
-                  // administrative Clinic Admin never sees this at all,
-                  // not even disabled — a "no mostrar acción inútil" call,
-                  // not an oversight). shouldShowRipsFieldGapIndicator
-                  // mirrors export-readiness.ts's own
-                  // SERVICE_FINALIDAD_MISSING/CONSULTATION_CAUSA_MOTIVO_MISSING
-                  // rule exactly, computed here purely client-side from data
-                  // already loaded — never a monthly readiness call.
-                  const hasGap = shouldShowRipsFieldGapIndicator(canEditClinicalData, data.services);
+                  // Historical RIPS gap indicator — visible ONLY for an
+                  // active clinical professional (Section 11's own Option
+                  // B, never C: an Assistant or a purely administrative
+                  // Clinic Admin never sees this at all, not even
+                  // disabled — a "no mostrar acción inútil" call, not an
+                  // oversight). Two INDEPENDENT gap kinds share this one
+                  // indicator/CTA (missing principal diagnosis, missing
+                  // Finalidad/Causa) — both mirror export-readiness.ts's
+                  // own checks exactly, computed here purely client-side
+                  // from data already loaded, never a monthly readiness
+                  // call. Missing principal is checked and resolved
+                  // FIRST: a service with no principal at all is the more
+                  // fundamental gap, and Finalidad/Causa's own readiness
+                  // checks are independent of it either way — clicking
+                  // "Completar" again after fixing one reveals the next,
+                  // never a combined form.
+                  const missingPrincipal = shouldShowMissingPrincipalDiagnosisIndicator(canEditClinicalData, data.diagnoses, data.services);
+                  const missingField = shouldShowRipsFieldGapIndicator(canEditClinicalData, data.services);
+                  const hasGap = missingPrincipal || missingField;
                   return (
                     <>
                       {principal && (
@@ -280,7 +306,11 @@ export function AtencionesTab({
                           Información RIPS incompleta
                           <button
                             type="button"
-                            onClick={() => setCorrectingEncounterId(encounter.id)}
+                            onClick={() =>
+                              missingPrincipal
+                                ? setCorrectingPrincipalDiagnosisEncounterId(encounter.id)
+                                : setCorrectingEncounterId(encounter.id)
+                            }
                             className="font-medium text-primary hover:underline"
                           >
                             Completar
@@ -303,6 +333,15 @@ export function AtencionesTab({
           causaMotivoOptions={causaMotivoOptions}
           onClose={() => setCorrectingEncounterId(null)}
           onFieldCorrected={(serviceId, field, value) => handleFieldCorrected(correctingEncounterId, serviceId, field, value)}
+        />
+      )}
+
+      {correctingPrincipalDiagnosisEncounterId && (
+        <CompleteEncounterPrincipalDiagnosisModal
+          encounterId={correctingPrincipalDiagnosisEncounterId}
+          diagnosisTypeOptions={diagnosisTypeOptions}
+          onClose={() => setCorrectingPrincipalDiagnosisEncounterId(null)}
+          onCorrected={(added) => handlePrincipalDiagnosisCorrected(correctingPrincipalDiagnosisEncounterId, added)}
         />
       )}
     </div>

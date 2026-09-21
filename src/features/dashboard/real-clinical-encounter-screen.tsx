@@ -35,16 +35,13 @@ import type {
 } from "@/features/patients/clinical-encounters-data";
 import { toOdontogramData, type ToothFindingRecord } from "@/features/patients/tooth-findings-data";
 import { CodeSearchAutocomplete } from "@/features/rips/code-search-autocomplete";
-import {
-  browseDiagnosesAction,
-  fetchExamenOdontologicoAction,
-  fetchFrequentDiagnosesAction,
-  findCupsByCodeAction,
-  findDiagnosisByCodeAction,
-  searchCupsAction,
-  searchDiagnosesAction,
-} from "@/features/rips/actions";
+import { findCupsByCodeAction, findDiagnosisByCodeAction, searchCupsAction, searchDiagnosesAction } from "@/features/rips/actions";
 import type { ReferenceValue } from "@/features/rips/catalog-data";
+import {
+  DIAGNOSIS_BROWSE_SECTIONS,
+  DIAGNOSIS_INITIAL_SUGGESTIONS,
+  searchDentalDiagnosesAction,
+} from "@/features/rips/diagnosis-search-config";
 import {
   getAvailableClinicalConcepts,
   resolveClinicalService,
@@ -151,80 +148,6 @@ type ServiceRow = {
 };
 
 const HISTORY_LIMIT = 3;
-
-// RIPS #A3 UX gap — "Diagnóstico principal"/"Diagnósticos relacionados"'s
-// own CIE-10 search shows nothing until 2+ characters are typed, with no
-// way to discover a code without already knowing it. This is the one,
-// narrow, tenant-scoped exception (CodeSearchAutocomplete's own
-// `initialSuggestions` prop, opt-in — never used by the CUPS
-// autocomplete below, which is unaffected): diagnoses THIS clinic has
-// actually used, resolved entirely server-side by
-// fetchFrequentDiagnosesAction() (clinicId comes from the caller's own
-// session, never a parameter here). A "no-history"/"unauthorized" result
-// both fall back to the same empty list — the component's own emptyHint
-// covers "nothing to show yet", never an error state.
-const DIAGNOSIS_INITIAL_SUGGESTIONS = {
-  label: "Usados en esta clínica",
-  emptyHint: "Busca por código o descripción para consultar el catálogo CIE-10.",
-  fetch: async () => {
-    const result = await fetchFrequentDiagnosesAction();
-    return result.status === "ok" ? result.diagnoses : [];
-  },
-};
-
-// Prompt Ninja "selector CIE-10 Frecuentes → Odontología → Todos" — the
-// next step of the same discoverability gap DIAGNOSIS_INITIAL_SUGGESTIONS
-// above addresses: a brand-new clinic with zero Frecuentes used to hit a
-// real dead end (emptyHint text, nothing clickable). These two sections
-// are always available (never gated on Frecuentes existing) and never
-// hide the full catalog — Odontología narrows to the official WHO CIE-10
-// K00–K14 block ONLY as a navigation convenience (see
-// browseDiagnosesAction's own comment on why that range is real/official
-// but incomplete for dentistry); Todos always stays reachable underneath
-// it. Must match browseDiagnosesAction's own DIAGNOSIS_BROWSE_PAGE_SIZE.
-const DIAGNOSIS_BROWSE_PAGE_SIZE = 50;
-// Prompt Ninja "priorizar Z012 + K00–K14 en selector odontológico" —
-// `pinned` puts "Examen odontológico" (Z012) above the K00–K14 browse,
-// resolved from the real catalog (fetchExamenOdontologicoAction →
-// findDiagnosisByCode), never fabricated inline; empty result (Z012 not
-// found active) simply renders nothing for this section, same as any
-// other empty browse page. This checkpoint's own priority universe is
-// deliberately just {Z012} ∪ K00–K14 — NOT the broader ~135-code Bogotá
-// SDS list from that separate audit, which would need its own versioned
-// classification table before being incorporated here.
-const DIAGNOSIS_BROWSE_SECTIONS = {
-  pinned: {
-    label: "Examen odontológico",
-    fetch: fetchExamenOdontologicoAction,
-  },
-  narrowed: {
-    label: "Odontología",
-    hint: "CIE-10 de cavidad oral, dientes, estructuras de soporte, glándulas salivales y maxilares.",
-    pageSize: DIAGNOSIS_BROWSE_PAGE_SIZE,
-    fetchPage: (offset: number) => browseDiagnosesAction({ offset, dentalOnly: true }),
-  },
-  all: {
-    label: "Todos los diagnósticos",
-    pageSize: DIAGNOSIS_BROWSE_PAGE_SIZE,
-    fetchPage: (offset: number) => browseDiagnosesAction({ offset, dentalOnly: false }),
-  },
-};
-
-// Prompt Ninja "búsqueda CIE-10 dental-first con expansión explícita",
-// then "priorizar Z012 + K00–K14 en selector odontológico" — typed
-// search's own dental-first pass: the SAME searchDiagnosesAction every
-// general search already uses, with dentalOnly:true AND
-// includeExamenOdontologico:true so typing e.g. "examen" can surface
-// Z012 inside "Resultados de odontología" itself (never a separate
-// pinned section for typed search — that's an empty-focus-only concept,
-// see DIAGNOSIS_BROWSE_SECTIONS.pinned above). `search` (plain
-// searchDiagnosesAction, general) stays the one the "Buscar también en
-// todos los diagnósticos" click falls back to — this is what keeps a
-// noisy term like "ajuste" from ever reaching the artificial-limb/eye
-// fitting codes until the professional explicitly asks to widen.
-function searchDentalDiagnosesAction(query: string) {
-  return searchDiagnosesAction(query, { dentalOnly: true, includeExamenOdontologico: true });
-}
 
 export function RealClinicalEncounterScreen({
   appointment,
