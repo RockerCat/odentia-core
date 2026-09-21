@@ -45,6 +45,7 @@ import {
 import {
   getAvailableClinicalConcepts,
   resolveClinicalService,
+  resolveClinicSpecialtyRipsService,
   type ClinicalConceptOption,
   type ClinicalConceptVariantOption,
   type ClinicalCupsMappingOption,
@@ -355,7 +356,20 @@ export function RealClinicalEncounterScreen({
     setDiagnoses((prev) => prev.filter((d) => d.id !== id));
   };
 
+  // Manual CUPS: nunca tiene un concepto clínico ni requiere un
+  // clinical_cups_mapping — pero el Servicio RIPS de la clínica sigue
+  // dependiendo solo de la especialidad del profesional, exactamente
+  // igual que en addConceptService. Reutiliza la MISMA resolución pura
+  // (resolveClinicSpecialtyRipsService) para que Manual CUPS nunca quede
+  // estructuralmente en desventaja frente al flujo de conceptos — null
+  // cuando la clínica todavía no ha confirmado configuración para esa
+  // especialidad, nunca specialty_rips_service_defaults ni un CUPS-based
+  // guess.
   const addService = () => {
+    const ripsService = resolveClinicSpecialtyRipsService({
+      specialtyId: professionalSpecialtyId,
+      clinicServices: clinicSpecialtyRipsServices,
+    });
     nextServiceId.current += 1;
     setServices((prev) => [
       ...prev,
@@ -371,8 +385,12 @@ export function RealClinicalEncounterScreen({
         // Intramural" se resuelve automáticamente, nunca una elección
         // manual del odontólogo (ver Detalles RIPS, que ya no la ofrece).
         modalidadCode: "01",
-        grupoServiciosCode: "",
-        codServicioCode: "",
+        // Prellenado desde la configuración RIPS CONFIRMADA de la clínica
+        // cuando existe (misma resolución que addConceptService) — nunca
+        // desde specialty_rips_service_defaults. Sigue siendo editable en
+        // "Detalles RIPS" caso a caso.
+        grupoServiciosCode: ripsService?.grupoServiciosCode ?? "",
+        codServicioCode: ripsService?.codServicioCode ?? "",
         finalidadCode: "",
         causaMotivoCode: "",
         conceptoRecaudoCode: "",

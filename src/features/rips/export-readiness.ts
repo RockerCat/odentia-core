@@ -83,10 +83,11 @@ export type EncounterReadinessService = GeneratorService & {
   professionalHasDocumentIdentity: boolean;
   // RIPS #A3 — set only for a service captured via the "¿Qué realizaste?"
   // clinical concept picker (clinical-service-resolution.ts); null for any
-  // service added via the manual CUPS search, including every row that
-  // predates this phase — those never trigger the two checks below, which
-  // is what keeps existing finalized encounters' readiness unchanged (see
-  // this task's own Compatibilidad section).
+  // service added via the manual CUPS search. Only gates
+  // CLINICAL_SERVICE_MAPPING_UNRESOLVED below (a concept-picker-only
+  // failure mode) — RIPS_SERVICE_CONFIGURATION_MISSING no longer depends
+  // on it (see that check's own comment: closing the Manual CUPS gap made
+  // both paths share the same Grupo/Servicio resolution).
   clinicalConceptId: string | null;
   mappingStatus: "resolved" | "unresolved" | null;
 };
@@ -137,13 +138,10 @@ export function getEncounterRipsReadiness(input: EncounterReadinessInput): RipsR
     // this task's own instruction): a concept the picker couldn't map to
     // any active CUPS ("unresolved" — a future-phase state; this phase's
     // UI never lets it happen, but readiness still recognizes it) is a
-    // DIFFERENT problem from a resolved concept whose specialty has no
-    // Servicio RIPS confirmed yet by the clinic. Both are scoped to
-    // "service" (not "clinic"): fixing LOCATION_AMBIGUOUS-style clinic
-    // config doesn't fix a specific service's missing mapping. Neither
-    // check ever fires for a service with clinicalConceptId === null (a
-    // manual-CUPS row, including every row that predates this phase) —
-    // see EncounterReadinessService's own comment.
+    // DIFFERENT problem from a service whose specialty has no Servicio
+    // RIPS confirmed yet by the clinic. Both are scoped to "service" (not
+    // "clinic"): fixing LOCATION_AMBIGUOUS-style clinic config doesn't fix
+    // a specific service's missing mapping.
     if (service.mappingStatus === "unresolved") {
       errors.push({
         ...serviceBase,
@@ -154,7 +152,17 @@ export function getEncounterRipsReadiness(input: EncounterReadinessInput): RipsR
       });
     }
 
-    if (service.clinicalConceptId && !service.codServicioCode) {
+    // RIPS closing Manual CUPS gap (2026-09-21): both service-creation
+    // paths (the "¿Qué realizaste?" concept picker AND manual CUPS
+    // search) now resolve Grupo/Servicio the exact same way —
+    // resolveClinicSpecialtyRipsService, keyed only by the attending
+    // professional's specialty (see real-clinical-encounter-screen.tsx's
+    // addService/addConceptService) — so a still-missing codServicioCode
+    // means the exact same root cause regardless of clinicalConceptId:
+    // the clinic hasn't confirmed a Servicio RIPS for that specialty yet.
+    // No longer gated on `service.clinicalConceptId` — that gate is what
+    // let a Manual CUPS row structurally bypass this check before.
+    if (!service.codServicioCode) {
       errors.push({
         ...serviceBase,
         code: "RIPS_SERVICE_CONFIGURATION_MISSING",

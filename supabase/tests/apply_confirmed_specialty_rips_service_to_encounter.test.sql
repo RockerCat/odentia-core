@@ -1,7 +1,9 @@
 -- Odentia Core — SQL-layer regression test for "RIPS Fase A4B" —
 -- apply_confirmed_specialty_rips_service_to_encounter() and its audit
 -- table encounter_service_rips_corrections
--- (20260917110000_create_apply_confirmed_specialty_rips_service_rpc.sql).
+-- (20260917110000_create_apply_confirmed_specialty_rips_service_rpc.sql,
+-- widened 20260921130000 to also correct a manual-CUPS row — see that
+-- migration's own header).
 --
 -- Same conventions as the other supabase/tests/*.test.sql files in this
 -- repo: a plain psql script (no pgTAP), meant to run against a local
@@ -41,7 +43,7 @@ declare
   v_specialty_2 uuid; -- only a GLOBAL default exists, never confirmed — must never be used
   v_specialty_3 uuid; -- confirmed, but the confirmed Servicio later goes inactive
   v_patient_1 uuid;
-  v_encounter_1 uuid; -- finalized, 2 eligible services + 1 already-configured + 1 manual-CUPS
+  v_encounter_1 uuid; -- finalized, 3 eligible services (2 concept-based + 1 manual-CUPS) + 1 already-configured
   v_encounter_2 uuid; -- NOT finalized
   v_encounter_3 uuid; -- finalized, specialty_2 (no confirmed config, only a global default)
   v_encounter_4 uuid; -- finalized, specialty_3 (confirmed config whose Servicio is now inactive)
@@ -165,9 +167,11 @@ begin
   insert into public.patient_clinical_encounters (clinic_id, patient_id, finalized_at)
   values (v_clinic_a, v_patient_1, now()) returning id into v_encounter_6;
 
-  -- encounter_1: two eligible services (same encounter -> same
-  -- professional -> same specialty, per the no-co-atención model), one
-  -- already-configured service, one manual-CUPS (no clinical concept).
+  -- encounter_1: two concept-based eligible services + one manual-CUPS
+  -- eligible service (same encounter -> same professional -> same
+  -- specialty, per the no-co-atención model — all three now share the
+  -- same eligibility since the 20260921130000 widening), plus one
+  -- already-configured service that must never be touched.
   insert into public.encounter_services (
     encounter_id, clinic_id, professional_profile_id, cups_code, rips_service_type,
     clinical_concept_id, clinical_concept_name_snapshot, mapping_status
@@ -440,54 +444,64 @@ begin
   raise notice 'Case OK: a confirmed-but-now-inactive Servicio is re-validated and rejected, never applied blindly';
 
   -- ------------------------------------------------------------
-  -- Case: the real success path — clinic_admin corrects BOTH eligible
-  -- services of encounter_1 in one call, leaves the already-configured
-  -- and manual-CUPS rows untouched, writes one audit row per corrected
-  -- service, and never touches clinical columns.
+  -- Case: the real success path — clinic_admin corrects ALL THREE
+  -- eligible services of encounter_1 in one call (2026-09-21 widening:
+  -- the manual-CUPS row is now eligible too, on equal footing with the
+  -- two concept-based ones), leaves the already-configured row untouched,
+  -- writes one audit row per corrected service, and never touches
+  -- clinical columns.
   -- ------------------------------------------------------------
   select * into v_row from public.apply_confirmed_specialty_rips_service_to_encounter(v_encounter_1);
-  if v_row.updated_count <> 2 then
-    raise exception 'Case FAILED (success): expected updated_count = 2, got %', v_row.updated_count;
+  if v_row.updated_count <> 3 then
+    raise exception 'Case FAILED (success): expected updated_count = 3, got %', v_row.updated_count;
   end if;
-  if not (v_service_1 = any(v_row.updated_service_ids) and v_service_2 = any(v_row.updated_service_ids)) then
-    raise exception 'Case FAILED (success): updated_service_ids must include both eligible services, got %', v_row.updated_service_ids;
+  if not (v_service_1 = any(v_row.updated_service_ids) and v_service_2 = any(v_row.updated_service_ids)
+          and v_service_manual_cups = any(v_row.updated_service_ids)) then
+    raise exception 'Case FAILED (success): updated_service_ids must include all three eligible services, got %', v_row.updated_service_ids;
   end if;
 
   perform 1 from public.encounter_services
-  where id in (v_service_1, v_service_2)
+  where id in (v_service_1, v_service_2, v_service_manual_cups)
     and grupo_servicios_code = 'QA-GRP-A4B'
-    and cod_servicio_code = 'QA-SVC-A4B';
-  if not found then raise exception 'Case FAILED (success): both services must now carry the clinic''s confirmed Grupo/Servicio'; end if;
+    and cod_servicio_code = 'QA-SVC-A4B'
+  having count(*) = 3;
+  if not found then raise exception 'Case FAILED (success): all three services, including the manual-CUPS one, must now carry the clinic''s confirmed Grupo/Servicio'; end if;
 
   perform 1 from public.encounter_services
   where id = v_service_already_configured
     and grupo_servicios_code = 'PRE-EXISTING-GRP' and cod_servicio_code = 'PRE-EXISTING-SVC';
   if not found then raise exception 'Case FAILED (success): an already-configured service must never be overwritten'; end if;
 
-  perform 1 from public.encounter_services where id = v_service_manual_cups and cod_servicio_code is null and grupo_servicios_code is null;
-  if not found then raise exception 'Case FAILED (success): a manual-CUPS (no clinical_concept_id) row must never be touched'; end if;
-
-  -- Clinical columns intact.
+  -- Clinical columns intact — including the manual-CUPS row's own null
+  -- clinical_concept_id, which the correction must never fabricate.
   perform 1 from public.encounter_services
   where id = v_service_1 and cups_code = '890222' and rips_service_type = 'consultation'
     and clinical_concept_id = v_concept_id and clinical_concept_name_snapshot = 'QA Concepto A4B'
     and professional_profile_id = v_professional_a;
   if not found then raise exception 'Case FAILED (success): service_1''s clinical columns must remain exactly as they were'; end if;
 
-  select count(*) into v_count from public.encounter_service_rips_corrections where encounter_service_id in (v_service_1, v_service_2);
-  if v_count <> 2 then raise exception 'Case FAILED (success): expected exactly 2 audit rows, got %', v_count; end if;
+  perform 1 from public.encounter_services
+  where id = v_service_manual_cups and cups_code = '890201' and rips_service_type = 'consultation'
+    and clinical_concept_id is null and clinical_concept_name_snapshot is null
+    and professional_profile_id = v_professional_a;
+  if not found then raise exception 'Case FAILED (success): the manual-CUPS service''s clinical columns (including its null clinical_concept_id) must remain exactly as they were'; end if;
+
+  select count(*) into v_count
+  from public.encounter_service_rips_corrections
+  where encounter_service_id in (v_service_1, v_service_2, v_service_manual_cups);
+  if v_count <> 3 then raise exception 'Case FAILED (success): expected exactly 3 audit rows, got %', v_count; end if;
 
   perform 1 from public.encounter_service_rips_corrections
-  where encounter_service_id in (v_service_1, v_service_2)
+  where encounter_service_id in (v_service_1, v_service_2, v_service_manual_cups)
     and clinic_id = v_clinic_a
     and previous_grupo_servicios_code is null and previous_cod_servicio_code is null
     and new_grupo_servicios_code = 'QA-GRP-A4B' and new_cod_servicio_code = 'QA-SVC-A4B'
     and corrected_by = v_admin_a_user
     and corrected_at is not null
-  having count(*) = 2;
+  having count(*) = 3;
   if not found then raise exception 'Case FAILED (success): audit rows must record previous=null, new=confirmed values, correct actor/timestamp'; end if;
 
-  raise notice 'Case OK: clinic_admin corrects both eligible services, leaves everything else untouched, writes 2 audit rows with correct actor/timestamp';
+  raise notice 'Case OK: clinic_admin corrects all three eligible services (including the manual-CUPS one), leaves the already-configured row untouched, writes 3 audit rows with correct actor/timestamp';
 
   -- ------------------------------------------------------------
   -- Case: second run on the same encounter is idempotent — nothing left
@@ -496,8 +510,10 @@ begin
   select * into v_row from public.apply_confirmed_specialty_rips_service_to_encounter(v_encounter_1);
   if v_row.updated_count <> 0 then raise exception 'Case FAILED (idempotent): expected updated_count = 0 on a second run, got %', v_row.updated_count; end if;
 
-  select count(*) into v_count from public.encounter_service_rips_corrections where encounter_service_id in (v_service_1, v_service_2);
-  if v_count <> 2 then raise exception 'Case FAILED (idempotent): a second run must never create duplicate audit rows, got % total', v_count; end if;
+  select count(*) into v_count
+  from public.encounter_service_rips_corrections
+  where encounter_service_id in (v_service_1, v_service_2, v_service_manual_cups);
+  if v_count <> 3 then raise exception 'Case FAILED (idempotent): a second run must never create duplicate audit rows, got % total', v_count; end if;
   raise notice 'Case OK: a second run on an already-corrected encounter is a harmless no-op, no duplicate audit rows';
 
   raise notice 'ALL CASES PASSED';

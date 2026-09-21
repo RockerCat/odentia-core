@@ -66,10 +66,10 @@ export async function fetchEncounterRipsServiceGapContext(
       .eq("encounter_id", encounterId)
       .eq("clinic_id", clinicId)
       // Same eligibility shape as RIPS_SERVICE_CONFIGURATION_MISSING/the
-      // RPC's own selection — a manual-CUPS row (clinical_concept_id
-      // null) or an already-configured row is never part of this
-      // correction's own context.
-      .not("clinical_concept_id", "is", null)
+      // RPC's own selection (widened 2026-09-21 to also cover manual-CUPS
+      // rows, which now resolve Grupo/Servicio the same way a
+      // concept-based row does) — only an already-configured row is
+      // excluded.
       .is("cod_servicio_code", null),
   ]);
   if (servicesResult.error || !servicesResult.data) return null;

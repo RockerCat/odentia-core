@@ -168,21 +168,19 @@ function validateConsultation(v: Validator, path: string, raw: unknown) {
   // grupoServicios (C06) / codServicio (C07) — DT1 v003 ALSO declares
   // both with a bare fixed Tamaño ("2" / "3, 4" respectively — the
   // latter additionally typed N/numeric there, never validated as such
-  // here), which by the same §1.5 rule would mean neither admits null
-  // either. Deliberately NOT tightened in this pass: unlike Modalidad
-  // above, a manual-CUPS service (real-clinical-encounter-screen.tsx's
-  // own "Detalles RIPS" accordion) can be saved and finalized TODAY with
-  // both fields genuinely blank — there is no readiness check covering
-  // that gap (RIPS_SERVICE_CONFIGURATION_MISSING only ever fires for a
-  // concept-based service, clinicalConceptId is not null) — tightening
-  // schema here first would turn an already-working manual-CUPS export
-  // into a hard failure with no prior readiness warning, for NEW
-  // encounters too, not just historical ones. Flagged as a real,
-  // evidenced TOO PERMISSIVE finding, deliberately left as-is pending a
-  // dedicated readiness+correction checkpoint (same shape as the
-  // Finalidad/Causa/principal-diagnosis work, not built here).
-  v.nullableString(`${path}.grupoServicios`, c.grupoServicios, { exactLength: 2 });
-  v.nullableString(`${path}.codServicio`, c.codServicio, { minLength: 1, maxLength: 4 });
+  // here), which by the same §1.5 rule means neither admits null.
+  // RESOLVED (2026-09-21, closing the Manual CUPS gap): both
+  // service-creation paths (concept picker AND manual CUPS,
+  // real-clinical-encounter-screen.tsx's addService/addConceptService)
+  // now resolve Grupo/Servicio the SAME way — resolveClinicSpecialtyRipsService,
+  // keyed only by the attending professional's specialty — and
+  // export-readiness.ts's RIPS_SERVICE_CONFIGURATION_MISSING now fires
+  // for ANY service still missing codServicioCode, not just a
+  // concept-based one. A historical encounter finalized before this fix
+  // (or any encounter whose specialty the clinic still hasn't confirmed)
+  // is readiness-blocked before it ever reaches this schema check.
+  v.requiredString(`${path}.grupoServicios`, c.grupoServicios, { exactLength: 2 });
+  v.requiredString(`${path}.codServicio`, c.codServicio, { minLength: 1, maxLength: 4 });
   // RIPS #5B — DT1 v003 declares both C08/C09 with a bare fixed Tamaño
   // "2" (never "0-2"), which per §1.5 admits no null — see
   // export-readiness.ts's own SERVICE_FINALIDAD_MISSING/
@@ -227,10 +225,15 @@ function validateProcedure(v: Validator, path: string, raw: unknown) {
   v.mustBeNull(`${path}.numAutorizacion`, p.numAutorizacion);
   v.requiredString(`${path}.codProcedimiento`, p.codProcedimiento, { exactLength: 6 });
   // P06 viaIngresoServicioSalud — DT1 v003 declares a bare fixed Tamaño
-  // "2". Deliberately NOT tightened here: same manual-CUPS "Detalles
-  // RIPS" gap as grupoServicios/codServicio below — see this file's own
-  // Consulta-side comment on why (no readiness coverage for that path
-  // today). Flagged, not fixed.
+  // "2". Still deliberately NOT tightened: unlike grupoServicios/
+  // codServicio below (RESOLVED, see that comment), there is no existing
+  // rule anywhere in this codebase — concept-based or manual CUPS — that
+  // derives this value automatically; it is a genuine per-visit clinical/
+  // administrative decision ("¿por qué vía ingresó el paciente?") with no
+  // safe universal default, and the concept flow itself leaves it blank
+  // by default too (only ever set through the manual "Detalles RIPS"
+  // <select>). Reported as a real, concrete pending item — see
+  // PROJECT_STATUS.md — rather than inventing a default.
   v.nullableString(`${path}.viaIngresoServicioSalud`, p.viaIngresoServicioSalud, { exactLength: 2 });
   // P07 modalidadGrupoServicioTecSal — same §1.5 fixed-size rule, same
   // "always auto-set to 01, no manual selector, historical-only null
@@ -238,12 +241,13 @@ function validateProcedure(v: Validator, path: string, raw: unknown) {
   // Readiness-layer half: export-readiness.ts's SERVICE_MODALIDAD_MISSING
   // (applies to both consultation and procedure).
   v.requiredString(`${path}.modalidadGrupoServicioTecSal`, p.modalidadGrupoServicioTecSal, { exactLength: 2 });
-  // P08 grupoServicios / P09 codServicio — same manual-CUPS "Detalles
-  // RIPS" gap as the Consulta side (see that file's own comment) —
-  // deliberately left nullable, flagged as a pending finding, not fixed
-  // in this pass.
-  v.nullableString(`${path}.grupoServicios`, p.grupoServicios, { exactLength: 2 });
-  v.nullableString(`${path}.codServicio`, p.codServicio, { minLength: 1, maxLength: 4 });
+  // P08 grupoServicios / P09 codServicio — RESOLVED, same fix and same
+  // reasoning as the Consulta side (see that file's own comment): both
+  // service-creation paths now resolve these the same way, and
+  // RIPS_SERVICE_CONFIGURATION_MISSING now covers a manual-CUPS
+  // procedimiento too.
+  v.requiredString(`${path}.grupoServicios`, p.grupoServicios, { exactLength: 2 });
+  v.requiredString(`${path}.codServicio`, p.codServicio, { minLength: 1, maxLength: 4 });
   // RIPS #5B — P10, same bare fixed Tamaño "2" rule as C08 above.
   v.requiredString(`${path}.finalidadTecnologiaSalud`, p.finalidadTecnologiaSalud, { exactLength: 2 });
   v.requiredString(`${path}.tipoDocumentoIdentificacion`, p.tipoDocumentoIdentificacion, { exactLength: 2 });

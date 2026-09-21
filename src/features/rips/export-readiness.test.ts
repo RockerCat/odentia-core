@@ -20,8 +20,8 @@ function baseService(overrides: Partial<EncounterReadinessInput["services"][numb
     serviceValue: 50000,
     viaIngresoCode: null,
     modalidadCode: "01",
-    grupoServiciosCode: null,
-    codServicioCode: null,
+    grupoServiciosCode: "01",
+    codServicioCode: "334",
     finalidadCode: "11",
     causaMotivoCode: "21",
     conceptoRecaudoCode: null,
@@ -177,11 +177,12 @@ describe("getEncounterRipsReadiness", () => {
     expect(result.errors.map((e) => e.code)).toContain("ENCOUNTER_INCAPACITY_MISSING");
   });
 
-  // RIPS #A3 — CLINICAL_SERVICE_MAPPING_UNRESOLVED vs
-  // RIPS_SERVICE_CONFIGURATION_MISSING must stay two distinct,
-  // diagnosable causes, and neither may fire for a service that predates
-  // this phase (clinicalConceptId null) — see this task's own
-  // Compatibilidad section.
+  // RIPS #A3 — CLINICAL_SERVICE_MAPPING_UNRESOLVED (concept-picker-only
+  // failure mode) vs RIPS_SERVICE_CONFIGURATION_MISSING (2026-09-21:
+  // widened to close the Manual CUPS gap — both service-creation paths
+  // now resolve Grupo/Servicio the same way, so a missing codServicioCode
+  // means the same thing regardless of clinicalConceptId) must stay two
+  // distinct, diagnosable causes.
   it("flags CLINICAL_SERVICE_MAPPING_UNRESOLVED when a concept-based service has no resolved CUPS mapping", () => {
     const result = getEncounterRipsReadiness(
       baseEncounter({ services: [baseService({ clinicalConceptId: "concept-1", mappingStatus: "unresolved" })] }),
@@ -211,13 +212,27 @@ describe("getEncounterRipsReadiness", () => {
     expect(codes).not.toContain("CLINICAL_SERVICE_MAPPING_UNRESOLVED");
   });
 
-  it("never flags a legacy, manual-CUPS service (clinicalConceptId null) for either new check, even without a Servicio RIPS", () => {
+  // RIPS closing Manual CUPS gap (2026-09-21) — inverts the prior
+  // checkpoint's own "never flags a legacy manual-CUPS service" test:
+  // real-clinical-encounter-screen.tsx's addService() now resolves
+  // Grupo/Servicio via the exact same resolveClinicSpecialtyRipsService
+  // as the concept picker, so a manual-CUPS service (clinicalConceptId
+  // null) missing codServicioCode is the same unconfirmed-specialty gap,
+  // not a different, permanently-excused case.
+  it("flags RIPS_SERVICE_CONFIGURATION_MISSING for a manual-CUPS service too, once it no longer has a structural excuse to skip this check", () => {
     const result = getEncounterRipsReadiness(
       baseEncounter({ services: [baseService({ clinicalConceptId: null, mappingStatus: null, codServicioCode: null })] }),
     );
     const codes = result.errors.map((e) => e.code);
-    expect(codes).not.toContain("RIPS_SERVICE_CONFIGURATION_MISSING");
+    expect(codes).toContain("RIPS_SERVICE_CONFIGURATION_MISSING");
     expect(codes).not.toContain("CLINICAL_SERVICE_MAPPING_UNRESOLVED");
+  });
+
+  it("is ready (regarding this check) for a manual-CUPS service once it has a confirmed codServicioCode", () => {
+    const result = getEncounterRipsReadiness(
+      baseEncounter({ services: [baseService({ clinicalConceptId: null, mappingStatus: null, codServicioCode: "334" })] }),
+    );
+    expect(result.errors.map((e) => e.code)).not.toContain("RIPS_SERVICE_CONFIGURATION_MISSING");
   });
 
   it("resolves a service-scoped principal diagnosis, not just the encounter-wide one", () => {

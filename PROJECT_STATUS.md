@@ -2715,27 +2715,13 @@ re-verified in this update.
   - **`CORRECTLY NULLABLE`, unchanged — `codDiagnosticoRelacionado*`**:
     DT1 Tamaño carries an explicit "0," option — genuinely optional,
     confirmed, no change.
-  - **`TOO PERMISSIVE` in principle but deliberately NOT fixed yet —
-    `grupoServiciosCode`/`codServicioCode`/`viaIngresoServicioSalud`
-    (manual-CUPS gap)**: these three are only ever populated when a
-    service is created through the "¿Qué realizaste?" clinical-concept
-    flow; a manually-picked CUPS row (bypassing that flow) is created
-    with all three empty by design and is only ever completable
-    afterward through the "Detalles RIPS" accordion
-    (`s.detailsOpen`) — nothing currently requires filling them before
-    finalizing an atención or before RIPS readiness, because the existing
-    `RIPS_SERVICE_CONFIGURATION_MISSING` readiness check only fires when
-    `clinicalConceptId` is truthy, so it structurally never catches a
-    manual-CUPS row. Tightening `export-schema.ts` for these three right
-    now would break this live, intentional escape valve for brand-new
-    encounters, not just old ones. **Concrete pending item, not built in
-    this checkpoint**: (1) a new readiness check that also fires for a
-    manual-CUPS row missing these fields, and (2) — only if historical
-    manual-CUPS rows already exist with these fields empty — a
-    historical-correction mechanism in the same add-only/finalized-only/
-    clinically-authorized shape as the existing Finalidad/Causa and
-    principal-diagnosis corrections, never built automatically inside a
-    read-only-scoped checkpoint like this one.
+  - **`TOO PERMISSIVE` at the time, since RESOLVED for two of the three
+    fields (2026-09-21) — `grupoServiciosCode`/`codServicioCode`/
+    `viaIngresoServicioSalud` (manual-CUPS gap)**: see the dedicated
+    "Manual CUPS Grupo/Servicio RIPS gap" entry below for the closure —
+    `viaIngresoServicioSalud` alone remains a genuine, deliberately
+    unresolved pending item (no safe derivation exists anywhere in this
+    codebase for it, concept-based or manual).
   - QA: `npx tsc --noEmit` clean; `npx vitest run src/features/rips
     src/features/dashboard src/features/patients` — 415/415 passed
     (fixtures updated: `readyPatient()` gained `countryOfOriginCode`,
@@ -2744,11 +2730,88 @@ re-verified in this update.
     changed files clean; `git diff --check` clean. No migration — nothing
     in this checkpoint touched the database, only JS validation/readiness
     logic.
+- **RESOLVED (2026-09-21, partial) — Manual CUPS Grupo/Servicio RIPS gap
+  closed; Vía Ingreso remains a real, documented pending item.** Root
+  cause (confirmed by direct code inspection, not re-derived from DT1):
+  `addService()` (manual CUPS, `real-clinical-encounter-screen.tsx`)
+  never called any Grupo/Servicio resolution at all — it left
+  `grupoServiciosCode`/`codServicioCode` as empty strings unconditionally,
+  unlike `addConceptService()`, which already resolved them via
+  `resolveClinicSpecialtyRipsService()` (`clinical-service-resolution.ts`,
+  pure, keyed ONLY by the attending professional's specialty — never by
+  CUPS code, never by `clinical_cups_mappings`, never
+  `specialty_rips_service_defaults`).
+  - **Fix**: `addService()` now calls that exact same pure function on
+    creation — Manual CUPS and the concept picker share one resolution
+    path end to end, never two divergent ones. When the clinic hasn't
+    confirmed a Servicio RIPS for that specialty yet, both paths
+    correctly leave the fields empty (never a global-default fallback,
+    never invented) — same intentional "administrative gap never blocks
+    clinical truth" precedent `resolveClinicSpecialtyRipsService()`'s own
+    comment already documents.
+  - **Readiness widened**: `export-readiness.ts`'s
+    `RIPS_SERVICE_CONFIGURATION_MISSING` no longer requires
+    `clinicalConceptId` truthy — it now fires for ANY service (concept-
+    based or manual) still missing `codServicioCode`, since both paths
+    now fail for the exact same reason (clinic hasn't confirmed the
+    specialty's Servicio RIPS). A historical manual-CUPS row missing these
+    fields is now readiness-blocked before export, same as a historical
+    concept-based one always was.
+  - **A4B correction widened to match**: `apply_confirmed_specialty_rips_service_to_encounter()`
+    (migration `20260921130000`, applied to remote, `supabase migration
+    list` confirmed local = remote) dropped its own
+    `clinical_concept_id is not null` eligibility condition — a
+    historical manual-CUPS row on an already-finalized encounter can now
+    be corrected the exact same way a concept-based one always could,
+    once the clinic later confirms the specialty. Every other rule
+    (fail-closed atomicity, Case A/B/C resolution, audit trail,
+    `clinic_admin`-only authorization) is unchanged verbatim.
+    `encounter-rips-service-gap-data.ts` (the "Completar Servicio RIPS"
+    modal's own read) had the identical `.not("clinical_concept_id", "is",
+    null)` filter, widened the same way.
+  - **`export-schema.ts` tightened**: `grupoServicios`/`codServicio`
+    (Consulta C06/C07, Procedimiento P08/P09) — `nullable → required` on
+    both. Safe now that both write paths share one resolution and
+    readiness covers both paths equally; a genuinely-missing value fails
+    closed at readiness, never reaches this schema check for a NEW
+    encounter.
+  - **`viaIngresoServicioSalud` (P06) stays nullable — genuine pending
+    item, not fixed here.** Investigated per this checkpoint's own
+    Section 3: no rule anywhere in this codebase — concept-based or
+    manual — derives this value automatically; even `addConceptService()`
+    leaves it blank by default (`viaIngresoCode: ""`), only ever set
+    through the manual "Detalles RIPS" `<select>`. Unlike Modalidad
+    (safely defaultable to "01" because Odentia only supports intramural
+    care — a structural fact, not a per-visit decision), "¿por qué vía
+    ingresó el paciente?" is a genuine per-visit clinical/administrative
+    decision with no safe universal default. Per this checkpoint's own
+    instruction, this was NOT invented — `export-schema.ts`/
+    `export-readiness.ts`/finalize readiness are all unchanged for this
+    one field. **The one concrete blocker left before "ready for first
+    official MUV/SISPRO validation"**: decide, with the regulatory/
+    clinical stakeholder, either (a) a real, defensible default for
+    Odentia's own care model, or (b) a UI requirement to pick it before
+    finalizing — then implement readiness + schema together, same
+    two-layer pattern as every other field closed so far.
+  - QA: `npx tsc --noEmit` clean; `npx vitest run src/features/rips
+    src/features/dashboard src/features/patients` — 416/416 passed
+    (`export-readiness.test.ts` fixtures updated: `baseService()`'s
+    default `grupoServiciosCode`/`codServicioCode` changed from `null` to
+    non-null values since `null` now unconditionally fails
+    `RIPS_SERVICE_CONFIGURATION_MISSING`; the old "never flags a legacy
+    manual-CUPS service" test inverted to assert the opposite, matching
+    the new behavior); `eslint` clean on all changed files; `git diff
+    --check` clean. SQL regression test
+    (`supabase/tests/apply_confirmed_specialty_rips_service_to_encounter.test.sql`)
+    updated so its own manual-CUPS fixture service is now asserted
+    CORRECTED (previously asserted untouched) — **NOT RUN locally**, no
+    Postgres/Docker in this dev environment, same caveat as every other
+    SQL test in this file. Migration applied and confirmed in sync
+    regardless.
 - **Explicitly not built yet (future phase)**: MUV integration, CUV
   generation/inference, ProcesoId auto-capture, submission states beyond
   a manually-recorded result, retries/polling, FEV/DIAN, glosas, SIIFA.
-  Also pending: manual-CUPS `grupoServicios`/`codServicio`/
-  `viaIngresoServicioSalud` readiness gap (above) — the last known
+  Also pending: `viaIngresoServicioSalud` (above) — the one remaining
   material item before "first official MUV/SISPRO validation" becomes
   the sole remaining regulatory-pilot milestone.
 
