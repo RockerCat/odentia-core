@@ -1558,6 +1558,47 @@ semantics — regression-prone, do not simplify:
   picker derive their bookable slots from these same real rows
   (`agenda-hours.ts`), never a hardcoded default, with gaps between blocks
   preserved and no rounding.
+- **Availability initialization — `bootstrap_clinic()` 22-arg overload seed
+  gap CLOSED (2026-09-21, migration applied to remote).** Read-only audit
+  confirmed the zero-row semantics above are already coherent and correctly
+  implemented identically in all three consumers (DB trigger,
+  `checkConfiguredAvailability()` in `appointments-actions.ts`,
+  `resolveSlotMinutesForProfessionalDay()` in `agenda-hours.ts`) — no
+  change was made to any of them. The one real gap found:
+  `seed_default_professional_availability()` (Lun–Vie 08:00–17:00,
+  Sáb/Dom none — `20260914090000`) was correctly called by
+  `accept_clinic_invitation()` (dentist), `create_my_professional_profile()`,
+  and `bootstrap_clinic()`'s original 20-argument overload, but NOT by
+  `bootstrap_clinic()`'s 22-argument overload (the one with
+  `location_latitude`/`location_longitude` — see `20260916090000`'s own
+  comment on why two live overloads exist at all). Fixed by
+  `20260921090000_fix_bootstrap_clinic_22arg_seed_availability.sql`: one
+  added `perform` call inside the existing `if is_dentist then` branch,
+  otherwise byte-identical to the live 22-arg body (confirmed by direct
+  diff before applying) — no backfill, no change to any existing
+  `professional_profiles` row. **Framing matters:** since Checkpoint 1A
+  (`20260916090000`, 2026-09-16), BOTH `bootstrap_clinic()` overloads
+  require `is_platform_superadmin()`, and the real onboarding client
+  (`/registro`, the only caller, always resolves to the 22-arg overload)
+  is used by an ordinary signup, not a superadmin — so this call already
+  fails at the authorization check today, before ever reaching the
+  `professional_profiles` insert. This fix closes a latent/defense-in-depth
+  inconsistency in a function CLAUDE.md still documents as "retained only
+  until self-service is formally retired" — it did NOT unblock or change
+  behavior for any real signup in production. Applied and confirmed in
+  sync (`supabase migration list`: local = remote =
+  `20260921090000`). SQL regression test
+  (`supabase/tests/bootstrap_clinic_22arg_seed_availability.test.sql`,
+  same conventions as `seed_default_professional_availability.test.sql`)
+  is **NOT RUN locally** — no Postgres/Docker in this dev environment —
+  same caveat as every other SQL test in this file. Any professional whose
+  profile predates this fix (e.g. the pilot clinic "Radiología Oral
+  Digital - Dra Ana Medina" / profesional Angie Marcela Alvarado Gil,
+  observed with zero `professional_availability` rows and "Horario aún no
+  configurado") stays a historical profile under the legacy-unrestricted
+  fallback above, deliberately **not backfilled** — resolving it, if ever
+  wanted, is a manual "configure her Horario in Configuración" action, not
+  a code change.
 
 ## Reportes (real)
 
@@ -2234,6 +2275,89 @@ re-verified in this update.
   still `NOT RUN` locally (no Postgres/Docker in this dev environment) —
   the migration applied cleanly to the remote project and the real manual
   smoke above passed, but that SQL suite itself has never executed.
+- **Finalization-time prevention: missing principal diagnosis / missing
+  Causa-Motivo (2026-09-21, code only, no migration).**
+  `getEncounterFinalizeBlockers()` (`encounter-finalize-readiness.ts`) is
+  the real gate `handleFinalizeClick` already goes through before
+  "Finalizar atención" ever opens its confirm dialog — it now also blocks
+  when a classified (consulta/procedimiento) service has no resolvable
+  principal diagnosis, or when a consulta's principal diagnosis is missing
+  `tipoDiagnosticoPrincipal`, or when a consulta has no Causa/Motivo.
+  Principal-diagnosis resolution reuses `resolveDiagnosesForService()`
+  (`export-generator.ts`) directly — the exact same function `/rips`
+  itself uses to build the JSON — so "ready to finalize" and "the
+  generator can actually resolve a principal" can never disagree. Forward-
+  only: never re-evaluates an already-finalized encounter: a historical
+  encounter missing a principal stays exactly as pending in `/rips` as
+  before this change. No diagnosis is ever invented/defaulted anywhere in
+  this rule.
+  - **"Consulta sin hallazgo patológico" audited, real regulatory
+    conclusions (not a code change by itself):** `codDiagnosticoPrincipal`
+    stays mandatory even for a normal exam with no pathology found; `Z012
+    — Examen odontológico` is a valid representation for that case; with
+    Finalidad "Valoración integral para la promoción y mantenimiento" the
+    diagnosis must fall in Z00–Z99. Never invent a disease to complete
+    RIPS. This does not resolve every possible use of Z012 — only the
+    audited "exam, no pathology" case.
+- **CIE-10 selector — dental-first discoverability (2026-09-21, code
+  only).** Empty-focus prioritizes: Frecuentes (if any) → pinned "Z012 —
+  Examen odontológico" (resolved from the real catalog,
+  `fetchExamenOdontologicoAction`, never fabricated) → Odontología
+  (official WHO CIE-10 K00–K14 block, server-paginated) → "Buscar también
+  en todos los diagnósticos" (explicit action) → full catalog. Typed
+  search prioritizes Z012 + K00–K14 under "Resultados de odontología",
+  with the same explicit-expansion action before the general/full catalog
+  search ever runs. Server-side search, debounce, stale-request
+  protection (per-section request-id refs), dedupe across sections
+  (`dedupeBrowseSections`), reset on query change — all preserved/
+  extended, not reimplemented. **`Z012 + K00–K14` is a UX priority
+  ordering, not a dental whitelist** — the full catalog stays one click
+  away, and this deliberately does not represent all CIE-10 codes
+  legitimately used in dentistry (see the dental-scope follow-up below).
+  Manual smoke by Alex: Z012 shown first on empty focus (PASS); typing
+  "examen" surfaces Z012 directly (PASS); K07 dental-first (PASS);
+  general-catalog expansion reachable and separate (PASS).
+- **Finalidad → Causa/Motivo: removed the universal "38" default
+  (2026-09-21, code only).** A new consultation's `causaMotivoCode` no
+  longer defaults to "38 — Enfermedad general" — it starts empty and is
+  now required before finalizing (see the finalization-prevention bullet
+  above). The one confirmed regulatory relationship
+  (`finalidad-causa.ts`, `resolveCausaOnFinalidadChange`): selecting
+  Finalidad "Valoración integral para la promoción y mantenimiento" sets
+  Causa/Motivo to "40 — Promoción y mantenimiento de la salud —
+  intervenciones individuales"; the relationship depends on Finalidad
+  only, never on the diagnosis (Z012 or otherwise). Moving away from that
+  Finalidad clears a still-"40" Causa without inferring "38" or any other
+  value; every other Finalidad infers nothing. `tipoDiagnosticoPrincipal`
+  is never auto-inferred by this. Manual smoke by Alex: Finalidad
+  promoción/mantenimiento → Causa 40 appears (PASS); changing Finalidad →
+  40 disappears (PASS); returning to that Finalidad → 40 reappears
+  (PASS); tipo de diagnóstico left untouched (PASS). **Known limitation,
+  not resolved now:** the current state cannot distinguish a "40" the
+  professional picked manually (independent of Finalidad) from one this
+  logic derived — leaving that Finalidad can clear a manually-chosen "40"
+  too.
+- **Pendiente — `tipoDiagnosticoPrincipal` for Z012:
+  REGULATORY INTERPRETATION PENDING.** The audit found no defensible
+  official mapping for Z012 to one specific `tipoDiagnosticoPrincipal`
+  value (01 — Impresión Diagnóstica / 02 — Confirmado Nuevo / 03 —
+  Confirmado Repetido). No default, no inference — selection stays
+  manual. Not investigated further in this checkpoint; the regulatory
+  case for this specific field is not closed.
+- **Follow-up audit required — `export-schema.ts` nullable fields.**
+  `export-schema.ts` appears to allow `causaMotivoAtencion` and
+  `finalidadTecnologiaSalud` as nullable, while DT1 v003 appears to define
+  both as fixed-size/non-null for a Consulta. Not modified in this
+  checkpoint — flagged as the next recommended technical checkpoint, not
+  yet audited in depth.
+- **Follow-up — dental CIE-10 scope should eventually be versioned.** The
+  `{Z012} ∪ K00–K14` universe prioritized above is explicitly a UX
+  narrowing, not a claim of completeness: prior audit work found K00–K14
+  as the real core, Z012 as necessary for a routine exam, other
+  legitimate dental codes outside that range, and a historical ~135-code
+  territorial (Bogotá SDS) list that itself did not demonstrate national
+  exhaustiveness. A proper versioned/auditable dental classification is
+  future work, not implemented here.
 - **Explicitly not built yet (future phase)**: MUV integration, CUV
   generation/inference, ProcesoId auto-capture, submission states beyond
   a manually-recorded result, retries/polling, FEV/DIAN, glosas, SIIFA.

@@ -227,17 +227,83 @@ export async function findDiagnosesByCodes(classificationSystem: string, codes: 
   return data.map(mapDiagnosisRow);
 }
 
-export async function searchDiagnoses(classificationSystem: string, query: string, limit = 20): Promise<DiagnosisCode[]> {
+// Prompt Ninja "priorizar Z012 + K00–K14 en selector odontológico" — the
+// ONE explicit code this checkpoint pins above K00–K14 in the dental
+// universe, resolved through the real catalog (findDiagnosisByCode/
+// searchDiagnoses below), NEVER fabricated inline. This is deliberately
+// NOT the broader ~135-code Bogotá SDS list from that audit — a
+// separate, not-yet-built, versioned classification is what that would
+// need; this checkpoint's own priority universe stays exactly
+// {Z012} ∪ [K00, K15).
+export const EXAMEN_ODONTOLOGICO_CODE = "Z012";
+
+// Pure — characterizes the SAME membership rule the `dentalOnly` +
+// `includeExamenOdontologico` query filter below encodes server-side
+// (via `.or()`/`.gte()`/`.lt()`), extracted purely so that rule's exact
+// boundaries (Z012 in, K00–K14 in, Z011/Z013 out, K15 out) are
+// unit-testable without a live Supabase connection — same "no
+// catalog-data.ts function has ever needed a DB mock" convention this
+// file already follows (see this task's own tests). This never runs
+// inside searchDiagnoses itself (Postgres does the real filtering,
+// server-side, over the whole table) — it's a shadow characterization
+// of the same rule, not a second implementation of it; keep both in
+// sync if this boundary ever changes.
+export function isInDentalPriorityScope(code: string, includeExamenOdontologico: boolean): boolean {
+  const inK00K14 = code >= "K00" && code < "K15";
+  if (includeExamenOdontologico) return code === EXAMEN_ODONTOLOGICO_CODE || inK00K14;
+  return inK00K14;
+}
+
+// RIPS #A3 UX gap, continued (Prompt Ninja "selector CIE-10 Frecuentes →
+// Odontología → Todos", then "priorizar Z012 + K00–K14 en selector
+// odontológico"): one shared query for typed search AND empty-focus
+// browse, never two divergent implementations. A blank `query` (browse)
+// skips the code/description filter entirely rather than relying on an
+// incidental `ILIKE '%%'` match-everything — explicit, not a quirk.
+// `offset` is what turns this into "Cargar más" (server-side `range`,
+// same page-size contract as `limit` — never the full ~12,634-row
+// catalog reaching the client, see docs/rips-catalogs.md).
+//
+// `dentalOnly` narrows to the official WHO CIE-10 block K00–K14
+// ("Enfermedades de la cavidad oral, glándulas salivales y maxilares") —
+// a deterministic range over `code` itself, never `chapter`/`category`
+// (whose real population is unverified — see frequent-diagnoses-data.ts's
+// own comment). This is a NAVIGATION narrowing only: callers that want
+// the unrestricted catalog simply omit it — K00–K14 must never become
+// the only reachable subset (see this task's own audit: real dental-
+// relevant codes, e.g. Z01.2 "Examen odontológico", live outside that
+// range).
+//
+// `includeExamenOdontologico` (only meaningful together with
+// `dentalOnly`) additionally admits EXAMEN_ODONTOLOGICO_CODE via a
+// nested `or(...)` — used ONLY by typed dental search (the empty-focus
+// "Odontología" browse section deliberately keeps calling this with
+// `dentalOnly` alone, staying pure K00–K14, since Z012 gets its OWN
+// separate pinned section there instead — see real-clinical-encounter-
+// screen.tsx's DIAGNOSIS_PINNED_SECTION).
+export async function searchDiagnoses(
+  classificationSystem: string,
+  query: string,
+  limit = 20,
+  options?: { offset?: number; dentalOnly?: boolean; includeExamenOdontologico?: boolean },
+): Promise<DiagnosisCode[]> {
   const supabase = await createClient();
   const term = sanitizeSearchTerm(query);
-  const { data, error } = await supabase
+  let builder = supabase
     .from("diagnosis_catalog")
     .select(DIAGNOSIS_COLUMNS)
     .eq("classification_system", classificationSystem)
-    .eq("status", "active")
-    .or(`code.ilike.%${term}%,description.ilike.%${term}%`)
-    .order("code")
-    .limit(limit);
+    .eq("status", "active");
+  if (term) {
+    builder = builder.or(`code.ilike.%${term}%,description.ilike.%${term}%`);
+  }
+  if (options?.dentalOnly) {
+    builder = options.includeExamenOdontologico
+      ? builder.or(`code.eq.${EXAMEN_ODONTOLOGICO_CODE},and(code.gte.K00,code.lt.K15)`)
+      : builder.gte("code", "K00").lt("code", "K15");
+  }
+  const offset = options?.offset ?? 0;
+  const { data, error } = await builder.order("code").range(offset, offset + limit - 1);
 
   if (error || !data) return [];
   return data.map(mapDiagnosisRow);

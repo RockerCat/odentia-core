@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  EXAMEN_ODONTOLOGICO_CODE,
   findCupsByCode,
   findDiagnosisByCode,
   findReferenceValueByCode,
@@ -42,9 +43,65 @@ export async function searchCupsAction(query: string): Promise<CupsCode[]> {
 
 // CIE-10 search-as-you-type for "Diagnósticos" (RIPS #4) — by code or
 // description, never the full ~12,600-row catalog shipped to the client.
-export async function searchDiagnosesAction(query: string): Promise<DiagnosisCode[]> {
+// `dentalOnly` (Prompt Ninja "búsqueda CIE-10 dental-first con expansión
+// explícita") narrows to the official WHO K00–K14 block — the SAME
+// dentalOnly this function already forwards to searchDiagnoses for
+// browse, never a second/duplicated query. Omitted (or false), this is
+// byte-for-byte the general search every existing caller (and CUPS,
+// which never touches this function at all) already gets — a UI never
+// silently narrows unless it explicitly asks to. `includeExamenOdontologico`
+// (Prompt Ninja "priorizar Z012 + K00–K14 en selector odontológico") only
+// ever has an effect together with `dentalOnly` — it additionally admits
+// EXAMEN_ODONTOLOGICO_CODE (Z012) into that same narrowed result set, so
+// typed dental search can surface it (e.g. typing "examen") without
+// widening K00–K14 itself.
+export async function searchDiagnosesAction(
+  query: string,
+  options?: { dentalOnly?: boolean; includeExamenOdontologico?: boolean },
+): Promise<DiagnosisCode[]> {
   if (!query.trim()) return [];
-  return searchDiagnoses("CIE10", query, 20);
+  return searchDiagnoses("CIE10", query, 20, {
+    dentalOnly: options?.dentalOnly,
+    includeExamenOdontologico: options?.includeExamenOdontologico,
+  });
+}
+
+// RIPS #A3 UX gap, continued (Prompt Ninja "priorizar Z012 + K00–K14 en
+// selector odontológico") — the single pinned "Examen odontológico" row
+// shown above the K00–K14 browse section on empty focus. Resolved
+// through the real catalog exactly like every other diagnosis lookup
+// (findDiagnosisByCode, already used for the "resolve a saved code's
+// description" case above) — never a fabricated {code, description}
+// object. Fails closed to an empty array if Z012 isn't found active in
+// diagnosis_catalog (a real, if unexpected, possibility this checkpoint
+// deliberately does not paper over) — the caller's own render then
+// simply shows nothing for this section, same as any other empty browse
+// page, rather than inventing a row.
+export async function fetchExamenOdontologicoAction(): Promise<DiagnosisCode[]> {
+  const row = await findDiagnosisByCode("CIE10", EXAMEN_ODONTOLOGICO_CODE);
+  return row ? [row] : [];
+}
+
+// Not exported — a "use server" file may only export async functions, so
+// this stays a plain module-local constant. The client's own copy (see
+// code-search-autocomplete.tsx's DIAGNOSIS_BROWSE_PAGE_SIZE) must keep
+// matching this number so it can tell "this was a full page, there may be
+// more" apart from "this was the last page" without the server having to
+// say so explicitly.
+const DIAGNOSIS_BROWSE_PAGE_SIZE = 50;
+
+// RIPS #A3 UX gap, continued (Prompt Ninja "selector CIE-10 Frecuentes →
+// Odontología → Todos") — empty-focus catalog browse for Diagnóstico
+// principal/relacionado, never the full ~12,634-row catalog (see
+// docs/rips-catalogs.md and searchDiagnoses's own comment). `dentalOnly`
+// narrows to the official WHO CIE-10 K00–K14 block for the "Odontología"
+// section; `false` serves "Todos los diagnósticos" — same underlying
+// query either way, reused via searchDiagnoses, never a second
+// implementation. `offset` is what "Cargar más" advances. Never used by
+// the CUPS autocomplete — diagnosis-only, same convention as
+// fetchFrequentDiagnosesAction below.
+export async function browseDiagnosesAction(input: { offset: number; dentalOnly: boolean }): Promise<DiagnosisCode[]> {
+  return searchDiagnoses("CIE10", "", DIAGNOSIS_BROWSE_PAGE_SIZE, { offset: input.offset, dentalOnly: input.dentalOnly });
 }
 
 // RIPS #A3 UX gap — discoverability for Diagnóstico principal/relacionado:

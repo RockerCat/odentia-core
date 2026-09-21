@@ -36,6 +36,8 @@ import type {
 import { toOdontogramData, type ToothFindingRecord } from "@/features/patients/tooth-findings-data";
 import { CodeSearchAutocomplete } from "@/features/rips/code-search-autocomplete";
 import {
+  browseDiagnosesAction,
+  fetchExamenOdontologicoAction,
   fetchFrequentDiagnosesAction,
   findCupsByCodeAction,
   findDiagnosisByCodeAction,
@@ -55,6 +57,7 @@ import { FIELD_CLASS } from "./appointment-detail-modal";
 import { updateAppointment } from "./appointments-actions";
 import { fetchAppointmentsForPatient, type Appointment } from "./appointments-data";
 import { getEncounterFinalizeBlockers } from "./encounter-finalize-readiness";
+import { resolveCausaOnFinalidadChange } from "./finalidad-causa";
 import { OdontogramPreview } from "./odontogram-teeth";
 import type { BoardProfessional } from "./real-appointments-board";
 import { endTimeIso, formatDateLabel, formatTimeLabel, initialsOf } from "./real-format";
@@ -168,6 +171,60 @@ const DIAGNOSIS_INITIAL_SUGGESTIONS = {
     return result.status === "ok" ? result.diagnoses : [];
   },
 };
+
+// Prompt Ninja "selector CIE-10 Frecuentes → Odontología → Todos" — the
+// next step of the same discoverability gap DIAGNOSIS_INITIAL_SUGGESTIONS
+// above addresses: a brand-new clinic with zero Frecuentes used to hit a
+// real dead end (emptyHint text, nothing clickable). These two sections
+// are always available (never gated on Frecuentes existing) and never
+// hide the full catalog — Odontología narrows to the official WHO CIE-10
+// K00–K14 block ONLY as a navigation convenience (see
+// browseDiagnosesAction's own comment on why that range is real/official
+// but incomplete for dentistry); Todos always stays reachable underneath
+// it. Must match browseDiagnosesAction's own DIAGNOSIS_BROWSE_PAGE_SIZE.
+const DIAGNOSIS_BROWSE_PAGE_SIZE = 50;
+// Prompt Ninja "priorizar Z012 + K00–K14 en selector odontológico" —
+// `pinned` puts "Examen odontológico" (Z012) above the K00–K14 browse,
+// resolved from the real catalog (fetchExamenOdontologicoAction →
+// findDiagnosisByCode), never fabricated inline; empty result (Z012 not
+// found active) simply renders nothing for this section, same as any
+// other empty browse page. This checkpoint's own priority universe is
+// deliberately just {Z012} ∪ K00–K14 — NOT the broader ~135-code Bogotá
+// SDS list from that separate audit, which would need its own versioned
+// classification table before being incorporated here.
+const DIAGNOSIS_BROWSE_SECTIONS = {
+  pinned: {
+    label: "Examen odontológico",
+    fetch: fetchExamenOdontologicoAction,
+  },
+  narrowed: {
+    label: "Odontología",
+    hint: "CIE-10 de cavidad oral, dientes, estructuras de soporte, glándulas salivales y maxilares.",
+    pageSize: DIAGNOSIS_BROWSE_PAGE_SIZE,
+    fetchPage: (offset: number) => browseDiagnosesAction({ offset, dentalOnly: true }),
+  },
+  all: {
+    label: "Todos los diagnósticos",
+    pageSize: DIAGNOSIS_BROWSE_PAGE_SIZE,
+    fetchPage: (offset: number) => browseDiagnosesAction({ offset, dentalOnly: false }),
+  },
+};
+
+// Prompt Ninja "búsqueda CIE-10 dental-first con expansión explícita",
+// then "priorizar Z012 + K00–K14 en selector odontológico" — typed
+// search's own dental-first pass: the SAME searchDiagnosesAction every
+// general search already uses, with dentalOnly:true AND
+// includeExamenOdontologico:true so typing e.g. "examen" can surface
+// Z012 inside "Resultados de odontología" itself (never a separate
+// pinned section for typed search — that's an empty-focus-only concept,
+// see DIAGNOSIS_BROWSE_SECTIONS.pinned above). `search` (plain
+// searchDiagnosesAction, general) stays the one the "Buscar también en
+// todos los diagnósticos" click falls back to — this is what keeps a
+// noisy term like "ajuste" from ever reaching the artificial-limb/eye
+// fitting codes until the professional explicitly asks to widen.
+function searchDentalDiagnosesAction(query: string) {
+  return searchDiagnosesAction(query, { dentalOnly: true, includeExamenOdontologico: true });
+}
 
 export function RealClinicalEncounterScreen({
   appointment,
@@ -452,12 +509,16 @@ export function RealClinicalEncounterScreen({
         grupoServiciosCode: resolved.grupoServiciosCode ?? "",
         codServicioCode: resolved.codServicioCode ?? "",
         finalidadCode: "",
-        // Sugerencia inicial únicamente para consultas — dato clínico
-        // real, nunca una derivación silenciosa irreversible: sigue
-        // siendo editable justo debajo de "¿Qué realizaste?" y, una vez
-        // elegido, nunca se vuelve a sobrescribir (ver este mismo archivo,
-        // el picker de CUPS manual, y encounter-finalize-readiness.ts).
-        causaMotivoCode: resolved.ripsServiceType === "consultation" ? "38" : "",
+        // No universal default (Prompt Ninja "corregir Causa/Motivo
+        // según Finalidad de promoción y mantenimiento" removed the old
+        // unconditional "38 — Enfermedad general" here — the DT1's own
+        // C08 cross-field rule ties Causa to Finalidad, never to
+        // ripsServiceType alone, so nothing here can know the right
+        // value before Finalidad is even chosen). The ONE confirmed
+        // regulatory relationship (Finalidad "Valoración integral para
+        // la promoción y mantenimiento" → Causa 40) is applied by the
+        // Finalidad <select>'s own onChange below, never here.
+        causaMotivoCode: "",
         conceptoRecaudoCode: "",
         valorPagoModerador: "",
         detailsOpen: false,
@@ -496,6 +557,24 @@ export function RealClinicalEncounterScreen({
         role: d.role,
         diagnosisTypeCode: d.role === "principal" ? d.diagnosisTypeCode || null : null,
         serviceSequence: d.role === "related" && d.serviceRowId ? services.findIndex((s) => s.id === d.serviceRowId) : null,
+      }));
+
+  // Same rows, reshaped for getEncounterFinalizeBlockers's own principal-
+  // diagnosis check — encounterServiceId here is the LOCAL ServiceRow.id
+  // a diagnosis is scoped to (never resolved to a numeric sequence, unlike
+  // buildDiagnosesPayload above, since this never leaves the client) —
+  // `sequence` only matters for ordering `related` diagnoses, irrelevant
+  // to the principal resolution this feeds, but resolveDiagnosesForService
+  // still expects the field, so array index is a fine, stable filler.
+  const buildDiagnosesForFinalizeReadiness = () =>
+    diagnoses
+      .filter((d) => d.cie10Code)
+      .map((d, index) => ({
+        cie10Code: d.cie10Code,
+        role: d.role,
+        diagnosisTypeCode: d.role === "principal" ? d.diagnosisTypeCode || null : null,
+        encounterServiceId: d.serviceRowId || null,
+        sequence: index,
       }));
 
   const buildServicesPayload = () =>
@@ -605,7 +684,11 @@ export function RealClinicalEncounterScreen({
   };
 
   const handleFinalizeClick = () => {
-    const blockers = getEncounterFinalizeBlockers({ incapacityCode, services });
+    const blockers = getEncounterFinalizeBlockers({
+      incapacityCode,
+      services,
+      diagnoses: buildDiagnosesForFinalizeReadiness(),
+    });
     if (blockers.length > 0) {
       setFinalizeError(blockers.join(" "));
       return;
@@ -687,6 +770,11 @@ export function RealClinicalEncounterScreen({
 
   const principalDiagnosis = diagnoses.find((d) => d.role === "principal") ?? null;
   const relatedDiagnoses = diagnoses.filter((d) => d.role === "related");
+  // Drives the "*"/help-text UX below AND getEncounterFinalizeBlockers's
+  // own principal-diagnosis rule — an atención with no Consulta/
+  // Procedimiento service never needs a principal diagnosis at all (see
+  // encounter-finalize-readiness.ts's own classifiedServices filter).
+  const hasRipsClassifiedService = services.some((s) => s.ripsServiceType === "consultation" || s.ripsServiceType === "procedure");
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
@@ -768,7 +856,14 @@ export function RealClinicalEncounterScreen({
               <Section title="Diagnósticos" icon={ListIcon}>
                 <div className="flex flex-col gap-4">
                   <div>
-                    <p className="text-xs font-medium text-foreground/80">Diagnóstico principal</p>
+                    <p className="text-xs font-medium text-foreground/80">
+                      Diagnóstico principal{hasRipsClassifiedService ? " *" : ""}
+                    </p>
+                    {hasRipsClassifiedService && (
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        Necesario para generar RIPS de los servicios registrados.
+                      </p>
+                    )}
                     {principalDiagnosis ? (
                       <div className="mt-2 flex items-start gap-2 rounded-lg border border-border p-2.5">
                         <div className="grid flex-1 gap-2 sm:grid-cols-2">
@@ -780,7 +875,9 @@ export function RealClinicalEncounterScreen({
                                 : ""
                             }
                             search={searchDiagnosesAction}
+                            dentalSearch={searchDentalDiagnosesAction}
                             initialSuggestions={DIAGNOSIS_INITIAL_SUGGESTIONS}
+                            browse={DIAGNOSIS_BROWSE_SECTIONS}
                             onChange={(picked) =>
                               updateDiagnosis(
                                 principalDiagnosis.id,
@@ -833,7 +930,9 @@ export function RealClinicalEncounterScreen({
                               value={d.cie10Code}
                               displayDescription={d.cie10Code ? `${d.cie10Code} — ${d.description}` : ""}
                               search={searchDiagnosesAction}
+                              dentalSearch={searchDentalDiagnosesAction}
                               initialSuggestions={DIAGNOSIS_INITIAL_SUGGESTIONS}
+                              browse={DIAGNOSIS_BROWSE_SECTIONS}
                               onChange={(picked) =>
                                 updateDiagnosis(
                                   d.id,
@@ -994,15 +1093,10 @@ export function RealClinicalEncounterScreen({
                                           cupsCode: picked.code,
                                           description: picked.description,
                                           ripsServiceType: picked.ripsServiceType,
-                                          // Sugerencia inicial de causa/motivo — solo cuando el
-                                          // servicio resulta ser una consulta y el odontólogo
-                                          // todavía no eligió nada; nunca sobrescribe un valor
-                                          // ya elegido (ver DEFAULT DE CAUSA en este mismo
-                                          // flujo).
-                                          causaMotivoCode:
-                                            picked.ripsServiceType === "consultation" && !s.causaMotivoCode
-                                              ? "38"
-                                              : s.causaMotivoCode,
+                                          // No default here either (see addConceptService's own
+                                          // comment) — causaMotivoCode is left exactly as it was;
+                                          // the Finalidad <select>'s onChange is the one place
+                                          // that ever sets it, per the DT1's Finalidad→Causa rule.
                                         }
                                       : { cupsCode: "", description: "", ripsServiceType: "unknown" },
                                   )
@@ -1079,8 +1173,9 @@ export function RealClinicalEncounterScreen({
                           </div>
                         )}
 
-                        {/* RIPS — Causa/Motivo (solo consultas, sugerida
-                            "38 — Enfermedad general" pero editable) y
+                        {/* RIPS — Causa/Motivo (solo consultas, sin default;
+                            Finalidad de promoción y mantenimiento la fija
+                            en 40) y
                             Finalidad (toda consulta/procedimiento,
                             siempre requerida, sin default: es una
                             decisión clínica real). Parte del flujo
@@ -1107,7 +1202,17 @@ export function RealClinicalEncounterScreen({
                             <div className="flex flex-col gap-1">
                               <select
                                 value={s.finalidadCode}
-                                onChange={(e) => updateService(s.id, { finalidadCode: e.target.value })}
+                                onChange={(e) =>
+                                  updateService(s.id, {
+                                    finalidadCode: e.target.value,
+                                    causaMotivoCode: resolveCausaOnFinalidadChange({
+                                      previousFinalidadCode: s.finalidadCode,
+                                      nextFinalidadCode: e.target.value,
+                                      currentCausaMotivoCode: s.causaMotivoCode,
+                                      finalidadOptions,
+                                    }),
+                                  })
+                                }
                                 className={FIELD_CLASS}
                               >
                                 <option value="">Finalidad de la atención</option>

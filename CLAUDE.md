@@ -221,16 +221,32 @@ which is now read-only history: `RealClinicalEncounterScreen` seeds
 as a read-only "Procedimientos realizados (histórico)" section — no
 add/edit/remove UI remains for it, and no new atención ever writes to it.
 Every service row gets Modalidad auto-resolved to `"01"` at creation (no
-manual selector), Causa/Motivo defaulted to `"38"` for a new consultation
-row only (never overwritten once set), and Finalidad required with no
-default (inline warning until set) — all three live directly in the
-"Servicios realizados" card flow, not tucked in the "Detalles RIPS"
-accordion. Modalidad/Causa-Motivo/Finalidad stay regulatorily optional for
-RIPS export readiness (`export-readiness.ts` never blocks on them,
-preserving historical encounters) — only `getEncounterFinalizeBlockers`
-enforces Finalidad as an Odentia-only, forward-only rule at "Finalizar
-atención" time. See RIPS section below for the CUPS-resolution mechanics,
-unchanged by this consolidation. Reportes' treatment ranking
+manual selector); Finalidad and, for a consultation, Causa/Motivo are both
+required with no universal default — a real clinical decision, never
+inferred from `ripsServiceType` alone. The ONE confirmed regulatory
+relationship (`finalidad-causa.ts`, `resolveCausaOnFinalidadChange`):
+selecting Finalidad "Valoración integral para la promoción y
+mantenimiento" sets Causa/Motivo to `"40"`; moving away from that
+Finalidad clears a still-`"40"` Causa without inferring `"38"` or any
+other value; every other Finalidad infers nothing, and the relationship
+depends on Finalidad only, never on the diagnosis (Z012 or otherwise).
+Known, not-yet-resolved limitation: this cannot distinguish a `"40"` the
+professional picked manually from one this logic derived, so leaving that
+Finalidad can clear a manually-chosen `"40"` too. All of this lives
+directly in the "Servicios realizados" card flow, not tucked in the
+"Detalles RIPS" accordion. Modalidad/Causa-Motivo/Finalidad stay
+regulatorily optional for RIPS export readiness (`export-readiness.ts`
+never blocks on them, preserving historical encounters) — only
+`getEncounterFinalizeBlockers` enforces, as Odentia-only, forward-only
+rules at "Finalizar atención" time: Finalidad and (for a consultation)
+Causa/Motivo on every classified service, plus a resolvable principal
+diagnosis (reusing `resolveDiagnosesForService` from
+`export-generator.ts` — the same resolution `/rips` itself uses to build
+the JSON) with `tipoDiagnosticoPrincipal` set when that service is a
+consultation. Never re-evaluates an already-finalized encounter — a
+historical encounter missing any of these stays exactly as pending in
+`/rips` as before. See RIPS section below for the CUPS-resolution
+mechanics, unchanged by this consolidation. Reportes' treatment ranking
 (`computeTreatmentRanking`, `src/features/reports/report-selectors.ts`)
 mirrors this: structured `encounter_services` wins per-encounter, legacy
 `patient_clinical_encounter_procedures` only counts for an encounter with
