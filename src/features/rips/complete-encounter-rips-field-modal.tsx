@@ -7,7 +7,7 @@ import type { ReferenceValue } from "./catalog-data";
 import { correctEncounterServiceRipsFieldAction, fetchEncounterRipsFieldGapContextAction } from "./encounter-rips-field-actions";
 import type { EncounterRipsFieldGapContext, EncounterRipsFieldGapService } from "./encounter-rips-field-gap-data";
 
-type FieldKey = "finalidad_code" | "causa_motivo_code";
+export type FieldKey = "finalidad_code" | "causa_motivo_code";
 
 function fieldRowKey(serviceId: string, field: FieldKey): string {
   return `${serviceId}:${field}`;
@@ -42,7 +42,15 @@ export function CompleteEncounterRipsFieldModal({
   finalidadOptions: ReferenceValue[];
   causaMotivoOptions: ReferenceValue[];
   onClose: () => void;
-  onFieldCorrected: () => void;
+  // Fires with the exact (serviceId, field, value) that was just
+  // persisted — never just a bare "something changed" signal — so a
+  // caller with its own local copy of this data (e.g. Historia Clínica's
+  // AtencionesTab) can apply an immutable, targeted update instead of
+  // refetching. A caller that only needs a generic "refresh" signal
+  // (e.g. rips-screen.tsx's own readiness refresh) can still pass a
+  // zero-arg callback — TypeScript allows a function with fewer
+  // parameters to satisfy a callback type with more.
+  onFieldCorrected: (serviceId: string, field: FieldKey, value: string) => void;
 }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -119,7 +127,7 @@ export function CompleteEncounterRipsFieldModal({
           .filter((s) => s.missingFinalidad || s.missingCausaMotivo),
       };
     });
-    onFieldCorrected();
+    onFieldCorrected(service.id, field, value);
   };
 
   const allResolved = context !== null && context.services.length === 0;

@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { findCupsByCodeAction, findDiagnosisByCodeAction } from "@/features/rips/actions";
+import type { ReferenceValue } from "@/features/rips/catalog-data";
+import { CompleteEncounterRipsFieldModal, type FieldKey } from "@/features/rips/complete-encounter-rips-field-modal";
 import type { ClinicalEncounterRecord, EncounterClinicalData } from "./clinical-encounters-data";
+import { applyRipsFieldCorrection, shouldShowRipsFieldGapIndicator } from "./encounter-service-rips-field-gap";
 import { resolveUpdatedByProfessional, type UpdatedByProfessional } from "./resolve-updated-by";
 
 // Restores the approved demo's Atenciones layout (clinical-record-screen.tsx's
@@ -45,15 +48,32 @@ export function AtencionesTab({
   clinicId,
   encounters,
   encounterClinicalData,
+  canEditClinicalData,
+  finalidadOptions = [],
+  causaMotivoOptions = [],
 }: {
   clinicId: string | null;
   encounters: ClinicalEncounterRecord[];
   // RIPS #4 — diagnósticos/servicios realizados por atención, read-only
   // here (this tab never writes clinical data — that only happens in the
-  // real Iniciar/Continuar atención screen). Keyed by encounter id, one
-  // batched fetch per page load (see fetchEncounterClinicalDataForEncounters)
-  // rather than a query per row.
+  // real Iniciar/Continuar atención screen, OR the one narrow exception
+  // below: completing a missing Finalidad/Causa on an already-finalized
+  // encounter). Keyed by encounter id, one batched fetch per page load
+  // (see fetchEncounterClinicalDataForEncounters) rather than a query per
+  // row.
   encounterClinicalData: Map<string, EncounterClinicalData>;
+  // Historical Finalidad/Causa correction — reuses /rips's own
+  // CompleteEncounterRipsFieldModal (see this file's own "Completar
+  // Finalidad/Causa" section below). canEditClinicalData is the real,
+  // DB-backed is_active_clinical_professional() mirror this screen
+  // already resolves server-side for every other clinical-write
+  // decision (Antecedentes/Odontograma/Documentos) — reused here
+  // unchanged, never a role label or mock. finalidadOptions/
+  // causaMotivoOptions are the same two reference catalogs /rips already
+  // loads, fetched once by the server page, never hardcoded.
+  canEditClinicalData: boolean;
+  finalidadOptions?: ReferenceValue[];
+  causaMotivoOptions?: ReferenceValue[];
 }) {
   // Resolves each encounter's attended_by (a profiles.id) to a real
   // name/specialty — reuses fetchTeamMembers via resolveUpdatedByProfessional
@@ -61,6 +81,21 @@ export function AtencionesTab({
   // one clinic-team fetch shared across every distinct professional in
   // this patient's encounters, not one query per encounter.
   const [resolvedByProfileId, setResolvedByProfileId] = useState<Map<string, UpdatedByProfessional>>(new Map());
+  // Own local, mutable copy of encounterClinicalData — same "seed once
+  // from the server prop, own it locally afterward" convention this
+  // screen's parent (PatientClinicalRecordScreen) already uses for
+  // medicalHistory/toothFindings/etc. Only ever mutated by a successful
+  // Finalidad/Causa correction below (one service/one field, immutable
+  // update) — this tab still never writes any OTHER clinical field.
+  const [localClinicalData, setLocalClinicalData] = useState(encounterClinicalData);
+  // The one encounter currently open for Finalidad/Causa correction, or
+  // null. Reuses CompleteEncounterRipsFieldModal exactly as /rips does —
+  // never a second modal, never a duplicated correction flow.
+  const [correctingEncounterId, setCorrectingEncounterId] = useState<string | null>(null);
+
+  const handleFieldCorrected = (encounterId: string, serviceId: string, field: FieldKey, value: string) => {
+    setLocalClinicalData((prev) => applyRipsFieldCorrection(prev, encounterId, serviceId, field, value));
+  };
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -107,7 +142,7 @@ export function AtencionesTab({
       const diagnosisLookups = new Map<string, { code: string; onDate: string }>();
       const cupsLookups = new Map<string, { code: string; onDate: string }>();
       for (const encounter of encounters) {
-        const data = encounterClinicalData.get(encounter.id);
+        const data = localClinicalData.get(encounter.id);
         if (!data) continue;
         for (const d of data.diagnoses) {
           diagnosisLookups.set(`cie10:${d.cie10Code}:${encounter.occurredAt}`, { code: d.cie10Code, onDate: encounter.occurredAt });
@@ -140,7 +175,7 @@ export function AtencionesTab({
     return () => {
       cancelled = true;
     };
-  }, [encounters, encounterClinicalData]);
+  }, [encounters, localClinicalData]);
 
   const diagnosisLabel = (encounter: ClinicalEncounterRecord, d: { cie10Code: string }) => {
     const description = codeDescriptions.get(`cie10:${d.cie10Code}:${encounter.occurredAt}`);
@@ -205,10 +240,21 @@ export function AtencionesTab({
                   );
                 })}
                 {(() => {
-                  const data = encounterClinicalData.get(encounter.id);
+                  const data = localClinicalData.get(encounter.id);
                   if (!data || (data.diagnoses.length === 0 && data.services.length === 0)) return null;
                   const principal = data.diagnoses.find((d) => d.role === "principal");
                   const related = data.diagnoses.filter((d) => d.role === "related");
+                  // Historical Finalidad/Causa gap indicator — visible
+                  // ONLY for an active clinical professional (Section 11's
+                  // own Option B, never C: an Assistant or a purely
+                  // administrative Clinic Admin never sees this at all,
+                  // not even disabled — a "no mostrar acción inútil" call,
+                  // not an oversight). shouldShowRipsFieldGapIndicator
+                  // mirrors export-readiness.ts's own
+                  // SERVICE_FINALIDAD_MISSING/CONSULTATION_CAUSA_MOTIVO_MISSING
+                  // rule exactly, computed here purely client-side from data
+                  // already loaded — never a monthly readiness call.
+                  const hasGap = shouldShowRipsFieldGapIndicator(canEditClinicalData, data.services);
                   return (
                     <>
                       {principal && (
@@ -229,6 +275,18 @@ export function AtencionesTab({
                           {data.services.map((s) => serviceLabel(s)).join("; ")}
                         </p>
                       )}
+                      {hasGap && (
+                        <p className="mt-0.5 flex items-center gap-2 text-xs text-warning">
+                          Información RIPS incompleta
+                          <button
+                            type="button"
+                            onClick={() => setCorrectingEncounterId(encounter.id)}
+                            className="font-medium text-primary hover:underline"
+                          >
+                            Completar
+                          </button>
+                        </p>
+                      )}
                     </>
                   );
                 })()}
@@ -237,6 +295,16 @@ export function AtencionesTab({
           );
         })}
       </ol>
+
+      {correctingEncounterId && (
+        <CompleteEncounterRipsFieldModal
+          encounterId={correctingEncounterId}
+          finalidadOptions={finalidadOptions}
+          causaMotivoOptions={causaMotivoOptions}
+          onClose={() => setCorrectingEncounterId(null)}
+          onFieldCorrected={(serviceId, field, value) => handleFieldCorrected(correctingEncounterId, serviceId, field, value)}
+        />
+      )}
     </div>
   );
 }

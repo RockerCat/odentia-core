@@ -194,7 +194,12 @@ export function PatientMedicalRecordScreen({
         />
       )}
       {activeTab === "Atenciones" && (
-        <AtencionesTab clinicId={clinicId} encounters={clinicalEncounters} encounterClinicalData={encounterClinicalData} />
+        <AtencionesTab
+          clinicId={clinicId}
+          encounters={clinicalEncounters}
+          encounterClinicalData={encounterClinicalData}
+          canEditClinicalData={false}
+        />
       )}
       {activeTab === "Documentos" && (
         <DocumentosTab

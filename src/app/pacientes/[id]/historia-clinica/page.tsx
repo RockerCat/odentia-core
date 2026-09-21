@@ -10,6 +10,7 @@ import { fetchPatientMedicalHistory, type PatientMedicalHistory } from "@/featur
 import { PatientClinicalRecordScreen } from "@/features/patients/patient-clinical-record-screen";
 import { fetchPatientTreatmentPlanItems } from "@/features/patients/treatment-plan-data";
 import { fetchPatientToothFindings } from "@/features/patients/tooth-findings-data";
+import { getActiveReferenceValues } from "@/features/rips/catalog-data";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
 import { fetchTreatments } from "@/features/treatments/data";
 import { createClient } from "@/lib/supabase/server";
@@ -133,6 +134,17 @@ export default async function PatientClinicalRecordPage({ params }: { params: Pr
     console.error("[/pacientes/[id]/historia-clinica] fetchAppointmentsForPatient failed", error);
   }
 
+  // Historical Finalidad/Causa correction (AtencionesTab, reusing
+  // CompleteEncounterRipsFieldModal from /rips) — same two reference
+  // catalogs /rips/page.tsx already loads, same pattern: fetched once
+  // here, never per encounter/modal open, never hardcoded.
+  // getActiveReferenceValues already fails closed to [] on error, no
+  // try/catch needed (same as /rips/page.tsx).
+  const [finalidadOptions, causaMotivoOptions] = await Promise.all([
+    getActiveReferenceValues("RIPSFinalidadConsultaVersion2"),
+    getActiveReferenceValues("RIPSCausaExternaVersion2"),
+  ]);
+
   return (
     <AppShell activeNavLabel="Pacientes" heading="Historia clínica" allowedRoles={["clinic-admin", "dentist", "assistant"]}>
       <PatientClinicalRecordScreen
@@ -150,6 +162,8 @@ export default async function PatientClinicalRecordPage({ params }: { params: Pr
         treatmentOptions={treatmentOptions}
         appointments={appointments}
         canEditClinicalData={canEditClinicalData(context)}
+        finalidadOptions={finalidadOptions}
+        causaMotivoOptions={causaMotivoOptions}
       />
     </AppShell>
   );

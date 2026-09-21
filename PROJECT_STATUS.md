@@ -2453,14 +2453,11 @@ re-verified in this update.
     (`src/features/patients/clinical-permissions.ts`) that already mirrors
     `is_active_clinical_professional()` elsewhere in this codebase —
     reused, not reinvented, and never a role name/localStorage guess.
-  - **Non-admin dentist**: **functional limitation, not resolved.** `/rips`
-    stays Clinic Admin only end-to-end, unchanged, per this checkpoint's
-    own explicit instruction not to widen it. The RPC itself is already
-    correct for a plain active dentist (no clinic_admin role required at
-    the DB layer), but no route/surface exists today for her to reach it
-    outside `/rips`. Until either `/rips` itself is reconsidered or a
-    narrower dentist-facing surface is built, this gap can only practically
-    be corrected by a clinic_admin who is also clinically active.
+  - **Non-admin dentist: RESOLVED (2026-09-21) — see its own bullet below.**
+    Was a functional limitation when this correction shipped (no surface
+    existed for her to reach the already-correct RPC outside `/rips`) —
+    closed by reusing Historia Clínica's own Atenciones tab instead of
+    widening `/rips`, no DB/RPC change needed.
   - **Audit trail**: recorded (`encounter_service_rips_field_corrections`)
     but has **no query UI yet** — same deliberate deferral A4B's own audit
     table already made ("add a scoped SELECT policy in a later, separate
@@ -2478,6 +2475,66 @@ re-verified in this update.
     causa-on-procedure) — **NOT RUN locally**, no Postgres/Docker in this
     dev environment, same caveat as every other SQL test in this file.
     Migration applied and confirmed in sync regardless.
+- **RESOLVED (2026-09-21) — non-admin dentist historical Finalidad/Causa
+  correction surface: Historia Clínica → Atenciones.** No migration, no
+  new RPC, no new route, no `/rips` change. `/pacientes/[id]/historia-clinica`
+  already allowed `clinic-admin`/`dentist`/`assistant` and already loads
+  every finalized encounter's full service list
+  (`encounterClinicalData`, `EncounterServiceRecord.finalidadCode`/
+  `causaMotivoCode` already present) — the gap was purely UI/routing, not
+  backend, confirmed by a read-only design audit first (same date).
+  - **Gap detection**: `hasRipsFieldGap()`/`shouldShowRipsFieldGapIndicator()`
+    (new, `src/features/patients/encounter-service-rips-field-gap.ts`) —
+    pure functions over already-loaded data, zero new query, zero
+    monthly-readiness call. Same DT1 rule as `export-readiness.ts`'s own
+    `SERVICE_FINALIDAD_MISSING`/`CONSULTATION_CAUSA_MOTIVO_MISSING` (kept
+    as its own small neutral module rather than importing that file,
+    which operates on a differently-shaped readiness-error input).
+  - **Visibility**: an "Información RIPS incompleta" / "Completar"
+    indicator renders per finalized encounter ONLY when `canEditClinicalData`
+    is true (an active dentist, or a clinic_admin who is also clinically
+    active — the same `canEditClinicalData()`/`is_active_clinical_professional()`
+    mirror this screen already resolves server-side for every other
+    clinical-write decision) AND at least one service has a gap. Option
+    B, not C: an Assistant or a purely administrative Clinic Admin never
+    sees it at all, not even disabled — deliberately different from
+    `/rips`'s own "never hide the blocker" choice, since Historia is
+    shared with a role that has no stake in RIPS compliance.
+  - **Modal reuse**: `CompleteEncounterRipsFieldModal` (unchanged
+    component) opens with the encounter's id — zero duplication. Its own
+    `fetchEncounterRipsFieldGapContextAction` gate widened from
+    `clinic_admin`-only to `clinic_admin` OR `dentist` (never `assistant`
+    — no real consumer needs it) — a minimum-privilege READ relaxation
+    only; `correctEncounterServiceRipsFieldAction` (the mutation) already
+    gated on `canEditClinicalData()`, needed no change; the RPC's own
+    `is_active_clinical_professional()` gate is unchanged and remains the
+    real security boundary either way. The modal still re-fetches fresh
+    context from the DB every time it opens (unchanged) — client-side gap
+    detection only ever decides whether to show the CTA, never what's
+    actually still missing at save time, so a field corrected in another
+    session can never be edited again from stale client state; the RPC's
+    own "already set" guard is still the last line of defense regardless.
+  - **Local refresh**: `applyRipsFieldCorrection()` (same new module) —
+    an immutable, targeted update to `AtencionesTab`'s own local copy of
+    `encounterClinicalData` (seeded once from the server prop, same
+    ownership convention its parent screen already uses for
+    medicalHistory/toothFindings/etc.) after each successful field save.
+    No full page reload, no readiness refresh, no full History refetch —
+    the indicator disappears in place once every gap on that encounter is
+    resolved; a sibling still-missing field or a different service's own
+    gap is untouched.
+  - Reused unchanged: `getActiveReferenceValues("RIPSFinalidadConsultaVersion2"/
+    "RIPSCausaExternaVersion2")` (fetched once in `historia-clinica/page.tsx`,
+    same pattern as `/rips/page.tsx`), `CompleteEncounterRipsFieldModal`,
+    `correctEncounterServiceRipsFieldAction`, the RPC, its audit table.
+  - **`/rips` confirmed unchanged**: `allowedRoles={["clinic-admin"]}`
+    untouched; no dentist added to RIPS navigation, monthly readiness,
+    export, or MUV history.
+  - The Patient Portal's own `/portal/historia` reuses the SAME
+    `AtencionesTab` (see this file's Patient Portal section) — passes
+    `canEditClinicalData={false}` explicitly, same convention as every
+    other write-capable prop that screen already forces off for a
+    Patient — so this indicator can never appear there.
 - **Follow-up — dental CIE-10 scope should eventually be versioned.** The
   `{Z012} ∪ K00–K14` universe prioritized above is explicitly a UX
   narrowing, not a claim of completeness: prior audit work found K00–K14

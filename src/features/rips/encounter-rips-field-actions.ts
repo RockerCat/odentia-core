@@ -8,26 +8,35 @@ import { fetchEncounterRipsFieldGapContext, type EncounterRipsFieldGapContext } 
 // RIPS — the two Server Actions CompleteEncounterRipsFieldModal needs, to
 // fill a historical finalized encounter's missing finalidad_code/(for a
 // consultation) causa_motivo_code (SERVICE_FINALIDAD_MISSING/
-// CONSULTATION_CAUSA_MOTIVO_MISSING, export-readiness.ts).
+// CONSULTATION_CAUSA_MOTIVO_MISSING, export-readiness.ts). Two real
+// callers today: `/rips` (Clinic Admin only, unchanged) and Historia
+// Clínica's own Atenciones tab (Clinic Admin + Dentist — see
+// atenciones-tab.tsx).
 //
 // Two different, deliberately DIFFERENT gates here, matching this task's
 // own "UI gating = UX, RPC authorization = security" split:
-//   - fetchEncounterRipsFieldGapContextAction: same plain clinic_admin
-//     gate as every other /rips action (this whole route is Clinic Admin
-//     only end-to-end already) — ANY clinic_admin can see the context,
-//     including a purely administrative one with no professional_profile,
-//     so the blocker is never hidden from her (see this task's own
-//     Section 13). `canCorrect` in the returned context is derived from
-//     canEditClinicalData() — the real, DB-backed
+//   - fetchEncounterRipsFieldGapContextAction: `clinic_admin` OR
+//     `dentist` — the two roles that actually have a real surface to open
+//     this modal from today (never `assistant` — no consumer needs it,
+//     and CLAUDE.md never gives Assistant clinical-write authority
+//     anyway). This is a minimum-privilege READ gate, not the write
+//     boundary: the data it returns (patient name, encounter date,
+//     per-service CUPS/type/current values) is no more sensitive than
+//     what both callers' own surfaces already show that same role
+//     elsewhere. A purely administrative `clinic_admin` (no
+//     professional_profile) still passes this READ gate — so the
+//     blocker is never hidden from her on `/rips`, same as before — but
+//     `canCorrect` (canEditClinicalData(), the real, DB-backed
 //     is_active_clinical_professional() mirror already used elsewhere in
-//     this codebase (src/features/patients/clinical-permissions.ts) —
-//     never a role-name/localStorage guess.
+//     this codebase, src/features/patients/clinical-permissions.ts) is
+//     what actually decides whether she can act on it. Never a
+//     role-name/localStorage guess.
 //   - correctEncounterServiceRipsFieldAction: pre-checks the SAME
 //     canEditClinicalData() as a fast, friendly error (never the sole
 //     boundary) before ever calling the RPC — the RPC
 //     (correct_encounter_service_rips_field, re-deriving
 //     is_active_clinical_professional() itself server-side) is the real
-//     authorization boundary either way.
+//     authorization boundary either way, unchanged by this widening.
 const GENERIC_ERROR = "No pudimos completar la operación. Intenta de nuevo.";
 
 export type EncounterRipsFieldGapContextOutcome =
@@ -44,8 +53,8 @@ export async function fetchEncounterRipsFieldGapContextAction(encounterId: strin
   if (context.status !== "ok") {
     return { status: "error", message: "No pudimos verificar tu sesión. Vuelve a iniciar sesión." };
   }
-  if (context.membership.role !== "clinic_admin") {
-    return { status: "error", message: "Solo un Administrador de Clínica puede ver esta corrección." };
+  if (context.membership.role !== "clinic_admin" && context.membership.role !== "dentist") {
+    return { status: "error", message: "No tienes permiso para ver esta corrección." };
   }
 
   const gapContext = await fetchEncounterRipsFieldGapContext(supabase, context.clinic.id, encounterId);

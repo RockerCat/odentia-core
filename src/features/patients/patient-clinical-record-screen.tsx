@@ -7,6 +7,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { fetchTeamMembers } from "@/features/clinic/data";
 import type { Appointment } from "@/features/dashboard/appointments-data";
 import { findCupsByCodeAction, findDiagnosisByCodeAction } from "@/features/rips/actions";
+import type { ReferenceValue } from "@/features/rips/catalog-data";
 import type { Treatment } from "@/features/treatments/data";
 import { createClient } from "@/lib/supabase/client";
 import { AntecedentesTab } from "./antecedentes-tab";
@@ -84,6 +85,8 @@ export function PatientClinicalRecordScreen({
   treatmentOptions,
   appointments,
   canEditClinicalData,
+  finalidadOptions = [],
+  causaMotivoOptions = [],
 }: {
   patient: Patient;
   clinicId: string | null;
@@ -99,6 +102,11 @@ export function PatientClinicalRecordScreen({
   treatmentOptions: Treatment[];
   appointments: Appointment[];
   canEditClinicalData: boolean;
+  // Historical Finalidad/Causa correction (AtencionesTab) — fetched once,
+  // server-side, same convention as every other catalog/option list this
+  // screen already receives as a prop.
+  finalidadOptions?: ReferenceValue[];
+  causaMotivoOptions?: ReferenceValue[];
 }) {
   const [activeTab, setActiveTab] = useState<Tab>("Resumen");
   const [medicalHistory, setMedicalHistory] = useState(initialMedicalHistory);
@@ -353,7 +361,14 @@ export function PatientClinicalRecordScreen({
         />
       )}
       {activeTab === "Atenciones" && (
-        <AtencionesTab clinicId={clinicId} encounters={clinicalEncounters} encounterClinicalData={encounterClinicalData} />
+        <AtencionesTab
+          clinicId={clinicId}
+          encounters={clinicalEncounters}
+          encounterClinicalData={encounterClinicalData}
+          canEditClinicalData={canEditClinicalData}
+          finalidadOptions={finalidadOptions}
+          causaMotivoOptions={causaMotivoOptions}
+        />
       )}
       {activeTab === "Documentos" && (
         <DocumentosTab
