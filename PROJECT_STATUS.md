@@ -2611,14 +2611,64 @@ re-verified in this update.
     regardless.
   - No backfill: a historical encounter this RPC hasn't been used on yet
     stays exactly as blocked as before.
-- **Follow-up — dental CIE-10 scope should eventually be versioned.** The
-  `{Z012} ∪ K00–K14` universe prioritized above is explicitly a UX
-  narrowing, not a claim of completeness: prior audit work found K00–K14
-  as the real core, Z012 as necessary for a routine exam, other
-  legitimate dental codes outside that range, and a historical ~135-code
-  territorial (Bogotá SDS) list that itself did not demonstrate national
-  exhaustiveness. A proper versioned/auditable dental classification is
-  future work, not implemented here.
+- **RESOLVED (2026-09-21) — dental CIE-10 scope, versioned/auditable.**
+  The hardcoded `{Z012} ∪ K00–K14` range (`isInDentalPriorityScope()`,
+  removed) is now a real, versioned table:
+  `public.diagnosis_dental_scope` (migration `20260921120000`, applied to
+  remote, `supabase migration list` confirmed local = remote) —
+  `classification_system`, `code`, `source`, `version_label`, `status`,
+  timestamps. No FK into `diagnosis_catalog.id` (that table's real key is
+  `(classification_system, code, version_label)` — the same code
+  legitimately repeats across catalog versions, same reasoning
+  `rips_reference_values` already uses for its own `catalog_key`/`code`
+  pair). Global reference data, same `*_select_authenticated` RLS as
+  `diagnosis_catalog`/`cups_catalog` — no INSERT/UPDATE/DELETE grant to
+  `authenticated`/`anon` at all, deny-by-default.
+  - **Conservative initial seed, nothing more than what was already
+    prioritized**: `Z012` + every currently ACTIVE CIE10 code in
+    `[K00, K15)`, derived directly FROM `diagnosis_catalog` at migration
+    time (never a hand-typed code list). Deliberately NOT the broader
+    ~28/~135-code territorial (Bogotá SDS) list from prior audits — no
+    sufficiently concrete, citable provenance exists in this repo for
+    each individual inclusion; widen later via a new, separately-
+    provenanced migration, never by silently editing this seed. Every
+    seeded row's own `source` text says explicitly "Odentia dental search
+    scope — UX navigation priority only, never an official/exhaustive
+    Ministerio de Salud list, never a RIPS validation rule, never a
+    clinical recommendation."
+  - **`export-readiness.ts`/`export-schema.ts`/RIPS validation:
+    completely untouched** — `codDiagnosticoPrincipal` still validates
+    against `diagnosis_catalog` directly, exactly as before; this table
+    is never referenced by any RIPS write/validation path. **Full catalog
+    always available**: a code not in `diagnosis_dental_scope` remains
+    fully selectable via "Todos los diagnósticos" or general search — no
+    write/validation path was narrowed by this change, only the
+    dental-first navigation UX.
+  - **`searchDiagnoses()`** (`catalog-data.ts`): `dentalOnly` now fetches
+    the current active scope codes (`fetchDentalScopeCodes`, one plain
+    read, no RPC) and filters with `.in('code', scopeCodes)`, replacing
+    the hardcoded `.gte('K00').lt('K15')`/`.or(...)` range logic. The
+    `includeExamenOdontologico` parameter was removed entirely — Z012 is
+    now simply a natural member of the seeded scope, so typed dental
+    search surfaces it with no separate flag; the empty-focus "Examen
+    odontológico" PINNED section (`EXAMEN_ODONTOLOGICO_CODE`,
+    `fetchExamenOdontologicoAction`) is unchanged, still a distinct
+    ordering/UX decision about one code, deduplicated client-side
+    against the "Odontología" browse exactly as before.
+  - **Z012 `tipoDiagnosticoPrincipal`**: unchanged, per the closed
+    regulatory decision (`KEEP MANUAL — no regulatory default`) — not
+    re-investigated or modified in this checkpoint.
+  - `isInDentalPriorityScope()` and its dedicated test file
+    (`catalog-data.test.ts`) were removed — the boundary is now 100% data,
+    nothing left to shadow-characterize in pure JS. New SQL regression
+    test (`supabase/tests/diagnosis_dental_scope.test.sql`) re-exercises
+    the exact seed SELECT/INSERT shape against isolated QA fixture data
+    (a fake `classification_system` so it never depends on or collides
+    with real catalog content) — Z012 included, active K00–K14 included,
+    out-of-range/inactive/unrelated/merely-adjacent codes excluded, seed
+    re-run is idempotent — **NOT RUN locally**, no Postgres/Docker in
+    this dev environment, same caveat as every other SQL test in this
+    file. Migration applied and confirmed in sync regardless.
 - **Explicitly not built yet (future phase)**: MUV integration, CUV
   generation/inference, ProcesoId auto-capture, submission states beyond
   a manually-recorded result, retries/polling, FEV/DIAN, glosas, SIIFA.

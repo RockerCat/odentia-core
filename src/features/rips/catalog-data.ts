@@ -228,64 +228,65 @@ export async function findDiagnosesByCodes(classificationSystem: string, codes: 
 }
 
 // Prompt Ninja "priorizar Z012 + K00–K14 en selector odontológico" — the
-// ONE explicit code this checkpoint pins above K00–K14 in the dental
-// universe, resolved through the real catalog (findDiagnosisByCode/
-// searchDiagnoses below), NEVER fabricated inline. This is deliberately
-// NOT the broader ~135-code Bogotá SDS list from that audit — a
-// separate, not-yet-built, versioned classification is what that would
-// need; this checkpoint's own priority universe stays exactly
-// {Z012} ∪ [K00, K15).
+// ONE explicit code the empty-focus selector pins above the general
+// "Odontología" browse (see fetchExamenOdontologicoAction, actions.ts),
+// resolved through the real catalog (findDiagnosisByCode/searchDiagnoses
+// below), NEVER fabricated inline. Left exactly as-is by the later
+// "scope odontológico CIE-10 versionado" checkpoint (Section 5: "no
+// volver a investigar ni modificar esto") — a pinning/ordering UX
+// decision about ONE code, distinct from (and independent of) the
+// broader dental_scope membership below.
 export const EXAMEN_ODONTOLOGICO_CODE = "Z012";
 
-// Pure — characterizes the SAME membership rule the `dentalOnly` +
-// `includeExamenOdontologico` query filter below encodes server-side
-// (via `.or()`/`.gte()`/`.lt()`), extracted purely so that rule's exact
-// boundaries (Z012 in, K00–K14 in, Z011/Z013 out, K15 out) are
-// unit-testable without a live Supabase connection — same "no
-// catalog-data.ts function has ever needed a DB mock" convention this
-// file already follows (see this task's own tests). This never runs
-// inside searchDiagnoses itself (Postgres does the real filtering,
-// server-side, over the whole table) — it's a shadow characterization
-// of the same rule, not a second implementation of it; keep both in
-// sync if this boundary ever changes.
-export function isInDentalPriorityScope(code: string, includeExamenOdontologico: boolean): boolean {
-  const inK00K14 = code >= "K00" && code < "K15";
-  if (includeExamenOdontologico) return code === EXAMEN_ODONTOLOGICO_CODE || inK00K14;
-  return inK00K14;
+// Prompt Ninja "scope odontológico CIE-10 versionado" — replaces the
+// former hardcoded `{Z012} ∪ [K00, K15)` range (isInDentalPriorityScope,
+// removed) with a real, versioned, auditable table
+// (public.diagnosis_dental_scope — see that migration's own header for
+// the full "this is UX priority, never a regulatory whitelist" rule).
+// Small by construction (bounded to the seeded dental-priority codes,
+// never the full ~12,634-row catalog) — one plain read, no RPC needed.
+async function fetchDentalScopeCodes(classificationSystem: string): Promise<string[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("diagnosis_dental_scope")
+    .select("code")
+    .eq("classification_system", classificationSystem)
+    .eq("status", "active");
+  if (error || !data) return [];
+  return data.map((row) => row.code as string);
 }
 
 // RIPS #A3 UX gap, continued (Prompt Ninja "selector CIE-10 Frecuentes →
 // Odontología → Todos", then "priorizar Z012 + K00–K14 en selector
-// odontológico"): one shared query for typed search AND empty-focus
-// browse, never two divergent implementations. A blank `query` (browse)
-// skips the code/description filter entirely rather than relying on an
-// incidental `ILIKE '%%'` match-everything — explicit, not a quirk.
-// `offset` is what turns this into "Cargar más" (server-side `range`,
-// same page-size contract as `limit` — never the full ~12,634-row
-// catalog reaching the client, see docs/rips-catalogs.md).
+// odontológico", then "scope odontológico CIE-10 versionado"): one
+// shared query for typed search AND empty-focus browse, never two
+// divergent implementations. A blank `query` (browse) skips the
+// code/description filter entirely rather than relying on an incidental
+// `ILIKE '%%'` match-everything — explicit, not a quirk. `offset` is
+// what turns this into "Cargar más" (server-side `range`, same page-size
+// contract as `limit` — never the full ~12,634-row catalog reaching the
+// client, see docs/rips-catalogs.md).
 //
-// `dentalOnly` narrows to the official WHO CIE-10 block K00–K14
-// ("Enfermedades de la cavidad oral, glándulas salivales y maxilares") —
-// a deterministic range over `code` itself, never `chapter`/`category`
-// (whose real population is unverified — see frequent-diagnoses-data.ts's
-// own comment). This is a NAVIGATION narrowing only: callers that want
-// the unrestricted catalog simply omit it — K00–K14 must never become
-// the only reachable subset (see this task's own audit: real dental-
-// relevant codes, e.g. Z01.2 "Examen odontológico", live outside that
-// range).
-//
-// `includeExamenOdontologico` (only meaningful together with
-// `dentalOnly`) additionally admits EXAMEN_ODONTOLOGICO_CODE via a
-// nested `or(...)` — used ONLY by typed dental search (the empty-focus
-// "Odontología" browse section deliberately keeps calling this with
-// `dentalOnly` alone, staying pure K00–K14, since Z012 gets its OWN
-// separate pinned section there instead — see real-clinical-encounter-
-// screen.tsx's DIAGNOSIS_PINNED_SECTION).
+// `dentalOnly` narrows to whatever public.diagnosis_dental_scope
+// currently contains (fetched fresh via fetchDentalScopeCodes above,
+// never a hardcoded range) — this is a NAVIGATION narrowing only:
+// callers that want the unrestricted catalog simply omit it, and a code
+// NOT in scope must always remain reachable through the general/
+// unrestricted search this same function already provides when
+// `dentalOnly` is omitted (see this checkpoint's own "full catalog
+// always available" invariant — never enforced here, by construction:
+// nothing about `dentalOnly` ever touches the RIPS validation path).
+// Z012's own inclusion in the seeded scope means typed dental search can
+// surface it directly inside "Resultados de odontología" (e.g. typing
+// "examen") without a separate flag — the empty-focus "pinned" section
+// above stays a distinct, ordering-only UX choice on top of this same
+// membership, deduplicated client-side (dedupeBrowseSections,
+// code-search-autocomplete.tsx) so Z012 is never shown twice.
 export async function searchDiagnoses(
   classificationSystem: string,
   query: string,
   limit = 20,
-  options?: { offset?: number; dentalOnly?: boolean; includeExamenOdontologico?: boolean },
+  options?: { offset?: number; dentalOnly?: boolean },
 ): Promise<DiagnosisCode[]> {
   const supabase = await createClient();
   const term = sanitizeSearchTerm(query);
@@ -298,9 +299,11 @@ export async function searchDiagnoses(
     builder = builder.or(`code.ilike.%${term}%,description.ilike.%${term}%`);
   }
   if (options?.dentalOnly) {
-    builder = options.includeExamenOdontologico
-      ? builder.or(`code.eq.${EXAMEN_ODONTOLOGICO_CODE},and(code.gte.K00,code.lt.K15)`)
-      : builder.gte("code", "K00").lt("code", "K15");
+    const scopeCodes = await fetchDentalScopeCodes(classificationSystem);
+    // An empty scope (nothing seeded/active yet) must never fall through
+    // to an unfiltered query — "in" with a sentinel that can never match
+    // a real code keeps this a real, if empty, narrowing.
+    builder = builder.in("code", scopeCodes.length > 0 ? scopeCodes : ["__no_dental_scope_codes__"]);
   }
   const offset = options?.offset ?? 0;
   const { data, error } = await builder.order("code").range(offset, offset + limit - 1);

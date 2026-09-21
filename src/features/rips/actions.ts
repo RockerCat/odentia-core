@@ -44,26 +44,19 @@ export async function searchCupsAction(query: string): Promise<CupsCode[]> {
 // CIE-10 search-as-you-type for "Diagnósticos" (RIPS #4) — by code or
 // description, never the full ~12,600-row catalog shipped to the client.
 // `dentalOnly` (Prompt Ninja "búsqueda CIE-10 dental-first con expansión
-// explícita") narrows to the official WHO K00–K14 block — the SAME
+// explícita", then "scope odontológico CIE-10 versionado") narrows to
+// whatever public.diagnosis_dental_scope currently contains — the SAME
 // dentalOnly this function already forwards to searchDiagnoses for
 // browse, never a second/duplicated query. Omitted (or false), this is
 // byte-for-byte the general search every existing caller (and CUPS,
 // which never touches this function at all) already gets — a UI never
-// silently narrows unless it explicitly asks to. `includeExamenOdontologico`
-// (Prompt Ninja "priorizar Z012 + K00–K14 en selector odontológico") only
-// ever has an effect together with `dentalOnly` — it additionally admits
-// EXAMEN_ODONTOLOGICO_CODE (Z012) into that same narrowed result set, so
-// typed dental search can surface it (e.g. typing "examen") without
-// widening K00–K14 itself.
-export async function searchDiagnosesAction(
-  query: string,
-  options?: { dentalOnly?: boolean; includeExamenOdontologico?: boolean },
-): Promise<DiagnosisCode[]> {
+// silently narrows unless it explicitly asks to. Z012's own membership
+// in that scope (seeded, not hardcoded here) is what lets typed dental
+// search surface it (e.g. typing "examen") — no separate flag needed
+// anymore.
+export async function searchDiagnosesAction(query: string, options?: { dentalOnly?: boolean }): Promise<DiagnosisCode[]> {
   if (!query.trim()) return [];
-  return searchDiagnoses("CIE10", query, 20, {
-    dentalOnly: options?.dentalOnly,
-    includeExamenOdontologico: options?.includeExamenOdontologico,
-  });
+  return searchDiagnoses("CIE10", query, 20, { dentalOnly: options?.dentalOnly });
 }
 
 // RIPS #A3 UX gap, continued (Prompt Ninja "priorizar Z012 + K00–K14 en
@@ -91,10 +84,11 @@ export async function fetchExamenOdontologicoAction(): Promise<DiagnosisCode[]> 
 const DIAGNOSIS_BROWSE_PAGE_SIZE = 50;
 
 // RIPS #A3 UX gap, continued (Prompt Ninja "selector CIE-10 Frecuentes →
-// Odontología → Todos") — empty-focus catalog browse for Diagnóstico
-// principal/relacionado, never the full ~12,634-row catalog (see
-// docs/rips-catalogs.md and searchDiagnoses's own comment). `dentalOnly`
-// narrows to the official WHO CIE-10 K00–K14 block for the "Odontología"
+// Odontología → Todos", then "scope odontológico CIE-10 versionado") —
+// empty-focus catalog browse for Diagnóstico principal/relacionado,
+// never the full ~12,634-row catalog (see docs/rips-catalogs.md and
+// searchDiagnoses's own comment). `dentalOnly` narrows to
+// public.diagnosis_dental_scope's current members for the "Odontología"
 // section; `false` serves "Todos los diagnósticos" — same underlying
 // query either way, reused via searchDiagnoses, never a second
 // implementation. `offset` is what "Cargar más" advances. Never used by
