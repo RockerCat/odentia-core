@@ -5,8 +5,11 @@ import { AlertTriangleIcon, CheckCircleIcon, ChevronDownIcon, DownloadIcon } fro
 import { useToast } from "@/components/toast";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
 import { EMPTY_PATIENT_IDENTITY_CATALOGS, type PatientIdentityCatalogs } from "@/features/patients/data";
+import type { ReferenceValue } from "./catalog-data";
+import { CompleteEncounterRipsFieldModal } from "./complete-encounter-rips-field-modal";
 import { CompleteEncounterRipsServiceModal } from "./complete-encounter-rips-service-modal";
 import { CompletePatientRipsDataModal } from "./complete-patient-rips-data-modal";
+import { groupEncounterRipsFieldGaps, type EncounterRipsFieldGap } from "./encounter-rips-field-gaps";
 import { groupEncounterServiceRipsGaps, type EncounterServiceRipsGap } from "./encounter-service-rips-gaps";
 import {
   generateRipsSinFacturaExportAction,
@@ -99,7 +102,18 @@ export function getRipsGenerateState(readinessReady: boolean | undefined, encoun
   return (encounterCount ?? 0) > 0 ? "ready" : "empty-period";
 }
 
-export function RipsScreen({ identityCatalogs = EMPTY_PATIENT_IDENTITY_CATALOGS }: { identityCatalogs?: PatientIdentityCatalogs } = {}) {
+export function RipsScreen({
+  identityCatalogs = EMPTY_PATIENT_IDENTITY_CATALOGS,
+  finalidadOptions = [],
+  causaMotivoOptions = [],
+}: {
+  identityCatalogs?: PatientIdentityCatalogs;
+  // Fetched once, server-side, same convention as identityCatalogs above
+  // — never re-fetched per modal open, and never hardcoded (see
+  // CompleteEncounterRipsFieldModal's own comment).
+  finalidadOptions?: ReferenceValue[];
+  causaMotivoOptions?: ReferenceValue[];
+} = {}) {
   const { showToast } = useToast();
   const [period, setPeriod] = useState<RipsExportPeriod>(currentPeriod);
   const [summary, setSummary] = useState<RipsPeriodSummary | null>(null);
@@ -125,6 +139,13 @@ export function RipsScreen({ identityCatalogs = EMPTY_PATIENT_IDENTITY_CATALOGS 
   // group currently open for correction, grouped by encounter_id (see
   // encounter-service-rips-gaps.ts).
   const [correctingEncounterGap, setCorrectingEncounterGap] = useState<EncounterServiceRipsGap | null>(null);
+  // RIPS — the one encounter's SERVICE_FINALIDAD_MISSING/
+  // CONSULTATION_CAUSA_MOTIVO_MISSING group currently open for correction
+  // (see encounter-rips-field-gaps.ts) — a DIFFERENT modal from the one
+  // above: that one applies ONE derived clinic-wide configuration in one
+  // click, this one requires an active clinical professional choosing an
+  // explicit value per missing field.
+  const [correctingFieldGap, setCorrectingFieldGap] = useState<EncounterRipsFieldGap | null>(null);
 
   const refreshHistory = async () => {
     const result = await getRipsExportHistoryAction();
@@ -216,6 +237,7 @@ export function RipsScreen({ identityCatalogs = EMPTY_PATIENT_IDENTITY_CATALOGS 
   const errorGroups = readiness ? groupErrorsByScope(readiness.errors) : [];
   const patientGaps = readiness ? groupPatientRipsGaps(readiness.errors) : [];
   const encounterServiceGaps = readiness ? groupEncounterServiceRipsGaps(readiness.errors) : [];
+  const encounterFieldGaps = readiness ? groupEncounterRipsFieldGaps(readiness.errors) : [];
   const yearOptions = getPeriodYearOptions(new Date().getFullYear());
   const generateState = getRipsGenerateState(readiness?.ready, summary?.encounterCount);
   const canGenerate = generateState === "ready";
@@ -335,6 +357,16 @@ export function RipsScreen({ identityCatalogs = EMPTY_PATIENT_IDENTITY_CATALOGS 
                               error.code === "RIPS_SERVICE_CONFIGURATION_MISSING"
                                 ? encounterServiceGaps.find((g) => g.encounterId === error.encounterId)
                                 : undefined;
+                            // SERVICE_FINALIDAD_MISSING/CONSULTATION_CAUSA_MOTIVO_MISSING
+                            // never leave /rips either — "Corregir" opens
+                            // the SAME grouped modal (by encounter_id)
+                            // regardless of which of that encounter's
+                            // several missing fields this particular row
+                            // is for (see encounter-rips-field-gaps.ts).
+                            const gapsForField =
+                              error.code === "SERVICE_FINALIDAD_MISSING" || error.code === "CONSULTATION_CAUSA_MOTIVO_MISSING"
+                                ? encounterFieldGaps.find((g) => g.encounterId === error.encounterId)
+                                : undefined;
                             return (
                               <li key={`${error.code}-${index}`} className="flex items-start justify-between gap-2 text-sm text-foreground/80">
                                 <span>{error.message}</span>
@@ -350,6 +382,14 @@ export function RipsScreen({ identityCatalogs = EMPTY_PATIENT_IDENTITY_CATALOGS 
                                   <button
                                     type="button"
                                     onClick={() => setCorrectingEncounterGap(gapsForEncounterService)}
+                                    className="shrink-0 text-xs font-medium text-primary hover:underline"
+                                  >
+                                    Corregir
+                                  </button>
+                                ) : gapsForField ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setCorrectingFieldGap(gapsForField)}
                                     className="shrink-0 text-xs font-medium text-primary hover:underline"
                                   >
                                     Corregir
@@ -436,6 +476,25 @@ export function RipsScreen({ identityCatalogs = EMPTY_PATIENT_IDENTITY_CATALOGS 
             setCorrectingEncounterGap(null);
             showToast("Servicio RIPS aplicado.");
             await refreshReadinessInPlace();
+          }}
+        />
+      )}
+
+      {correctingFieldGap && (
+        <CompleteEncounterRipsFieldModal
+          encounterId={correctingFieldGap.encounterId}
+          finalidadOptions={finalidadOptions}
+          causaMotivoOptions={causaMotivoOptions}
+          onClose={() => setCorrectingFieldGap(null)}
+          onFieldCorrected={() => {
+            // Deliberately does NOT close the modal or show a toast per
+            // field — several fields across several services in the same
+            // encounter may still need a value, and the row disappearing
+            // inside the modal is already the save's own feedback. Only
+            // readiness (the summary badge/pendientes list behind the
+            // modal) refreshes in place, same as every other correction
+            // flow on this screen.
+            refreshReadinessInPlace();
           }}
         />
       )}

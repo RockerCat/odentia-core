@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/shell/app-shell";
 import { EMPTY_PATIENT_IDENTITY_CATALOGS } from "@/features/patients/data";
 import { fetchPatientIdentityCatalogs } from "@/features/patients/identity-catalogs";
+import { getActiveReferenceValues } from "@/features/rips/catalog-data";
 import { RipsScreen } from "@/features/rips/rips-screen";
 
 // Real /rips — RIPS #5's first screen. Admin Clínica only (see
@@ -20,6 +21,14 @@ import { RipsScreen } from "@/features/rips/rips-screen";
 // pendiente can complete those fields in a modal without ever leaving
 // /rips. Never re-fetched per patient/per modal open — one fetch for the
 // whole screen, matching that existing convention.
+//
+// finalidadOptions/causaMotivoOptions (RIPSFinalidadConsultaVersion2/
+// RIPSCausaExternaVersion2) are the SAME two reference catalogs the real
+// clinical encounter screen already loads for its own Finalidad/Causa
+// <select>s (see src/app/agenda/atencion/[appointmentId]/page.tsx) —
+// fetched here too, once, so "Completar Finalidad/Causa" on a historical
+// finalized encounter never hardcodes a catalog and never re-fetches per
+// modal open.
 export default async function RipsPage() {
   let identityCatalogs = EMPTY_PATIENT_IDENTITY_CATALOGS;
   try {
@@ -31,9 +40,14 @@ export default async function RipsPage() {
     console.error("[/rips] fetchPatientIdentityCatalogs failed", error);
   }
 
+  const [finalidadOptions, causaMotivoOptions] = await Promise.all([
+    getActiveReferenceValues("RIPSFinalidadConsultaVersion2"),
+    getActiveReferenceValues("RIPSCausaExternaVersion2"),
+  ]);
+
   return (
     <AppShell activeNavLabel="RIPS" heading="RIPS" allowedRoles={["clinic-admin"]}>
-      <RipsScreen identityCatalogs={identityCatalogs} />
+      <RipsScreen identityCatalogs={identityCatalogs} finalidadOptions={finalidadOptions} causaMotivoOptions={causaMotivoOptions} />
     </AppShell>
   );
 }

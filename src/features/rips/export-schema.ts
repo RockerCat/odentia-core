@@ -157,8 +157,13 @@ function validateConsultation(v: Validator, path: string, raw: unknown) {
   v.nullableString(`${path}.modalidadGrupoServicioTecSal`, c.modalidadGrupoServicioTecSal, { exactLength: 2 });
   v.nullableString(`${path}.grupoServicios`, c.grupoServicios, { exactLength: 2 });
   v.nullableString(`${path}.codServicio`, c.codServicio, { minLength: 1, maxLength: 4 });
-  v.nullableString(`${path}.finalidadTecnologiaSalud`, c.finalidadTecnologiaSalud, { exactLength: 2 });
-  v.nullableString(`${path}.causaMotivoAtencion`, c.causaMotivoAtencion, { exactLength: 2 });
+  // RIPS #5B — DT1 v003 declares both C08/C09 with a bare fixed Tamaño
+  // "2" (never "0-2"), which per §1.5 admits no null — see
+  // export-readiness.ts's own SERVICE_FINALIDAD_MISSING/
+  // CONSULTATION_CAUSA_MOTIVO_MISSING for the readiness-layer half of
+  // this same fix.
+  v.requiredString(`${path}.finalidadTecnologiaSalud`, c.finalidadTecnologiaSalud, { exactLength: 2 });
+  v.requiredString(`${path}.causaMotivoAtencion`, c.causaMotivoAtencion, { exactLength: 2 });
   validateDiagnosisCode(v, `${path}.codDiagnosticoPrincipal`, c.codDiagnosticoPrincipal, true);
   v.mustBeNull(`${path}.codDiagnosticoPrincipalCIE11`, c.codDiagnosticoPrincipalCIE11);
   v.mustBeNull(`${path}.nomCodDiagnosticoPrincipalCIE11`, c.nomCodDiagnosticoPrincipalCIE11);
@@ -199,7 +204,8 @@ function validateProcedure(v: Validator, path: string, raw: unknown) {
   v.nullableString(`${path}.modalidadGrupoServicioTecSal`, p.modalidadGrupoServicioTecSal, { exactLength: 2 });
   v.nullableString(`${path}.grupoServicios`, p.grupoServicios, { exactLength: 2 });
   v.nullableString(`${path}.codServicio`, p.codServicio, { minLength: 1, maxLength: 4 });
-  v.nullableString(`${path}.finalidadTecnologiaSalud`, p.finalidadTecnologiaSalud, { exactLength: 2 });
+  // RIPS #5B — P10, same bare fixed Tamaño "2" rule as C08 above.
+  v.requiredString(`${path}.finalidadTecnologiaSalud`, p.finalidadTecnologiaSalud, { exactLength: 2 });
   v.requiredString(`${path}.tipoDocumentoIdentificacion`, p.tipoDocumentoIdentificacion, { exactLength: 2 });
   v.requiredString(`${path}.numDocumentoIdentificacion`, p.numDocumentoIdentificacion, { minLength: 4, maxLength: 20 });
   validateDiagnosisCode(v, `${path}.codDiagnosticoPrincipal`, p.codDiagnosticoPrincipal, true);

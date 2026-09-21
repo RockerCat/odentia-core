@@ -234,19 +234,43 @@ Known, not-yet-resolved limitation: this cannot distinguish a `"40"` the
 professional picked manually from one this logic derived, so leaving that
 Finalidad can clear a manually-chosen `"40"` too. All of this lives
 directly in the "Servicios realizados" card flow, not tucked in the
-"Detalles RIPS" accordion. Modalidad/Causa-Motivo/Finalidad stay
-regulatorily optional for RIPS export readiness (`export-readiness.ts`
-never blocks on them, preserving historical encounters) — only
-`getEncounterFinalizeBlockers` enforces, as Odentia-only, forward-only
-rules at "Finalizar atención" time: Finalidad and (for a consultation)
-Causa/Motivo on every classified service, plus a resolvable principal
-diagnosis (reusing `resolveDiagnosesForService` from
-`export-generator.ts` — the same resolution `/rips` itself uses to build
-the JSON) with `tipoDiagnosticoPrincipal` set when that service is a
-consultation. Never re-evaluates an already-finalized encounter — a
-historical encounter missing any of these stays exactly as pending in
-`/rips` as before. See RIPS section below for the CUPS-resolution
-mechanics, unchanged by this consolidation. Reportes' treatment ranking
+"Detalles RIPS" accordion. **Modalidad** stays regulatorily optional for
+RIPS export readiness (DT1 v003 declares it a variable-size field) —
+`export-readiness.ts` never blocks on it. **Finalidad and, for a
+consultation, Causa/Motivo are NOT regulatorily optional**: DT1 v003
+declares both with a bare fixed Tamaño `"2"` (§1.5's own rule for a
+fixed-size field), which admits no `null` — `export-readiness.ts` enforces
+this with `SERVICE_FINALIDAD_MISSING`/`CONSULTATION_CAUSA_MOTIVO_MISSING`,
+and `export-schema.ts`'s runtime validation rejects a `null` value on
+either as defense-in-depth. `getEncounterFinalizeBlockers` additionally
+enforces, as Odentia-only, forward-only rules at "Finalizar atención"
+time (so a NEW encounter can never even reach the readiness checks
+above): Finalidad and (for a consultation) Causa/Motivo on every
+classified service, plus a resolvable principal diagnosis (reusing
+`resolveDiagnosesForService` from `export-generator.ts` — the same
+resolution `/rips` itself uses to build the JSON) with
+`tipoDiagnosticoPrincipal` set when that service is a consultation. Never
+re-evaluates an already-finalized encounter — a historical encounter
+finalized before these readiness checks existed, still missing Finalidad
+or (for a consultation) Causa/Motivo, blocks `/rips` generation with an
+actionable error, same as any other readiness gap. **A finalized
+encounter's missing Finalidad/Causa can only ever be completed through
+`correct_encounter_service_rips_field()`** (`SECURITY DEFINER`, `/rips`'s
+own "Corregir" → `CompleteEncounterRipsFieldModal`) — `NULL -> explicit
+value` only, never a replace/overwrite, gated by
+`is_active_clinical_professional(clinic_id)` (never the relaxed
+clinic_admin-only gate `correct_finalized_encounter_rips_gaps`/
+`apply_confirmed_specialty_rips_service_to_encounter` use for their own
+genuinely administrative fields — Finalidad/Causa are a real clinical
+decision, same authority tier as the normal pre-finalization write path),
+never the encounter's original attending professional specifically
+(clinical write authority in this schema is clinic-scoped, not
+professional-scoped), and never platform Superadmin by virtue of being
+Superadmin. No backfill, no DT1 Finalidad↔Causa cross-validation engine
+(that doesn't exist anywhere in this codebase — the one confirmed pairing,
+promoción/mantenimiento → Causa 40, stays a client-side UX nudge only,
+never enforced server-side). See RIPS section below for the
+CUPS-resolution mechanics, unchanged by this consolidation. Reportes' treatment ranking
 (`computeTreatmentRanking`, `src/features/reports/report-selectors.ts`)
 mirrors this: structured `encounter_services` wins per-encounter, legacy
 `patient_clinical_encounter_procedures` only counts for an encounter with

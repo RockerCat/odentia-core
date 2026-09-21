@@ -36,7 +36,9 @@ export type RipsReadinessErrorCode =
   | "ENCOUNTER_INCAPACITY_MISSING"
   | "SERVICE_CUPS_UNCLASSIFIED"
   | "SERVICE_VALUE_MISSING"
+  | "SERVICE_FINALIDAD_MISSING"
   | "CONSULTATION_DIAGNOSIS_TYPE_MISSING"
+  | "CONSULTATION_CAUSA_MOTIVO_MISSING"
   | "CLINICAL_SERVICE_MAPPING_UNRESOLVED"
   | "RIPS_SERVICE_CONFIGURATION_MISSING";
 
@@ -212,6 +214,49 @@ export function getEncounterRipsReadiness(input: EncounterReadinessInput): RipsR
         // above — one screen per encounter handles every RIPS gap that
         // encounter has, never one screen per individual field.
         fixHref: `/rips/atencion/${input.encounterId}`,
+      });
+    }
+
+    // RIPS #5B — finalidadTecnologiaSalud (C08 consulta / P10
+    // procedimiento) and causaMotivoAtencion (C09, consulta only — DT1
+    // v003 defines no equivalent field for procedimientos) are both
+    // declared with a bare fixed Tamaño "2" (never "0-2", never a
+    // comma-list including 0) — DT1 v003 §1.5's own rule for a fixed-size
+    // field ("no admiten información con otro número de posición
+    // diferente a la que se establece") means neither can be exported as
+    // null, unlike Modalidad/ConceptoRecaudo/CodServicio elsewhere in
+    // this same service, which genuinely are variable-size-with-0-minimum
+    // and stay untouched here. A NEW service can never reach this state —
+    // getEncounterFinalizeBlockers (dashboard/encounter-finalize-readiness.ts)
+    // already requires both before "Finalizar atención" — so these two
+    // checks only ever fire for an encounter finalized before that gate
+    // existed. No default/inference here either: readiness identifies the
+    // gap, it never prescribes a value (never "usa 40"/"usa 38") — same
+    // convention as every other readiness check in this file.
+    if (!service.finalidadCode) {
+      errors.push({
+        ...serviceBase,
+        code: "SERVICE_FINALIDAD_MISSING",
+        scope: "service",
+        message: `${encounterLabel} — falta indicar la finalidad de ${service.ripsServiceType === "consultation" ? "la consulta" : "el procedimiento"} ${service.cupsCode}.`,
+        // fixHref stays null on purpose, same as RIPS_SERVICE_CONFIGURATION_MISSING
+        // above: the real correction screen (CompleteEncounterRipsFieldModal,
+        // via correct_encounter_service_rips_field()) is opened by
+        // rips-screen.tsx matching this error's own `code`
+        // (encounter-rips-field-gaps.ts), never by navigating a URL —
+        // never point at /rips/atencion/[encounterId] either, which only
+        // ever corrects incapacidad/valor cobrado (RIPS #6D), not this.
+        fixHref: null,
+      });
+    }
+
+    if (service.ripsServiceType === "consultation" && !service.causaMotivoCode) {
+      errors.push({
+        ...serviceBase,
+        code: "CONSULTATION_CAUSA_MOTIVO_MISSING",
+        scope: "service",
+        message: `${encounterLabel} — falta indicar la causa o motivo de la consulta ${service.cupsCode}.`,
+        fixHref: null,
       });
     }
 

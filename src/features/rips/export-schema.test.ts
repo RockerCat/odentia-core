@@ -72,7 +72,7 @@ function validTransaction(): RipsSinFacturaTransaction {
               modalidadGrupoServicioTecSal: "09",
               grupoServicios: "02",
               codServicio: "02",
-              finalidadTecnologiaSalud: null,
+              finalidadTecnologiaSalud: "44",
               tipoDocumentoIdentificacion: "CC",
               numDocumentoIdentificacion: "80100200",
               codDiagnosticoPrincipal: "K046",
@@ -210,6 +210,43 @@ describe("validateRipsSinFacturaTransaction — rejects malformed input", () => 
     const t = validTransaction() as unknown as { usuarios: [{ servicios: { consultas: [Record<string, unknown>] } }] };
     t.usuarios[0].servicios.consultas[0].valorPagoModerador = null;
     expect(validateRipsSinFacturaTransaction(t).valid).toBe(false);
+  });
+
+  // RIPS #5B — C08/C09/P10 are all declared with a bare fixed Tamaño "2"
+  // in DT1 v003, which per §1.5 admits no null (see export-schema.ts's
+  // own comment on these three lines, and export-readiness.ts's
+  // SERVICE_FINALIDAD_MISSING/CONSULTATION_CAUSA_MOTIVO_MISSING for the
+  // readiness-layer half of this same fix).
+  it("rejects a null finalidadTecnologiaSalud on a consulta (DT1 v003 fixed-size field, never null)", () => {
+    const t = validTransaction() as unknown as { usuarios: [{ servicios: { consultas: [Record<string, unknown>] } }] };
+    t.usuarios[0].servicios.consultas[0].finalidadTecnologiaSalud = null;
+    const result = validateRipsSinFacturaTransaction(t);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.path.endsWith("finalidadTecnologiaSalud"))).toBe(true);
+  });
+
+  it("rejects a null causaMotivoAtencion on a consulta (DT1 v003 fixed-size field, never null)", () => {
+    const t = validTransaction() as unknown as { usuarios: [{ servicios: { consultas: [Record<string, unknown>] } }] };
+    t.usuarios[0].servicios.consultas[0].causaMotivoAtencion = null;
+    const result = validateRipsSinFacturaTransaction(t);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.path.endsWith("causaMotivoAtencion"))).toBe(true);
+  });
+
+  it("rejects a null finalidadTecnologiaSalud on a procedimiento (DT1 v003 fixed-size field, never null)", () => {
+    const t = validTransaction() as unknown as { usuarios: [{ servicios: { procedimientos: [Record<string, unknown>] } }] };
+    t.usuarios[0].servicios.procedimientos[0].finalidadTecnologiaSalud = null;
+    const result = validateRipsSinFacturaTransaction(t);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.path.endsWith("finalidadTecnologiaSalud"))).toBe(true);
+  });
+
+  it("accepts a valid 2-character finalidadTecnologiaSalud/causaMotivoAtencion on a consulta, and finalidadTecnologiaSalud on a procedimiento", () => {
+    const t = validTransaction();
+    expect(t.usuarios[0].servicios.consultas![0].finalidadTecnologiaSalud).toHaveLength(2);
+    expect(t.usuarios[0].servicios.consultas![0].causaMotivoAtencion).toHaveLength(2);
+    expect(t.usuarios[0].servicios.procedimientos![0].finalidadTecnologiaSalud).toHaveLength(2);
+    expect(validateRipsSinFacturaTransaction(t)).toEqual({ valid: true, errors: [] });
   });
 
   it("rejects a procedimiento whose vrServicio isn't exactly 0 (RIPS sin factura invariant)", () => {

@@ -2344,12 +2344,140 @@ re-verified in this update.
   Confirmado Repetido). No default, no inference — selection stays
   manual. Not investigated further in this checkpoint; the regulatory
   case for this specific field is not closed.
-- **Follow-up audit required — `export-schema.ts` nullable fields.**
-  `export-schema.ts` appears to allow `causaMotivoAtencion` and
-  `finalidadTecnologiaSalud` as nullable, while DT1 v003 appears to define
-  both as fixed-size/non-null for a Consulta. Not modified in this
-  checkpoint — flagged as the next recommended technical checkpoint, not
-  yet audited in depth.
+- **RESOLVED (2026-09-21) — readiness + runtime schema enforce DT1's
+  fixed-size Finalidad/Causa.** Confirmed with the actual DT1 v003 PDF
+  text (fetched from minsalud.gov.co, cross-checked against the real
+  sispro.gov.co "vigente" link to rule out an unlabeled v001 copy):
+  `finalidadTecnologiaSalud` (C08 consulta / P10 procedimiento) and
+  `causaMotivoAtencion` (C09, consulta only — DT1 defines no equivalent
+  field for procedimientos) are both declared with a bare fixed Tamaño
+  `"2"` (never `"0-2"`, never a comma-list including 0) — DT1 v003 §1.5's
+  own rule for a fixed-size field means neither admits `null`. Fixed at
+  two layers:
+  - **`export-readiness.ts`**: two new checks, `SERVICE_FINALIDAD_MISSING`
+    (consulta and procedimiento) and `CONSULTATION_CAUSA_MOTIVO_MISSING`
+    (consulta only), same per-service pattern as the existing
+    `SERVICE_VALUE_MISSING`/`CONSULTATION_DIAGNOSIS_TYPE_MISSING` checks —
+    identifies the gap and names the service, never prescribes a value
+    (never "usa 40"/"usa 38"). `fixHref: null` — no correction screen
+    exists for this specific gap yet (see below).
+  - **`export-schema.ts`**: `finalidadTecnologiaSalud`/`causaMotivoAtencion`
+    switched from `nullableString` to the existing `requiredString`
+    helper (`exactLength: 2` unchanged) for both Consulta and
+    Procedimiento — no new helper, no catalog-value validation added
+    (still structural-only, unchanged scope).
+  - **New encounters**: already protected, unchanged — `getEncounterFinalizeBlockers`
+    (dashboard/encounter-finalize-readiness.ts, previous checkpoint)
+    already requires both before "Finalizar atención," so a NEW
+    encounter can never reach either readiness check.
+  - **Historical finalized encounters** with a null Finalidad (or, for a
+    consulta, a null Causa): now genuinely blocked — `/rips` readiness
+    reports "no listo" with an actionable per-service message, RIPS
+    generation is refused
+    (`export-actions.ts`'s existing `if (!readiness.ready)` gate, already
+    checked before the generator ever runs — no change needed there),
+    and the runtime schema would independently reject a null value here
+    too as defense-in-depth if one somehow reached it. **No backfill, no
+    UPDATE, no RPC, no historical-correction UI built in this
+    checkpoint** — a historical encounter caught by this stays blocked
+    until a future, explicitly-scoped correction mechanism exists (same
+    "stay in `/rips`, group by natural key, fail closed" shape as RIPS
+    #6D/#A4B, not yet built for this specific gap). MUV/SISPRO official
+    validation remains unattempted regardless (see RIPS #6A).
+  - Generator (`export-generator.ts`) and its own DTO types
+    (`export-types.ts`) are **unchanged** — both readiness and schema
+    already suffice for fail-closed behavior, confirmed by `tsc --noEmit`
+    staying clean with no type changes; the generator still simply passes
+    `service.finalidadCode`/`causaMotivoCode` through, it just never runs
+    for a blocked encounter anymore.
+- **RESOLVED (2026-09-21) — focused, clinically-authorized correction for
+  the historical Finalidad/Causa gap the bullet above blocks on.**
+  Read-only design audit first (same date), then implemented: a new
+  `correct_encounter_service_rips_field(p_service_id, p_field, p_value)`
+  RPC (migration `20260921100000`, applied to remote, `supabase migration
+  list` confirmed local = remote) is the one sanctioned write path —
+  `NULL -> explicit value` only for `encounter_services.finalidad_code`
+  (Consulta or Procedimiento) or `causa_motivo_code` (Consulta only,
+  rejected structurally for a Procedimiento), never a replace/overwrite,
+  even when the requested value matches what's already there. Mirrors
+  `correct_finalized_encounter_rips_gaps` (#6D)'s "fill missing, never
+  overwrite" mutation shape and `apply_confirmed_specialty_rips_service_to_encounter`
+  (A4B)'s append-only-audit-table convention (new sibling table
+  `encounter_service_rips_field_corrections` — `field`/`previous_value`/
+  `new_value`/`corrected_by`/`corrected_at`, zero client grants, RPC is
+  sole writer) — but **deliberately diverges from both on authorization**:
+  gated by `is_active_clinical_professional(clinic_id)` (an active
+  dentist, or a clinic_admin who is ALSO clinically active — never a
+  purely administrative clinic_admin, never an assistant, never platform
+  Superadmin by virtue of being Superadmin), not the relaxed
+  clinic_admin-only gate #6D/A4B use for their own genuinely
+  administrative fields. Reasoning: Finalidad/Causa's normal
+  pre-finalization write path already requires this same gate
+  (`upsert_patient_clinical_encounter`), and CLAUDE.md itself calls
+  Finalidad "a real clinical decision" — see the design audit's own
+  `CLINICAL AUTHORIZATION DECISION REQUIRED` verdict for the full
+  reasoning. Never requires the encounter's original attending
+  professional — clinical write authority in this schema is clinic-scoped
+  (any active clinical professional of the clinic may correct any
+  patient's data), not professional-scoped, same rule
+  `is_active_clinical_professional()` already enforces everywhere else.
+  No DT1 Finalidad↔Causa cross-validation engine was built — the RPC
+  validates field name, service-type eligibility, catalog membership
+  (`RIPSFinalidadConsultaVersion2`/`RIPSCausaExternaVersion2`,
+  `status = 'active'`, same convention as every other reference-catalog
+  check in this schema) and missing-only semantics; that engine doesn't
+  exist anywhere in this codebase and building it stayed explicitly out
+  of scope.
+  - **UX**: `/rips`'s own pendientes list now routes
+    `SERVICE_FINALIDAD_MISSING`/`CONSULTATION_CAUSA_MOTIVO_MISSING`
+    "Corregir" to a new focused modal (`CompleteEncounterRipsFieldModal`),
+    grouped by `encounter_id` for context (`encounter-rips-field-gaps.ts`)
+    but mutating one service/field/explicit-value at a time — never a
+    batch, never "aplicar a todos." Only a field still missing is ever
+    shown as editable (`encounter-rips-field-gap-data.ts` re-derives
+    current values fresh from the DB at modal-open time, never trusting
+    the readiness snapshot for that). Options come from the same
+    `getActiveReferenceValues("RIPSFinalidadConsultaVersion2"/
+    "RIPSCausaExternaVersion2")` the real clinical encounter screen
+    already uses — fetched once in `/rips/page.tsx`, never hardcoded,
+    never re-fetched per modal open. Each save independently refreshes
+    readiness in place (the pendiente disappears without leaving `/rips`
+    or reloading); the modal itself stays open until the admin closes it,
+    since one encounter can have several independent gaps.
+  - **Clinic Admin without clinical capacity**: can still open the modal
+    and see the full context/blockers (never hidden) — the mutation
+    controls are replaced by an honest inline message ("Esta corrección
+    requiere un profesional clínico activo de la clínica") instead of a
+    button that would only fail. `canCorrect` is resolved server-side,
+    fresh on every open, via the SAME `canEditClinicalData()` helper
+    (`src/features/patients/clinical-permissions.ts`) that already mirrors
+    `is_active_clinical_professional()` elsewhere in this codebase —
+    reused, not reinvented, and never a role name/localStorage guess.
+  - **Non-admin dentist**: **functional limitation, not resolved.** `/rips`
+    stays Clinic Admin only end-to-end, unchanged, per this checkpoint's
+    own explicit instruction not to widen it. The RPC itself is already
+    correct for a plain active dentist (no clinic_admin role required at
+    the DB layer), but no route/surface exists today for her to reach it
+    outside `/rips`. Until either `/rips` itself is reconsidered or a
+    narrower dentist-facing surface is built, this gap can only practically
+    be corrected by a clinic_admin who is also clinically active.
+  - **Audit trail**: recorded (`encounter_service_rips_field_corrections`)
+    but has **no query UI yet** — same deliberate deferral A4B's own audit
+    table already made ("add a scoped SELECT policy in a later, separate
+    migration if/when a real 'historial de correcciones' screen is
+    actually built"). History/PDF/`/portal/historia` read the corrected
+    `encounter_services` value directly, same as any other field — no
+    change needed there, and no correction-history surfacing was added to
+    any of them in this checkpoint.
+  - SQL regression test (`supabase/tests/correct_encounter_service_rips_field.test.sql`)
+    covers success (dentist + clinically-active clinic_admin, both
+    fields, audit-row shape), authorization (purely administrative
+    clinic_admin, assistant, cross-clinic dentist — all rejected), and
+    safety (not-finalized, already-set with same/different value,
+    unsupported field, nonexistent/superseded catalog code,
+    causa-on-procedure) — **NOT RUN locally**, no Postgres/Docker in this
+    dev environment, same caveat as every other SQL test in this file.
+    Migration applied and confirmed in sync regardless.
 - **Follow-up — dental CIE-10 scope should eventually be versioned.** The
   `{Z012} ∪ K00–K14` universe prioritized above is explicitly a UX
   narrowing, not a claim of completeness: prior audit work found K00–K14

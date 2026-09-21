@@ -22,8 +22,8 @@ function baseService(overrides: Partial<EncounterReadinessInput["services"][numb
     modalidadCode: null,
     grupoServiciosCode: null,
     codServicioCode: null,
-    finalidadCode: null,
-    causaMotivoCode: null,
+    finalidadCode: "11",
+    causaMotivoCode: "21",
     conceptoRecaudoCode: null,
     valorPagoModerador: null,
     sequence: 0,
@@ -81,33 +81,72 @@ describe("getEncounterRipsReadiness", () => {
     expect(result.errors.map((e) => e.code)).not.toContain("SERVICE_VALUE_MISSING");
   });
 
-  // RIPS — finalidad_code (finalidadTecnologiaSalud) is OPTIONAL per the
-  // DT1 as currently documented in this repo (docs/rips-json-mapping.md)
-  // — Odentia's own internal quality rule requiring it before "Finalizar
-  // atención" for a NEW encounter (getEncounterFinalizeBlockers, see that
-  // file's own tests) is a forward-looking product decision, never an
-  // export-readiness/regulatory requirement. A historical encounter
-  // finalized before that internal rule existed, with finalidad_code
-  // still null, stays a perfectly valid RIPS export — never a retroactive
-  // blocker, never backfilled. Modalidad/Causa were never blockers either
-  // (Modalidad is auto-resolved, never user input; Causa stays an
-  // editable suggestion, not a requirement) — all three assert together
-  // here since they're the same "internal UX nicety, not an export
-  // requirement" class.
-  it("never blocks readiness for a missing finalidad_code, modalidad_code, or causa_motivo_code — none are regulatory/export requirements", () => {
-    const result = getEncounterRipsReadiness(
-      baseEncounter({ services: [baseService({ finalidadCode: null, modalidadCode: null, causaMotivoCode: null })] }),
-    );
-    expect(result).toEqual({ ready: true, errors: [] });
+  // RIPS #5B — modalidad_code stays genuinely optional (DT1 v003's own
+  // Tamaño for modalidadGrupoServicioTecSal is a variable size admitting
+  // 0, unlike finalidad/causa below — out of this checkpoint's scope,
+  // untouched) — asserted alone so a future change to finalidad/causa
+  // never accidentally couples back to it.
+  it("never blocks readiness for a missing modalidad_code — DT1 v003 declares it variable-size, unlike finalidad/causa below", () => {
+    const result = getEncounterRipsReadiness(baseEncounter({ services: [baseService({ modalidadCode: null })] }));
+    expect(result.ready).toBe(true);
   });
 
-  it("never blocks readiness for a procedure missing finalidad_code either — same rule applies regardless of service type", () => {
+  // RIPS #5B — finalidadTecnologiaSalud (C08 consulta / P10
+  // procedimiento) and causaMotivoAtencion (C09, consulta only) are both
+  // declared in DT1 v003 with a bare fixed Tamaño "2" — per §1.5 that
+  // means neither can ever be null, structural rule not a product
+  // preference. A NEW encounter can never actually hit this (see
+  // getEncounterFinalizeBlockers, unchanged), so these checks only ever
+  // fire for an encounter finalized before that gate existed — never
+  // backfilled, never corrected automatically; readiness simply refuses
+  // to call it ready.
+  it("flags a consultation missing finalidad_code", () => {
+    const result = getEncounterRipsReadiness(baseEncounter({ services: [baseService({ finalidadCode: null })] }));
+    expect(result.ready).toBe(false);
+    expect(result.errors.map((e) => e.code)).toContain("SERVICE_FINALIDAD_MISSING");
+  });
+
+  it("flags a consultation missing causa_motivo_code", () => {
+    const result = getEncounterRipsReadiness(baseEncounter({ services: [baseService({ causaMotivoCode: null })] }));
+    expect(result.ready).toBe(false);
+    expect(result.errors.map((e) => e.code)).toContain("CONSULTATION_CAUSA_MOTIVO_MISSING");
+  });
+
+  it("is ready (regarding these two checks) once a consultation has both finalidad_code and causa_motivo_code", () => {
+    const result = getEncounterRipsReadiness(baseEncounter({ services: [baseService({ finalidadCode: "11", causaMotivoCode: "21" })] }));
+    const codes = result.errors.map((e) => e.code);
+    expect(codes).not.toContain("SERVICE_FINALIDAD_MISSING");
+    expect(codes).not.toContain("CONSULTATION_CAUSA_MOTIVO_MISSING");
+  });
+
+  it("flags a procedure missing finalidad_code — same rule applies regardless of service type", () => {
     const result = getEncounterRipsReadiness(
       baseEncounter({
         services: [baseService({ ripsServiceType: "procedure", cupsCode: "230100", serviceValue: 0, finalidadCode: null })],
       }),
     );
-    expect(result.ready).toBe(true);
+    expect(result.ready).toBe(false);
+    expect(result.errors.map((e) => e.code)).toContain("SERVICE_FINALIDAD_MISSING");
+  });
+
+  it("is ready (regarding this check) once a procedure has finalidad_code", () => {
+    const result = getEncounterRipsReadiness(
+      baseEncounter({
+        services: [baseService({ ripsServiceType: "procedure", cupsCode: "230100", serviceValue: 0, finalidadCode: "11" })],
+      }),
+    );
+    expect(result.errors.map((e) => e.code)).not.toContain("SERVICE_FINALIDAD_MISSING");
+  });
+
+  it("never requires causa_motivo_code for a procedure — DT1 v003 defines no such field for procedimientos", () => {
+    const result = getEncounterRipsReadiness(
+      baseEncounter({
+        services: [
+          baseService({ ripsServiceType: "procedure", cupsCode: "230100", serviceValue: 0, finalidadCode: "11", causaMotivoCode: null }),
+        ],
+      }),
+    );
+    expect(result.errors.map((e) => e.code)).not.toContain("CONSULTATION_CAUSA_MOTIVO_MISSING");
   });
 
   it("flags a missing professional document identity", () => {
