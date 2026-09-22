@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { AssignClinicAdminCard } from "@/components/platform/assign-clinic-admin-card";
+import { ClinicCommercialStatusCard } from "@/components/platform/clinic-commercial-status-card";
 import { ClinicLogoDisplay } from "@/components/platform/clinic-logo-display";
 import { PlatformEquipoSection } from "@/components/platform/platform-equipo-section";
 import { fetchPendingInvitations, fetchTeamMembers } from "@/features/clinic/data";
@@ -115,6 +116,8 @@ export default async function PlatformClinicDetailPage({ params }: { params: Pro
           </p>
         </div>
       </div>
+
+      <ClinicCommercialStatusCard clinicId={clinic.id} initialStatus={clinic.status} initialTrialEndsAt={clinic.trialEndsAt} />
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <div className="rounded-2xl border border-border bg-background p-6 shadow-sm">

@@ -165,9 +165,13 @@ The real resolved clinic role (never name/avatar) is also bridged into
 the legacy mock `src/features/auth/session.ts` / `RoleContext` store
 (`src/features/session/role-bridge.ts`), so the small set of screens
 still on Phase 1 mock data (Configuración's secondary preference
-sections, `/admin`, `/suscripcion` — see PROJECT_STATUS.md's "OUT OF
-SCOPE ACTUAL"/"PARCIAL" for the current, short list) keep working
-unmodified. Do not scatter session logic into feature folders. `src/dev/`
+sections, `/admin` — see PROJECT_STATUS.md's "OUT OF SCOPE ACTUAL"/
+"PARCIAL" for the current, short list) keep working unmodified.
+`/suscripcion` (Mi Suscripción) is no longer one of these — since
+"Suscripción / Billing — piloto" (2026-09-22) it reads real
+`clinics.status`/`trial_ends_at`, informational-only (no payment
+provider yet — see PROJECT_STATUS.md for the current DEFERRED BILLING
+list). Do not scatter session logic into feature folders. `src/dev/`
 (role switcher, mock dentist resolver) is a separate, disposable dev-only
 shim, still used by those remaining mock screens — never a source of
 authorization for a real feature, and not yet safe to delete. Any

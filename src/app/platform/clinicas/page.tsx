@@ -50,6 +50,7 @@ export default async function PlatformClinicsPage() {
                 <th className="px-6 py-3">Ciudad</th>
                 <th className="px-6 py-3">Estado</th>
                 <th className="px-6 py-3">Creada</th>
+                <th className="px-6 py-3">Fin de prueba</th>
               </tr>
             </thead>
             <tbody>
@@ -78,6 +79,9 @@ export default async function PlatformClinicsPage() {
                   </td>
                   <td className="px-6 py-3 text-muted-foreground">
                     {new Date(clinic.createdAt).toLocaleDateString("es-CO")}
+                  </td>
+                  <td className="px-6 py-3 text-muted-foreground">
+                    {clinic.trialEndsAt ? new Date(clinic.trialEndsAt).toLocaleDateString("es-CO") : "—"}
                   </td>
                 </tr>
               ))}

@@ -7,6 +7,10 @@ export type PlatformClinicListItem = {
   status: "active" | "suspended";
   city: string | null;
   createdAt: string;
+  // Pilot subscription controls (see commercial-status.ts) — null for any
+  // clinic provisioned before that checkpoint, or one whose trial was
+  // never tracked; never backfilled with an invented date.
+  trialEndsAt: string | null;
   logoUrl: string | null;
 };
 
@@ -20,6 +24,7 @@ export type PlatformClinicDetail = {
   phone: string | null;
   status: "active" | "suspended";
   createdAt: string;
+  trialEndsAt: string | null;
   location: {
     address: string | null;
     city: string | null;
@@ -64,7 +69,7 @@ function findPrimary<T extends { is_primary: boolean }>(locations: T[] | null | 
 export async function fetchPlatformClinics(supabase: SupabaseClient): Promise<PlatformClinicListItem[]> {
   const { data, error } = await supabase
     .from("clinics")
-    .select("id, name, slug, status, created_at, logo_url, clinic_locations(city, is_primary)")
+    .select("id, name, slug, status, created_at, trial_ends_at, logo_url, clinic_locations(city, is_primary)")
     .order("created_at", { ascending: false });
   if (error) throw error;
 
@@ -77,13 +82,14 @@ export async function fetchPlatformClinics(supabase: SupabaseClient): Promise<Pl
       status: row.status,
       city: primary?.city ?? null,
       createdAt: row.created_at,
+      trialEndsAt: row.trial_ends_at,
       logoUrl: row.logo_url,
     };
   });
 }
 
 const CLINIC_DETAIL_SELECT =
-  "id, name, slug, legal_name, tax_id, email, phone, status, created_at, logo_url, clinic_locations(address, city, state, is_primary)";
+  "id, name, slug, legal_name, tax_id, email, phone, status, created_at, trial_ends_at, logo_url, clinic_locations(address, city, state, is_primary)";
 
 function mapClinicDetailRow(data: {
   id: string;
@@ -95,6 +101,7 @@ function mapClinicDetailRow(data: {
   phone: string | null;
   status: "active" | "suspended";
   created_at: string;
+  trial_ends_at: string | null;
   logo_url: string | null;
   clinic_locations: RawClinicDetailLocation[] | null;
 }): PlatformClinicDetail {
@@ -111,6 +118,7 @@ function mapClinicDetailRow(data: {
     phone: data.phone,
     status: data.status,
     createdAt: data.created_at,
+    trialEndsAt: data.trial_ends_at,
     location: primary ? { address: primary.address, city: primary.city, state: primary.state } : null,
   };
 }

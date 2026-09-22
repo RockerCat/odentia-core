@@ -18,12 +18,18 @@ export type ClinicDetail = {
   phone: string | null;
   logoUrl: string | null;
   status: "active" | "suspended";
+  createdAt: string;
+  // Pilot subscription controls (src/features/subscription/) — null for
+  // any clinic provisioned before that checkpoint, never backfilled with
+  // an invented date. Used by Mi Suscripción; harmless additive field for
+  // every other existing caller of fetchClinicDetail.
+  trialEndsAt: string | null;
 };
 
 export async function fetchClinicDetail(supabase: SupabaseClient, clinicId: string): Promise<ClinicDetail | null> {
   const { data, error } = await supabase
     .from("clinics")
-    .select("id, name, legal_name, tax_id, email, phone, logo_url, status")
+    .select("id, name, legal_name, tax_id, email, phone, logo_url, status, created_at, trial_ends_at")
     .eq("id", clinicId)
     .maybeSingle();
   if (error) {
@@ -41,6 +47,8 @@ export async function fetchClinicDetail(supabase: SupabaseClient, clinicId: stri
     phone: data.phone,
     logoUrl: data.logo_url,
     status: data.status,
+    createdAt: data.created_at,
+    trialEndsAt: data.trial_ends_at,
   };
 }
 

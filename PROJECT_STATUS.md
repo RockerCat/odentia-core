@@ -353,6 +353,12 @@ Detailed per-vertical implementation notes are further below.
   and Superadmin-provisioned first-Clinic-Admin invitation + password-only
   activation with no Confirm Signup email and automatic acceptance for a
   new user. See "Platform / Superadmin" below for full detail.
+- **Suscripción / Billing (piloto)** — real entitlement (`clinics.status`,
+  pre-existing) + real trial tracking (`trial_ends_at`, new), Platform
+  manual controls (activar/suspender/extender trial), and a real,
+  informational Mi Suscripción. **No payment provider, no checkout, no
+  billing engine** — see "Suscripción / Billing — piloto (Checkpoint
+  2026-09-22)" below for the full detail and DEFERRED BILLING list.
 - **Clínica** — Información general, sede principal (map/geocoding/logo), Equipo
   (real list + invite + activate/deactivate), Mi perfil profesional (**real
   editing**, not just display), Consultorios (`rooms`).
@@ -425,8 +431,11 @@ Detailed per-vertical implementation notes are further below.
 Confirmed by reading the code directly — not silently broken, deliberately not
 built for this MVP:
 
-- **Mi Suscripción** (`/suscripcion`) — fully mock UI, no data fetching at all, no
-  payment provider integration. Per CLAUDE.md, Claude must not integrate one.
+- **Mi Suscripción** (`/suscripcion`) — real, informational-only since the
+  "Suscripción / Billing — piloto" checkpoint (2026-09-22): reads real
+  `clinics.status`/`trial_ends_at`, no more mock plan/billing data. Still
+  no payment provider integration, no checkout — see that checkpoint's own
+  "DEFERRED BILLING" list.
 - **Superadmin** (`/admin`) — fully mock, no real auth wired up. `role-bridge.ts`
   never produces a `"superadmin"` mock role from a real session (`ClinicContext`'s
   `membership.role` type only ever has `clinic_admin | dentist | assistant`), so
@@ -1438,6 +1447,133 @@ session with no manual DB work and no outbound email.
     clínico, no comercial: **RIPS A4 — Especialidad → Servicio RIPS write
     path para `clinic_admin`** (ver "RIPS #8" y "Estado actual" arriba,
     sin cambios por este checkpoint).
+
+## Suscripción / Billing — piloto (Checkpoint 2026-09-22)
+
+**"Subscription/Billing readiness para piloto" — inventory + minimal pilot
+controls, no billing engine.** Real state found before this checkpoint:
+zero `subscriptions`/`plans`/`payments` tables anywhere in the schema —
+foundation schema's own comment explicitly deferred "subscriptions" as a
+future domain. `clinics.status` (`active`/`suspended`, foundation schema)
+already existed and was already the real entitlement switch
+`resolveClinicContext()`/`resolvePatientContext()` (`src/features/session/`
+— Auth, untouched by this checkpoint) and the Marketplace SSO-code RPCs
+already gated real access on — this was the one genuinely real piece
+already wired up, not something this checkpoint invented. Mi Suscripción
+(`/suscripcion`) was fully mock (`SUBSCRIPTION_MOCK`/`LOPADENT_BENEFIT_MOCK`
+— invented plan name, invented "Visa terminada en 4242," a fabricated
+LopaDent spend progress bar with no real purchase-tracking behind it).
+Platform had no way to see or change a clinic's commercial state at all.
+
+**Canonical price/trial values were NOT invented for this checkpoint** —
+README.md's own "Current business hypothesis" already documented "One PRO
+plan: COP 99,900/month" and "30-day full-access evaluation" (these predate
+this checkpoint); `src/features/subscription/plan.ts` now centralizes them
+as named constants (`PLAN_NAME`, `PLAN_PRICE_LABEL`, `TRIAL_DURATION_DAYS`)
+instead of leaving them scattered/duplicated between the marketing `/planes`
+page (untouched, still reads its own pre-existing `mock-data.ts` — that
+file's LopaDent-benefit spend threshold has no README backing and is
+explicitly out of scope here, deferred billing) and this real screen.
+
+- **Real security gap found and fixed: a Clinic Admin could self-
+  (re)activate her own clinic.** `clinics_update_admin` RLS (foundation
+  schema) already scoped UPDATE correctly by row (`has_clinic_role(id,
+  ['clinic_admin'])`), but the accompanying GRANT
+  (`20260826153000_grant_onboarding_table_privileges.sql`) was table-wide
+  — RLS never restricts WHICH columns, only WHO — so any active Clinic
+  Admin could already, today, flip her own clinic's `status` directly via
+  a raw authenticated client call, bypassing every app-level
+  "clinic-suspended" gate (which only ever ran inside the Next.js app,
+  never at the database). Migration `20260922100000` revokes the blanket
+  grant and re-grants UPDATE only on the columns a clinic_admin's real
+  editors actually write today (`name, phone, email, tax_id, logo_url` —
+  matches `updateClinicInfo()`/`uploadClinicLogo()`/`removeClinicLogo()`
+  exactly, verified by reading every real `.from("clinics").update(...)`
+  call site first). `status` and the new `trial_ends_at` are writable
+  ONLY through the two SECURITY DEFINER RPCs below from now on.
+- **`clinics.trial_ends_at`** (nullable timestamptz, additive) — null for
+  any clinic that existed before this migration (never backfilled with an
+  invented date). `clinics.created_at` (unchanged) already answers "cuándo
+  comenzó"; this answers "cuándo termina." No new enum value: "trialing"
+  is a derived DISPLAY label only
+  (`src/features/subscription/commercial-status.ts`'s
+  `deriveClinicCommercialLabel()`, unit-tested), never a third persisted
+  `clinic_status` — the real entitlement switch stays exactly
+  `active`/`suspended`, unchanged.
+- **`provision_clinic()` seeds the trial — same signature, single source.**
+  `create or replace` against the byte-for-byte identical parameter list
+  (its own migration's header warns appending a parameter creates a
+  silent second overload instead of replacing it); only the `clinics`
+  INSERT gained `trial_ends_at = now() + interval '30 days'`. Both real
+  callers — Platform's own "Nueva clínica" AND
+  `convert_commercial_prospect_to_clinic()` — converge on this one
+  function unchanged, so a piloto clinic gets the identical trial seed
+  regardless of which route provisioned it, with zero duplicated logic.
+- **Two new Superadmin-only RPCs** (`is_platform_superadmin()`-gated, same
+  pattern as every other Platform RPC): `set_clinic_commercial_status()`
+  (activar/suspender/reactivar — the enum only has two values, so
+  "reactivar" is the same call as "activar") and `extend_clinic_trial()`
+  (sets an explicit new `trial_ends_at`, never a "+N days" delta). Surfaced
+  on `/platform/clinicas/[slug]` via a new `ClinicCommercialStatusCard`
+  (badge + the two actions) and as a new "Fin de prueba" column on the
+  `/platform/clinicas` listing.
+- **Mi Suscripción rewritten to real, informational-only data.** Reads
+  `clinics.status`/`trial_ends_at` via `fetchClinicDetail()` (same
+  `resolveClinicContext()` + fetch pattern `/clinica`'s own page already
+  uses). Shows plan name/price (canonical constants), a real status badge
+  (En período de prueba / Período de prueba vencido / Activa / Suspendida),
+  and an honest "pagos gestionados manualmente durante el piloto" note —
+  no checkout, no fake payment method, no LopaDent progress bar with
+  invented spend numbers. A suspended clinic never reaches this page at
+  all (`proxy.ts`'s existing `PRIVATE_CLINIC_PATHS` gate + `clinic-suspended`
+  already redirect to `/acceso-restringido?motivo=suspendida` first,
+  unchanged, untouched by this checkpoint — that screen already explains
+  "tu clínica está suspendida, contacta a soporte").
+- **Known, reported, NOT fixed in this checkpoint (real architectural
+  limitation, not a small gap):** entitlement enforcement today is at the
+  app-routing layer only (`proxy.ts` + `resolveClinicContext()`/
+  `resolvePatientContext()`). RLS on the core clinical tables
+  (`patients`, `appointments`, etc.) checks tenant membership, never
+  `clinics.status` — so a staff member of an already-suspended clinic who
+  still holds a valid Supabase session could, in principle, reach the
+  Postgres REST API directly (bypassing the Next.js UI/gate entirely) and
+  still read/write clinic data. Retrofitting every core RLS policy to
+  also check `clinics.status` is a real, separate initiative (this
+  characteristic predates this checkpoint — it's inherent to how
+  `clinic-suspended`/`membership-inactive` have always been enforced in
+  this codebase — not something introduced here), explicitly out of scope
+  per this checkpoint's own NINJA GATE ("no convertir esto en arquitectura
+  de pagos"). Acceptable for a small, trusted, hand-picked pilot; should
+  be tracked before a broader/adversarial launch.
+- **Patient Portal access under a suspended clinic — no new decision
+  needed.** `resolvePatientContext()` already blocked Patient access on
+  `clinic-suspended` before this checkpoint (pre-existing, untouched) —
+  this checkpoint didn't have to make or invent that call.
+- **QA:** `npx tsc --noEmit` clean; full `npx vitest run` — 675/675 passed
+  (6 unrelated integration tests skipped, no local Docker; +10 vs. the
+  previous checkpoint's 665, all new: `commercial-status.test.ts`,
+  `clinic-commercial-actions.test.ts`); `eslint` clean on every changed/
+  added file; `git diff --check` clean. Migration
+  `20260922100000_add_clinic_pilot_subscription_controls.sql` written but
+  **not yet applied to any remote environment** — no Supabase CLI access
+  in this session; needs `supabase db push` (or equivalent) run with real
+  project access before any of this takes effect for real clinics.
+  Browser E2E: **NOT RUN** — same shared dev/prod Supabase project risk
+  already documented in the "onboarding comercial asistido" checkpoint
+  above; exercising real Superadmin suspend/reactivate actions against it
+  isn't safe to fake here.
+
+**PILOT READY:** entitlement switch (`clinics.status`), trial tracking
+(`trial_ends_at`), Platform manual controls (activar/suspender/extender),
+Mi Suscripción showing real state — all real, once the migration above is
+applied to the target project.
+
+**DEFERRED BILLING (explicitly not built, matches this checkpoint's own
+scope):** Wompi/any payment provider, checkout, cards, recurring billing,
+invoices, webhooks, dunning, a payments/collections cron, multiple plan
+tiers, coupons, taxes, the LopaDent-benefit spend-tracking mechanism
+(marketing-only today, no real purchase data), and the RLS-retrofit noted
+above.
 
 ## Clínica (real, Clinic Admin)
 
@@ -3055,9 +3191,11 @@ auth path reaches it in production).
 Agenda defaults, notification toggles, regional preferences — see PARCIAL / P2
 above. Tratamientos/Horario/Ausencias on this same screen are real.
 
-## Mi Suscripción — fully mock
+## Mi Suscripción — real, informational-only (pilot)
 
-See OUT OF SCOPE ACTUAL.
+No longer mock — see "Suscripción / Billing — piloto (Checkpoint
+2026-09-22)" above and OUT OF SCOPE ACTUAL for what's still deferred
+(payments/checkout).
 
 ## `/portal/salud` (Mi salud dental) — fully mock
 
