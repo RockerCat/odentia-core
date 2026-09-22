@@ -1327,11 +1327,60 @@ session with no manual DB work and no outbound email.
 
 ## Equipo — real invitations
 
-- `invite_clinic_member(email, role)` — Clinic Admin only, `dentist`/`assistant`
-  only (never a second `clinic_admin` through this flow). Real cryptographic
-  token (`pgcrypto`), only its SHA-256 hash persisted, returned once to copy/share
-  manually. Rejects an already-active member or a second pending invitation for
-  the same email.
+- **RESOLVED (2026-09-21) — "Unify clinic team invitation activation":
+  Clinic-Admin-issued staff invitations now unified with pre-provisioned
+  identity, same password-only path Superadmin-issued invitations already
+  used.** `invite_clinic_member(email, role, first_name, last_name, phone)`
+  (migration `20260921140000`, DROP + CREATE — the old 2-arg, identity-less
+  overload no longer exists at all) — Clinic Admin only, `dentist`/
+  `assistant` only (never a second `clinic_admin` through this flow,
+  unchanged). Now requires complete identity, exactly like
+  `provision_clinic_team_member()` already did — trimmed, rejects
+  empty/blank first_name/last_name/phone individually. Same cryptographic
+  token (`pgcrypto`), only its SHA-256 hash persisted, returned once to
+  copy/share manually. Still rejects an already-active member or a second
+  pending invitation for the same email.
+  - **Reuses the existing pre-provisioned model end to end, no third
+    flow**: `preview_clinic_invitation()`, `hasPreProvisionedIdentity()`,
+    and `activatePreProvisionedInvitationAction()` were ALL already
+    role/source-agnostic (identity-completeness alone, never a `role` or
+    `invited_by` check) — zero changes to any of the three. A brand-new
+    Clinic-Admin-issued invitation now automatically qualifies for the
+    exact same password-only activation (`admin.createUser({email_confirm:
+    true})` → `signInWithPassword` → `accept_clinic_invitation()`) a
+    Superadmin-issued one already used — Equipo still generates a link
+    manually shared by the clinic, never an invitation email.
+  - **`Confirm Signup` no longer reachable from Equipo.** The traditional
+    AccountStep + `auth.signUp()` path (which used to fire a real Confirm
+    Signup email) is now only reached by a genuinely historical
+    Clinic-Admin invitation created before this migration. **Confirm
+    Signup's one remaining real caller in this codebase is `/registro`'s
+    own public self-service signup** (`signUpAccount()`,
+    `src/features/onboarding/api.ts`) — not yet removed/repurposed (see
+    the separate, still-open "Odentia — definir política actual de
+    creación/activación de usuarios" decision checkpoint on `/registro`).
+  - **`InviteMemberModal`** (`src/features/clinic/invite-member-modal.tsx`)
+    now collects Nombre/Apellido/Teléfono alongside Email/Rol, same
+    layout/validation as Platform's own `AddTeamMemberModal`
+    (`src/components/platform/platform-equipo-section.tsx`) — no new
+    screen, no redesign.
+  - QA: `npx tsc --noEmit` clean; full `npx vitest run` — 672/672 passed
+    (6 unrelated integration tests skipped, as always, no local Docker);
+    `eslint` clean on every changed file; `git diff --check` clean. New
+    SQL regression test
+    (`supabase/tests/invite_clinic_member_identity.test.sql`) covers:
+    non-admin/unauthenticated rejection, role allowlist intact
+    (`clinic_admin` still refused), invalid email rejected, blank/null
+    first_name/last_name/phone each rejected individually, successful
+    persistence (trimmed identity, lowercased email, correct `clinic_id`),
+    `preview_clinic_invitation()` reporting the new invitation as
+    pre-provisioned with zero RPC changes, duplicate-pending-invitation
+    rejection unchanged, and cross-tenant isolation (two different
+    clinic admins, two different clinics) — **NOT RUN locally**, no
+    Postgres/Docker in this dev environment, same caveat as every other
+    SQL test in this file. `supabase/tests/regenerate_clinic_invitation.test.sql`
+    updated to pass the three new required arguments. Migration applied
+    and confirmed in sync (`supabase migration list`, local = remote).
 - `accept_clinic_invitation(token)` — the only path that creates a real
   `clinic_memberships` row; requires the accepting account's own email to match
   the invitation's. A `dentist` acceptance auto-creates a minimal

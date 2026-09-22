@@ -110,7 +110,7 @@ begin
   perform set_config('request.jwt.claim.sub', v_admin_a_user::text, true);
 
   select id, raw_token into v_invitation_id, v_raw_token_1
-  from public.invite_clinic_member('nuevo@qa-invite-test.local', 'dentist');
+  from public.invite_clinic_member('nuevo@qa-invite-test.local', 'dentist', 'QA', 'Nuevo Dentista', '+57 300 0000000');
 
   select token_hash, expires_at into v_hash_before, v_expires_before
   from public.clinic_invitations where id = v_invitation_id;

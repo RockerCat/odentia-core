@@ -3,21 +3,21 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-// "Platform → Clínica → Equipo: gestión transversal por Superadmin" —
-// generalized from the original first-Clinic-Admin-only activation to any
-// Superadmin-issued, pre-provisioned invitation (`clinic_admin`,
-// `dentist`, or `assistant` — see `provision_first_clinic_admin_invitation()`,
-// 20260916150000, and `provision_clinic_team_member()`, this checkpoint's
-// own migration) — never a general "create an account" endpoint, and
-// never applicable to a traditional Clinic-Admin-issued dentist/assistant
-// invitation (`invite_clinic_member()`), which never sets a
-// pre-provisioned identity and always keeps going through the ordinary
-// AccountStep + Confirm Signup path. The person's access already started
-// from a real, secret, cryptographic token a Superadmin generated and
-// handed to her directly; the Confirm Signup email loop (designed for an
-// ANONYMOUS public signup, where the email address itself is the only
-// proof of ownership) adds no real security here and was actively
-// breaking the happy path — see this task's own smoke report.
+// "Platform → Clínica → Equipo: gestión transversal por Superadmin",
+// generalized again by "Unify clinic team invitation activation"
+// (2026-09-21) — reached by ANY invitation carrying complete
+// pre-provisioned identity, regardless of who issued it: a Superadmin
+// (`provision_first_clinic_admin_invitation()`, 20260916150000;
+// `provision_clinic_team_member()`, 20260916180000) or, since this same
+// checkpoint, a Clinic Admin's own "Agregar miembro"
+// (`invite_clinic_member()`, migration 20260921140000, which now requires
+// first_name/last_name/phone too) — never a general "create an account"
+// endpoint. The person's access already started from a real, secret,
+// cryptographic token whoever issued it generated and handed to her
+// directly; the Confirm Signup email loop (designed for an ANONYMOUS
+// public signup, where the email address itself is the only proof of
+// ownership) adds no real security here and was actively breaking the
+// happy path — see this task's own smoke report.
 //
 // Same rule the password-only UI branch already enforces client-side
 // (hasPreProvisionedIdentity(), src/features/clinic/team-actions.ts) —
@@ -88,15 +88,16 @@ export async function activatePreProvisionedInvitationAction(
 
   // Defensive, not the primary gate: the password-only form is only ever
   // rendered client-side when hasPreProvisionedIdentity() is already true
-  // for this exact same preview shape — this just refuses to activate a
-  // traditional Clinic-Admin-issued dentist/assistant invitation (which
-  // never sets these) or an incomplete one, if this action were ever
-  // somehow reached for one. Deliberately role-agnostic (no `row.role`
-  // check): a Superadmin-issued invitation carries this complete identity
-  // for clinic_admin, dentist, AND assistant alike (provision_clinic_team_member()/
-  // provision_first_clinic_admin_invitation()) — role determines
-  // membership/professional_profile effects entirely inside
-  // accept_clinic_invitation(), never here.
+  // for this exact same preview shape — this just refuses to activate an
+  // incomplete invitation (should be structurally impossible now that
+  // every issuing RPC requires these — see this file's own header — but
+  // never trusted blindly here) or a genuinely historical Clinic-Admin
+  // invitation created before this checkpoint. Deliberately role-agnostic
+  // (no `row.role` check): every issuing RPC (`invite_clinic_member()`/
+  // `provision_clinic_team_member()`/`provision_first_clinic_admin_invitation()`)
+  // carries this complete identity for clinic_admin, dentist, AND
+  // assistant alike — role determines membership/professional_profile
+  // effects entirely inside accept_clinic_invitation(), never here.
   if (!row.first_name || !row.last_name || !row.email || !row.phone) {
     return { status: "error", message: "Esta invitación no admite activación por contraseña." };
   }

@@ -500,9 +500,13 @@ Platform-issued invitation, regardless of role, always carries complete
 pre-provisioned identity (`first_name`/`last_name`/`phone`) — this is
 what `hasPreProvisionedIdentity()` (`src/features/clinic/team-actions.ts`)
 actually checks for (identity completeness, never `role === "clinic_admin"`
-specifically): a traditional Clinic-Admin-issued dentist/assistant
-invitation (`invite_clinic_member()`) never sets these, so the check
-stays a safe, structural distinction, never a heuristic. Reactivating an
+specifically, and — since "Unify clinic team invitation activation",
+2026-09-21 — never gated on who issued the invitation either):
+`invite_clinic_member()` (Clinic Admin's own "Agregar miembro") now
+requires the exact same three fields, so a brand-new Clinic-Admin-issued
+dentist/assistant invitation activates by password only too, same as any
+Platform-issued one — only a genuinely historical invitation created
+before that migration can still have all three null. Reactivating an
 existing but inactive/suspended membership, or regenerating a still-
 pending invitation's link, reuse the exact same
 `set_clinic_member_status()`/`regenerate_clinic_invitation()` RPCs the
@@ -549,13 +553,17 @@ operation that ever creates a `clinic_memberships` row:
   token, in that same interaction — one gesture ("Activar mi cuenta")
   both creates her access and accepts that specific invitation, never a
   second manual "Aceptar invitación" step for this path. This Confirm
-  Signup bypass exists ONLY for a pre-provisioned Platform invitation —
-  clinic_admin, dentist, or assistant alike (the secret token itself is
-  the proof of legitimate access) — never disable Confirm Email globally,
-  and never skip it for the normal public `/registro`/Equipo signup
-  (`invite_clinic_member()`), both unchanged. If Auth/sign-in succeed but
-  the automatic accept fails, never retry account creation, never sign
-  the person out, never fabricate a membership — she's already
+  Signup bypass exists for ANY invitation carrying complete
+  pre-provisioned identity — a Platform invitation (clinic_admin,
+  dentist, or assistant alike) OR, since "Unify clinic team invitation
+  activation" (2026-09-21), a Clinic Admin's own `invite_clinic_member()`
+  invitation (the secret token itself is the proof of legitimate access
+  in both cases) — never disable Confirm Email globally. The ONLY
+  remaining real caller of `auth.signUp()`/Confirm Signup anywhere in this
+  codebase is `/registro`'s own public self-service signup
+  (`signUpAccount()`, `src/features/onboarding/api.ts`). If Auth/sign-in
+  succeed but the automatic accept fails, never retry account creation,
+  never sign the person out, never fabricate a membership — she's already
   authenticated, so she recovers through the same manual "Aceptar
   invitación" existing-invitation flow below.
 - An email that already has an Odentia account never auto-activates or

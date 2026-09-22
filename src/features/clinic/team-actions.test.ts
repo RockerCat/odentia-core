@@ -31,15 +31,19 @@ describe("decideInvitationSessionView", () => {
 });
 
 // Regression coverage for "Platform → Clínica → Equipo: gestión
-// transversal por Superadmin" — the exact branch that decides between the
-// password-only activation view and the traditional AccountStep,
-// generalized from clinic_admin-only to all three roles. Must never
-// activate for a traditional Clinic-Admin-issued dentist/assistant
-// invitation (invite_clinic_member(), which never sets these), and must
-// never activate for an incomplete pre-provisioned invitation (defensive —
-// provision_first_clinic_admin_invitation()/provision_clinic_team_member()
-// already enforce completeness server-side, but the UI must not assume it
-// blindly).
+// transversal por Superadmin", extended by "Unify clinic team invitation
+// activation" (2026-09-21) — the exact branch that decides between the
+// password-only activation view and the traditional AccountStep.
+// Generalized from clinic_admin-only to all three roles, and (since
+// invite_clinic_member() itself now requires first_name/last_name/phone,
+// migration 20260921140000) no longer gated on who issued the invitation
+// either — a brand-new Clinic-Admin-issued invitation now activates by
+// password only, same as a Superadmin-issued one. The "no identity at
+// all" case below is kept as the defensive fallback for a genuinely
+// historical invitation created before this checkpoint, or an incomplete
+// pre-provisioned one (provision_first_clinic_admin_invitation()/
+// provision_clinic_team_member()/invite_clinic_member() all enforce
+// completeness server-side, but the UI must not assume it blindly).
 describe("hasPreProvisionedIdentity", () => {
   const complete = { firstName: "Ana", lastName: "Admin", phone: "+57 300 1234567" };
 
@@ -55,11 +59,11 @@ describe("hasPreProvisionedIdentity", () => {
     expect(hasPreProvisionedIdentity({ firstName: "Sofía", lastName: "Asistente", phone: "+57 300 2222222" })).toBe(true);
   });
 
-  it("a traditional dentist invitation (no pre-provisioned identity) → AccountStep, never password-only", () => {
-    expect(hasPreProvisionedIdentity({ firstName: null, lastName: null, phone: null })).toBe(false);
+  it("a complete, pre-provisioned dentist invitation (Clinic-Admin-issued, invite_clinic_member()) → password-only, same function regardless of who issued it", () => {
+    expect(hasPreProvisionedIdentity({ firstName: "Camila", lastName: "Odontóloga", phone: "+57 300 3333333" })).toBe(true);
   });
 
-  it("a traditional assistant invitation → AccountStep, never password-only", () => {
+  it("a genuinely historical invitation with no identity at all → AccountStep, never password-only", () => {
     expect(hasPreProvisionedIdentity({ firstName: null, lastName: null, phone: null })).toBe(false);
   });
 

@@ -16,6 +16,15 @@ import { inviteClinicMember, type InvitationRecord } from "./team-actions";
 // one honest way to close this loop with the infrastructure that actually
 // exists right now. That link/token is never shown again after this modal
 // closes (only its hash is persisted) — the confirmation copy says so.
+//
+// "Unify clinic team invitation activation" (2026-09-21) — Nombre/
+// Apellido/Teléfono are now captured alongside Email/Rol, same fields
+// AddTeamMemberModal (src/components/platform/platform-equipo-section.tsx)
+// already requires for a Platform-issued invitation: invite_clinic_member()
+// (migration 20260921140000) now requires all three too, so the invitee
+// always activates by password only (see team-actions.ts's own
+// hasPreProvisionedIdentity()/activatePreProvisionedInvitationAction()),
+// never auth.signUp()/Confirm Signup.
 export function InviteMemberModal({
   onClose,
   onInvited,
@@ -28,7 +37,10 @@ export function InviteMemberModal({
   onInvited?: (invitation: InvitationRecord) => void;
 }) {
   const { showToast } = useToast();
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [role, setRole] = useState<"dentist" | "assistant">("dentist");
   const [inviting, setInviting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,14 +50,23 @@ export function InviteMemberModal({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (inviting) return;
-    const trimmed = email.trim();
-    if (!trimmed) {
-      setError("Ingresa un correo electrónico.");
+    const trimmedFirstName = firstName.trim();
+    const trimmedLastName = lastName.trim();
+    const trimmedEmail = email.trim();
+    const trimmedPhone = phone.trim();
+    if (!trimmedFirstName || !trimmedLastName || !trimmedEmail || !trimmedPhone) {
+      setError("Completa nombre, apellido, correo y teléfono.");
       return;
     }
     setInviting(true);
     setError(null);
-    const outcome = await inviteClinicMember(trimmed, role);
+    const outcome = await inviteClinicMember({
+      email: trimmedEmail,
+      role,
+      firstName: trimmedFirstName,
+      lastName: trimmedLastName,
+      phone: trimmedPhone,
+    });
     setInviting(false);
     if (outcome.status === "error") {
       setError(outcome.message);
@@ -118,7 +139,38 @@ export function InviteMemberModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-5 py-4">
-            <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-[11px] text-label-foreground">Nombre</span>
+                <input
+                  required
+                  value={firstName}
+                  onChange={(e) => {
+                    setFirstName(e.target.value);
+                    setError(null);
+                  }}
+                  disabled={inviting}
+                  className={FIELD_CLASS}
+                  autoComplete="given-name"
+                  autoFocus
+                />
+              </label>
+
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-[11px] text-label-foreground">Apellido</span>
+                <input
+                  required
+                  value={lastName}
+                  onChange={(e) => {
+                    setLastName(e.target.value);
+                    setError(null);
+                  }}
+                  disabled={inviting}
+                  className={FIELD_CLASS}
+                  autoComplete="family-name"
+                />
+              </label>
+
               <label className="flex flex-col gap-1 text-sm">
                 <span className="text-[11px] text-label-foreground">Correo electrónico</span>
                 <input
@@ -132,11 +184,26 @@ export function InviteMemberModal({
                   placeholder="nombre@correo.com"
                   disabled={inviting}
                   className={FIELD_CLASS}
-                  autoFocus
+                  autoComplete="email"
                 />
               </label>
 
               <label className="flex flex-col gap-1 text-sm">
+                <span className="text-[11px] text-label-foreground">Teléfono</span>
+                <input
+                  required
+                  value={phone}
+                  onChange={(e) => {
+                    setPhone(e.target.value);
+                    setError(null);
+                  }}
+                  disabled={inviting}
+                  className={FIELD_CLASS}
+                  autoComplete="tel"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1 text-sm sm:col-span-2">
                 <span className="text-[11px] text-label-foreground">Rol</span>
                 <select
                   value={role}
@@ -149,7 +216,7 @@ export function InviteMemberModal({
                 </select>
               </label>
 
-              {error && <p className="text-xs text-danger">{error}</p>}
+              {error && <p className="text-xs text-danger sm:col-span-2">{error}</p>}
             </div>
 
             <div className="mt-5 flex items-center justify-end gap-2">

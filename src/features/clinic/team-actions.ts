@@ -28,9 +28,31 @@ export type InvitationRecord = {
 
 export type InviteMemberOutcome = { status: "ok"; invitation: InvitationRecord } | { status: "error"; message: string };
 
-export async function inviteClinicMember(email: string, role: "dentist" | "assistant"): Promise<InviteMemberOutcome> {
+export type InviteClinicMemberInput = {
+  email: string;
+  role: "dentist" | "assistant";
+  firstName: string;
+  lastName: string;
+  phone: string;
+};
+
+// "Unify clinic team invitation activation" — invite_clinic_member() now
+// requires complete pre-provisioned identity (first_name/last_name/phone),
+// same fields/validation provision_clinic_team_member() already enforces
+// (src/features/platform/api.ts), so a Clinic-Admin-issued invitation
+// activates by password only (activatePreProvisionedInvitationAction()),
+// never auth.signUp()/Confirm Signup. Signature change (migration
+// 20260921140000, DROP + CREATE) — the old 2-arg, identity-less overload
+// no longer exists at all.
+export async function inviteClinicMember(input: InviteClinicMemberInput): Promise<InviteMemberOutcome> {
   const supabase = createClient();
-  const { data, error } = await supabase.rpc("invite_clinic_member", { p_email: email, p_role: role });
+  const { data, error } = await supabase.rpc("invite_clinic_member", {
+    p_email: input.email,
+    p_role: input.role,
+    p_first_name: input.firstName.trim(),
+    p_last_name: input.lastName.trim(),
+    p_phone: input.phone.trim(),
+  });
 
   if (error) {
     if (error.code === "42501") {
@@ -44,6 +66,18 @@ export async function inviteClinicMember(email: string, role: "dentist" | "assis
     }
     if (error.message.includes("valid email")) {
       return { status: "error", message: "Ingresa un correo electrónico válido." };
+    }
+    // Same three messages friendlyProvisionTeamMemberError() already uses
+    // for provision_clinic_team_member()'s identical validation — kept in
+    // sync deliberately, never re-worded independently.
+    if (error.message.includes("first_name must not be empty")) {
+      return { status: "error", message: "Ingresa el nombre." };
+    }
+    if (error.message.includes("last_name must not be empty")) {
+      return { status: "error", message: "Ingresa el apellido." };
+    }
+    if (error.message.includes("phone must not be empty")) {
+      return { status: "error", message: "Ingresa el teléfono." };
     }
     return { status: "error", message: GENERIC_ERROR };
   }
@@ -268,15 +302,17 @@ export function decideInvitationSessionView(
 // touches signup at all, so this is never consulted there.
 //
 // Generalized (Platform → Clínica → Equipo checkpoint) to ALL THREE
-// roles — deliberately NOT gated on role === "clinic_admin" anymore:
-// every Superadmin-issued Platform invitation (provision_first_clinic_admin_invitation()/
-// provision_clinic_team_member()) now requires complete pre-provisioned
-// identity regardless of role, while a traditional Clinic-Admin-issued
-// dentist/assistant invitation (invite_clinic_member()) never sets
-// first_name/last_name/phone at all — the identity-completeness check
-// alone is therefore already a safe, structural way to distinguish the
-// two (never a heuristic): those three columns are only ever non-null
-// together, for exactly the invitations meant to use this path.
+// roles — deliberately NOT gated on role === "clinic_admin", and (since
+// "Unify clinic team invitation activation", 2026-09-21) not gated on WHO
+// issued the invitation either: every issuing RPC — Superadmin
+// (provision_first_clinic_admin_invitation()/provision_clinic_team_member())
+// or Clinic Admin (invite_clinic_member(), migration 20260921140000) —
+// now requires complete pre-provisioned identity. The identity-
+// completeness check alone is a safe, structural way to route a brand-new
+// invitation (never a heuristic): those three columns are only ever
+// non-null together. Only a genuinely historical Clinic-Admin invitation
+// created BEFORE this checkpoint can still have all three null, in which
+// case this correctly falls back to the traditional AccountStep path.
 export function hasPreProvisionedIdentity(preview: {
   firstName: string | null;
   lastName: string | null;
