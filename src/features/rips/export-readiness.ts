@@ -39,6 +39,7 @@ export type RipsReadinessErrorCode =
   | "SERVICE_VALUE_MISSING"
   | "SERVICE_FINALIDAD_MISSING"
   | "SERVICE_MODALIDAD_MISSING"
+  | "SERVICE_VIA_INGRESO_MISSING"
   | "CONSULTATION_DIAGNOSIS_TYPE_MISSING"
   | "CONSULTATION_CAUSA_MOTIVO_MISSING"
   | "CLINICAL_SERVICE_MAPPING_UNRESOLVED"
@@ -286,6 +287,30 @@ export function getEncounterRipsReadiness(input: EncounterReadinessInput): RipsR
         code: "SERVICE_MODALIDAD_MISSING",
         scope: "service",
         message: `${encounterLabel} — falta indicar la modalidad de ${service.ripsServiceType === "consultation" ? "la consulta" : "el procedimiento"} ${service.cupsCode}.`,
+        fixHref: null,
+      });
+    }
+
+    // P06 viaIngresoServicioSalud — RIPS closing checkpoint (2026-09-21).
+    // DT1 v003 declares a bare fixed Tamaño "2", and defines this field
+    // ONLY for a procedimiento (never a consulta — see RipsConsultation,
+    // export-types.ts, and encounter_services' own DB CHECK constraint).
+    // Official finding: Odentia's Agenda has exactly one real appointment
+    // entry path (a scheduled Cita), so "02 Consulta Externa ó
+    // Programada" is the only RIPSViaIngresoIPS code Odentia's own domain
+    // model can ever honestly assert — every real procedure-creation path
+    // now resolves it automatically (resolveViaIngresoCode,
+    // clinical-service-resolution.ts, same "structural default, never a
+    // manual selector" treatment as Modalidad above). This can only ever
+    // fire for a historical procedimiento finalized before that rule
+    // existed. No correction mechanism exists for this gap yet — fixHref
+    // stays null, same as SERVICE_MODALIDAD_MISSING above.
+    if (service.ripsServiceType === "procedure" && !service.viaIngresoCode) {
+      errors.push({
+        ...serviceBase,
+        code: "SERVICE_VIA_INGRESO_MISSING",
+        scope: "service",
+        message: `${encounterLabel} — falta indicar la vía de ingreso del procedimiento ${service.cupsCode}.`,
         fixHref: null,
       });
     }

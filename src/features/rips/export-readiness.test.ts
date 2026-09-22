@@ -109,6 +109,37 @@ describe("getEncounterRipsReadiness", () => {
     expect(result.errors.map((e) => e.code)).not.toContain("SERVICE_MODALIDAD_MISSING");
   });
 
+  // RIPS closing checkpoint (2026-09-21) — viaIngresoServicioSalud (P06):
+  // official finding confirms Odentia's Agenda has exactly one real
+  // appointment entry path (a scheduled Cita), so "02 Consulta Externa ó
+  // Programada" is now resolved automatically for every new procedimiento
+  // (resolveViaIngresoCode) — this check only ever fires for a historical
+  // procedure finalized before that rule existed. DT1 v003 defines no
+  // such field for a consulta at all, so it must never apply there.
+  it("flags a missing via_ingreso_code for a procedure", () => {
+    const result = getEncounterRipsReadiness(
+      baseEncounter({
+        services: [baseService({ ripsServiceType: "procedure", cupsCode: "230100", serviceValue: 0, viaIngresoCode: null })],
+      }),
+    );
+    expect(result.ready).toBe(false);
+    expect(result.errors.map((e) => e.code)).toContain("SERVICE_VIA_INGRESO_MISSING");
+  });
+
+  it("never requires via_ingreso_code for a consultation — DT1 v003 defines no such field for consultas", () => {
+    const result = getEncounterRipsReadiness(baseEncounter({ services: [baseService({ viaIngresoCode: null })] }));
+    expect(result.errors.map((e) => e.code)).not.toContain("SERVICE_VIA_INGRESO_MISSING");
+  });
+
+  it("is ready (regarding this check) once a procedure has via_ingreso_code", () => {
+    const result = getEncounterRipsReadiness(
+      baseEncounter({
+        services: [baseService({ ripsServiceType: "procedure", cupsCode: "230100", serviceValue: 0, viaIngresoCode: "02" })],
+      }),
+    );
+    expect(result.errors.map((e) => e.code)).not.toContain("SERVICE_VIA_INGRESO_MISSING");
+  });
+
   // RIPS #5B — finalidadTecnologiaSalud (C08 consulta / P10
   // procedimiento) and causaMotivoAtencion (C09, consulta only) are both
   // declared in DT1 v003 with a bare fixed Tamaño "2" — per §1.5 that

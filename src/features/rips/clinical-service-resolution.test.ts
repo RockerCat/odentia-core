@@ -4,6 +4,7 @@ import {
   resolveClinicalCupsMapping,
   resolveClinicSpecialtyRipsService,
   resolveClinicalService,
+  resolveViaIngresoCode,
   type ClinicalConceptOption,
   type ClinicalConceptVariantOption,
   type ClinicalCupsMappingOption,
@@ -347,5 +348,19 @@ describe("resolveClinicalCupsMapping — vigencia temporal (valid_from/valid_to)
       asOfDate: ASOF,
     });
     expect(result).toEqual({ cupsCode: "890203", ripsServiceType: "procedure" });
+  });
+});
+
+describe("resolveViaIngresoCode", () => {
+  it("resolves '02 — Consulta Externa ó Programada' for a procedure — Odentia's only real appointment entry path", () => {
+    expect(resolveViaIngresoCode("procedure")).toBe("02");
+  });
+
+  it("is null for a consultation — DT1 v003 defines no viaIngresoServicioSalud field for Consulta at all", () => {
+    expect(resolveViaIngresoCode("consultation")).toBeNull();
+  });
+
+  it("is null for an unclassified (unknown) CUPS — classification isn't resolved yet", () => {
+    expect(resolveViaIngresoCode("unknown")).toBeNull();
   });
 });

@@ -46,6 +46,7 @@ import {
   getAvailableClinicalConcepts,
   resolveClinicalService,
   resolveClinicSpecialtyRipsService,
+  resolveViaIngresoCode,
   type ClinicalConceptOption,
   type ClinicalConceptVariantOption,
   type ClinicalCupsMappingOption,
@@ -160,7 +161,6 @@ export function RealClinicalEncounterScreen({
   existingServices,
   diagnosisTypeOptions,
   incapacityOptions,
-  viaIngresoOptions,
   grupoServiciosOptions,
   serviciosOptions,
   finalidadOptions,
@@ -202,11 +202,15 @@ export function RealClinicalEncounterScreen({
   existingServices: EncounterServiceRecord[];
   diagnosisTypeOptions: ReferenceValue[];
   incapacityOptions: ReferenceValue[];
-  viaIngresoOptions: ReferenceValue[];
   // Kept in the prop contract (still fetched/passed by page.tsx) even
   // though the screen no longer destructures/renders it — Modalidad is
   // resolved automatically to "01" now, never a manual selection.
   modalidadOptions: ReferenceValue[];
+  // Kept in the prop contract (still fetched/passed by page.tsx) even
+  // though the screen no longer destructures/renders it — Vía de ingreso
+  // is resolved automatically now too (RIPS closing checkpoint,
+  // 2026-09-21: see resolveViaIngresoCode), never a manual selection.
+  viaIngresoOptions: ReferenceValue[];
   grupoServiciosOptions: ReferenceValue[];
   serviciosOptions: ReferenceValue[];
   finalidadOptions: ReferenceValue[];
@@ -380,6 +384,9 @@ export function RealClinicalEncounterScreen({
         ripsServiceType: "unknown",
         professionalProfileId: appointment.professionalProfileId,
         serviceValue: "",
+        // Classification is still "unknown" until a CUPS is picked (see
+        // the CodeSearchAutocomplete's own onChange below, which resolves
+        // this via resolveViaIngresoCode once ripsServiceType is known).
         viaIngresoCode: "",
         // Odentia solo soporta atención presencial en sede — "01
         // Intramural" se resuelve automáticamente, nunca una elección
@@ -439,7 +446,12 @@ export function RealClinicalEncounterScreen({
         ripsServiceType: resolved.ripsServiceType,
         professionalProfileId: appointment.professionalProfileId,
         serviceValue: "",
-        viaIngresoCode: "",
+        // Odentia's Agenda has exactly one appointment entry path
+        // (Cita programada) — "02 Consulta Externa ó Programada" is
+        // resolved automatically, never a manual selector (ver Detalles
+        // RIPS, que ya no la ofrece). null for a consulta — DT1 v003
+        // defines no such field there at all (see resolveViaIngresoCode).
+        viaIngresoCode: resolveViaIngresoCode(resolved.ripsServiceType) ?? "",
         // Odentia solo soporta atención presencial en sede — "01
         // Intramural" se resuelve automáticamente, nunca una elección
         // manual del odontólogo (ver Detalles RIPS, que ya no la ofrece).
@@ -1034,12 +1046,17 @@ export function RealClinicalEncounterScreen({
                                           cupsCode: picked.code,
                                           description: picked.description,
                                           ripsServiceType: picked.ripsServiceType,
+                                          // "02 Consulta Externa ó Programada" once we know it's a
+                                          // procedimiento (Odentia's only real entry path — see
+                                          // resolveViaIngresoCode); null for a consulta, which has
+                                          // no such field at all.
+                                          viaIngresoCode: resolveViaIngresoCode(picked.ripsServiceType) ?? "",
                                           // No default here either (see addConceptService's own
                                           // comment) — causaMotivoCode is left exactly as it was;
                                           // the Finalidad <select>'s onChange is the one place
                                           // that ever sets it, per the DT1's Finalidad→Causa rule.
                                         }
-                                      : { cupsCode: "", description: "", ripsServiceType: "unknown" },
+                                      : { cupsCode: "", description: "", ripsServiceType: "unknown", viaIngresoCode: "" },
                                   )
                                 }
                                 placeholder="Buscar por código o descripción…"
@@ -1194,20 +1211,6 @@ export function RealClinicalEncounterScreen({
 
                         {s.detailsOpen && (
                           <div className="mt-2 grid gap-2 border-t border-border pt-2.5 sm:grid-cols-2">
-                            {s.ripsServiceType === "procedure" && (
-                              <select
-                                value={s.viaIngresoCode}
-                                onChange={(e) => updateService(s.id, { viaIngresoCode: e.target.value })}
-                                className={FIELD_CLASS}
-                              >
-                                <option value="">Vía de ingreso</option>
-                                {viaIngresoOptions.map((o) => (
-                                  <option key={o.code} value={o.code}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                              </select>
-                            )}
                             {/* Causa/Motivo y Finalidad viven ahora en el
                                 flujo normal, no aquí — ver el bloque justo
                                 debajo de la clasificación Consulta/
@@ -1215,7 +1218,14 @@ export function RealClinicalEncounterScreen({
                                 requiere interacción manual: siempre "01 —
                                 Intramural" (única modalidad soportada hoy),
                                 fijada automáticamente al crear el servicio
-                                — ver addService/addConceptService. */}
+                                — ver addService/addConceptService. Vía de
+                                ingreso tampoco requiere interacción manual
+                                (RIPS closing checkpoint, 2026-09-21): un
+                                procedimiento siempre resuelve "02 — Consulta
+                                Externa ó Programada" (Odentia's única vía de
+                                ingreso real — ver resolveViaIngresoCode);
+                                una consulta no tiene este campo en absoluto
+                                (DT1 v003). */}
                             <select
                               value={s.grupoServiciosCode}
                               onChange={(e) => updateService(s.id, { grupoServiciosCode: e.target.value, codServicioCode: "" })}

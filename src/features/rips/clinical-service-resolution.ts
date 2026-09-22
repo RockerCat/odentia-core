@@ -193,6 +193,27 @@ export function resolveClinicSpecialtyRipsService(input: {
   return match ? { grupoServiciosCode: match.grupoServiciosCode, codServicioCode: match.codServicioCode } : null;
 }
 
+// P06 viaIngresoServicioSalud — RIPS closing checkpoint (2026-09-21).
+// Official finding: RIPSViaIngresoIPS (SISPRO, 4 active codes) is
+// "01 Urgencias" / "02 Consulta Externa ó Programada" / "03 Remitido" /
+// "04 Nacido en la Institución". Odentia's ENTIRE appointment/atención
+// model has exactly one entry path — a scheduled Cita from Agenda (see
+// CLAUDE.md's own Appointment Lifecycle) — with no walk-in Urgencias
+// flow, no referral/Remitido tracking, and "Nacido en la Institución" is
+// inapplicable to dentistry. "02" is therefore the only code Odentia's
+// own domain model can ever honestly assert, the same reasoning already
+// applied to Modalidad's "01 Intramural" (see addService/addConceptService's
+// own comment) — a structural fact about the product, not a per-visit
+// clinical decision, so never a manual selector.
+//
+// Only ever applies to a Procedimiento — DT1 v003 defines no
+// viaIngresoServicioSalud field for Consulta at all (see RipsConsultation,
+// export-types.ts) and encounter_services' own DB CHECK constraint
+// enforces `via_ingreso_code is null or rips_service_type = 'procedure'`.
+export function resolveViaIngresoCode(ripsServiceType: RipsServiceType): string | null {
+  return ripsServiceType === "procedure" ? "02" : null;
+}
+
 export type ResolvedClinicalService = {
   cupsCode: string;
   ripsServiceType: RipsServiceType;

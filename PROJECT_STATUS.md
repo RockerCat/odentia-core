@@ -2775,24 +2775,8 @@ re-verified in this update.
     readiness covers both paths equally; a genuinely-missing value fails
     closed at readiness, never reaches this schema check for a NEW
     encounter.
-  - **`viaIngresoServicioSalud` (P06) stays nullable — genuine pending
-    item, not fixed here.** Investigated per this checkpoint's own
-    Section 3: no rule anywhere in this codebase — concept-based or
-    manual — derives this value automatically; even `addConceptService()`
-    leaves it blank by default (`viaIngresoCode: ""`), only ever set
-    through the manual "Detalles RIPS" `<select>`. Unlike Modalidad
-    (safely defaultable to "01" because Odentia only supports intramural
-    care — a structural fact, not a per-visit decision), "¿por qué vía
-    ingresó el paciente?" is a genuine per-visit clinical/administrative
-    decision with no safe universal default. Per this checkpoint's own
-    instruction, this was NOT invented — `export-schema.ts`/
-    `export-readiness.ts`/finalize readiness are all unchanged for this
-    one field. **The one concrete blocker left before "ready for first
-    official MUV/SISPRO validation"**: decide, with the regulatory/
-    clinical stakeholder, either (a) a real, defensible default for
-    Odentia's own care model, or (b) a UI requirement to pick it before
-    finalizing — then implement readiness + schema together, same
-    two-layer pattern as every other field closed so far.
+  - **`viaIngresoServicioSalud` (P06) — RESOLVED (2026-09-21), see the
+    dedicated "Cierre viaIngresoServicioSalud" entry below.**
   - QA: `npx tsc --noEmit` clean; `npx vitest run src/features/rips
     src/features/dashboard src/features/patients` — 416/416 passed
     (`export-readiness.test.ts` fixtures updated: `baseService()`'s
@@ -2808,12 +2792,75 @@ re-verified in this update.
     Postgres/Docker in this dev environment, same caveat as every other
     SQL test in this file. Migration applied and confirmed in sync
     regardless.
+- **RESOLVED (2026-09-21) — Cierre `viaIngresoServicioSalud` (P06). Odentia
+  is now `READY FOR FIRST OFFICIAL MUV/SISPRO VALIDATION`** (a real, clean
+  NEW atención — cita → atención → servicio → Vía → diagnóstico →
+  Finalidad/Causa → Grupo/Servicio → finalizar → readiness → JSON — has no
+  remaining structural blocker; "MUV compliant" itself is never claimed
+  until the official validator is actually run).
+  - **Official finding**: `RIPSViaIngresoIPS` (SISPRO, queried directly
+    from the real seeded catalog) has exactly 4 active codes — `01
+    Urgencias` / `02 Consulta Externa ó Programada` / `03 Remitido` / `04
+    Nacido en la Institución`.
+  - **Decision: A — SAFE DERIVATION.** Odentia's Agenda has exactly ONE
+    real appointment/atención entry path — a scheduled Cita (see
+    CLAUDE.md's own Appointment Lifecycle) — with no Urgencias/walk-in
+    flow, no referral/Remitido tracking, and "Nacido en la Institución"
+    inapplicable to dentistry. `"02"` is therefore the only code Odentia's
+    own domain model can ever honestly assert — the exact same reasoning
+    already applied to Modalidad's `"01 Intramural"`, never a per-visit
+    clinical judgment call.
+  - **New `resolveViaIngresoCode(ripsServiceType)`**
+    (`clinical-service-resolution.ts`, pure, tested) — returns `"02"` for
+    a procedimiento, `null` otherwise (DT1 v003 defines no
+    `viaIngresoServicioSalud` field for a consulta at all — confirmed
+    against `RipsConsultation`, `export-types.ts`, and
+    `encounter_services`' own DB CHECK
+    `via_ingreso_code is null or rips_service_type = 'procedure'`, both
+    pre-existing and unchanged). Wired into all three real
+    procedure-classification points in
+    `real-clinical-encounter-screen.tsx`: `addConceptService()`,
+    `addService()`'s CUPS-picked `onChange` (Manual CUPS), and cleared
+    back to `null` when a CUPS selection is cleared/reclassified. The
+    manual "Vía de ingreso" `<select>` in "Detalles RIPS" is removed —
+    same "no longer needs interaction, kept in the prop contract but no
+    longer destructured/rendered" treatment already given to
+    `modalidadOptions`.
+  - **`export-readiness.ts`**: new `SERVICE_VIA_INGRESO_MISSING`, firing
+    only for a procedimiento (never a consulta) still missing
+    `viaIngresoCode` — same "historical-only, no correction mechanism yet,
+    `fixHref: null`" shape as `SERVICE_MODALIDAD_MISSING`.
+  - **`export-schema.ts`**: `viaIngresoServicioSalud` (Procedimiento only)
+    → `nullable → requiredString({ exactLength: 2 })`.
+  - **Historical**: two real, already-finalized procedures in the linked
+    project currently have `via_ingreso_code is null` (confirmed via a
+    direct read-only query) — per this checkpoint's own Section 5/6
+    priority, NOT reopened, NOT backfilled, NO new historical-correction
+    mechanism built (extending one would not be trivial — Vía is a new
+    field shape, not a drop-in reuse of an existing RPC — and building it
+    isn't needed to generate a first clean case). They stay
+    readiness-blocked exactly like any other incomplete historical
+    encounter. Because `getRipsExportReadiness()` blocks an entire
+    period's export if ANY encounter in it isn't ready, a period chosen
+    for the first official MUV/SISPRO submission must simply not include
+    these two encounters — realistic for a first validation run, since it
+    would naturally use a recent/current period. Reported here as a real,
+    open, low-priority historical item, never hidden.
+  - QA: `npx tsc --noEmit` clean; `npx vitest run src/features/rips
+    src/features/dashboard src/features/patients` — 425/425 passed (new:
+    3 `resolveViaIngresoCode` unit tests, 3 `SERVICE_VIA_INGRESO_MISSING`
+    readiness tests, 3 `export-schema.ts` tests — a null
+    `viaIngresoServicioSalud`/`grupoServicios`/`codServicio` rejection
+    plus a valid-code acceptance); `eslint` clean on all changed files;
+    `git diff --check` clean. No migration — nothing in this checkpoint
+    touched the database schema (the historical-data query above was
+    read-only).
 - **Explicitly not built yet (future phase)**: MUV integration, CUV
   generation/inference, ProcesoId auto-capture, submission states beyond
   a manually-recorded result, retries/polling, FEV/DIAN, glosas, SIIFA.
-  Also pending: `viaIngresoServicioSalud` (above) — the one remaining
-  material item before "first official MUV/SISPRO validation" becomes
-  the sole remaining regulatory-pilot milestone.
+  Also pending, non-blocking for a first clean case: a historical
+  correction mechanism for the 2 real finalized procedures still missing
+  `viaIngresoServicioSalud` (above).
 
 ---
 

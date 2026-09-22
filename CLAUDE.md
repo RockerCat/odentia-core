@@ -244,7 +244,21 @@ validation rejects a `null` value on any of the three as defense-in-depth.
 Modalidad is safe to enforce this way because every service-creation site
 hardcodes `"01"` with no manual selector, so there is no live path that
 could produce a null here for a new encounter — only a historical
-encounter predating this enforcement can hit the readiness block.
+encounter predating this enforcement can hit the readiness block. A
+procedimiento's `viaIngresoServicioSalud` (never defined for a consulta at
+all — DT1 v003 has no such field there, and `encounter_services`' own DB
+CHECK enforces `via_ingreso_code is null or rips_service_type =
+'procedure'`) gets the exact same treatment: Odentia's Agenda has exactly
+one real appointment entry path — a scheduled Cita (see Appointment
+Lifecycle below) — with no Urgencias/walk-in flow and no referral/Remitido
+tracking, so `"02 — Consulta Externa ó Programada"` (the official
+`RIPSViaIngresoIPS` catalog has only 4 codes: `01 Urgencias`/`02 Consulta
+Externa ó Programada`/`03 Remitido`/`04 Nacido en la Institución`) is the
+only code Odentia's own domain model can ever honestly assert —
+`resolveViaIngresoCode()` (`clinical-service-resolution.ts`) resolves it
+automatically, never a manual selector, and `export-readiness.ts`'s
+`SERVICE_VIA_INGRESO_MISSING` covers the same historical-only gap
+Modalidad's own check does.
 `getEncounterFinalizeBlockers` additionally
 enforces, as Odentia-only, forward-only rules at "Finalizar atención"
 time (so a NEW encounter can never even reach the readiness checks

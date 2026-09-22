@@ -249,6 +249,36 @@ describe("validateRipsSinFacturaTransaction — rejects malformed input", () => 
     expect(validateRipsSinFacturaTransaction(t)).toEqual({ valid: true, errors: [] });
   });
 
+  // RIPS closing checkpoint (2026-09-21) — viaIngresoServicioSalud (P06):
+  // official finding (RIPSViaIngresoIPS/SISPRO) confirms this is a bare
+  // fixed Tamaño "2" field, defined ONLY for a procedimiento (DT1 v003
+  // has no equivalent field for a consulta at all).
+  it("rejects a null viaIngresoServicioSalud on a procedimiento (DT1 v003 fixed-size field, never null)", () => {
+    const t = validTransaction() as unknown as { usuarios: [{ servicios: { procedimientos: [Record<string, unknown>] } }] };
+    t.usuarios[0].servicios.procedimientos[0].viaIngresoServicioSalud = null;
+    const result = validateRipsSinFacturaTransaction(t);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.path.endsWith("viaIngresoServicioSalud"))).toBe(true);
+  });
+
+  it("accepts a valid 2-character viaIngresoServicioSalud on a procedimiento", () => {
+    const t = validTransaction();
+    expect(t.usuarios[0].servicios.procedimientos![0].viaIngresoServicioSalud).toBe("02");
+    expect(validateRipsSinFacturaTransaction(t)).toEqual({ valid: true, errors: [] });
+  });
+
+  it("rejects grupoServicios/codServicio when null on either a consulta or a procedimiento (DT1 v003 fixed-size fields, never null)", () => {
+    const tConsulta = validTransaction() as unknown as { usuarios: [{ servicios: { consultas: [Record<string, unknown>] } }] };
+    tConsulta.usuarios[0].servicios.consultas[0].grupoServicios = null;
+    expect(validateRipsSinFacturaTransaction(tConsulta).valid).toBe(false);
+
+    const tProcedimiento = validTransaction() as unknown as {
+      usuarios: [{ servicios: { procedimientos: [Record<string, unknown>] } }];
+    };
+    tProcedimiento.usuarios[0].servicios.procedimientos[0].codServicio = null;
+    expect(validateRipsSinFacturaTransaction(tProcedimiento).valid).toBe(false);
+  });
+
   it("rejects a procedimiento whose vrServicio isn't exactly 0 (RIPS sin factura invariant)", () => {
     const t = validTransaction() as unknown as { usuarios: [{ servicios: { procedimientos: [Record<string, unknown>] } }] };
     t.usuarios[0].servicios.procedimientos[0].vrServicio = 15000;

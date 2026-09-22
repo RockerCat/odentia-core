@@ -224,17 +224,22 @@ function validateProcedure(v: Validator, path: string, raw: unknown) {
   v.mustBeNull(`${path}.idMIPRES`, p.idMIPRES);
   v.mustBeNull(`${path}.numAutorizacion`, p.numAutorizacion);
   v.requiredString(`${path}.codProcedimiento`, p.codProcedimiento, { exactLength: 6 });
-  // P06 viaIngresoServicioSalud — DT1 v003 declares a bare fixed Tamaño
-  // "2". Still deliberately NOT tightened: unlike grupoServicios/
-  // codServicio below (RESOLVED, see that comment), there is no existing
-  // rule anywhere in this codebase — concept-based or manual CUPS — that
-  // derives this value automatically; it is a genuine per-visit clinical/
-  // administrative decision ("¿por qué vía ingresó el paciente?") with no
-  // safe universal default, and the concept flow itself leaves it blank
-  // by default too (only ever set through the manual "Detalles RIPS"
-  // <select>). Reported as a real, concrete pending item — see
-  // PROJECT_STATUS.md — rather than inventing a default.
-  v.nullableString(`${path}.viaIngresoServicioSalud`, p.viaIngresoServicioSalud, { exactLength: 2 });
+  // P06 viaIngresoServicioSalud — RESOLVED (2026-09-21). DT1 v003 declares
+  // a bare fixed Tamaño "2" (§1.5's own fixed-size-admits-no-null rule).
+  // Official finding: RIPSViaIngresoIPS (SISPRO) has exactly 4 active
+  // codes — 01 Urgencias / 02 Consulta Externa ó Programada / 03 Remitido
+  // / 04 Nacido en la Institución. Odentia's Agenda has exactly one real
+  // appointment entry path (a scheduled Cita — see CLAUDE.md's Appointment
+  // Lifecycle), with no Urgencias/walk-in flow, no referral/Remitido
+  // tracking, and "Nacido en la Institución" inapplicable to dentistry —
+  // "02" is the only code Odentia's own domain model can ever honestly
+  // assert, same reasoning as Modalidad's "01 Intramural" above. Every
+  // real procedure-creation path now resolves it automatically
+  // (resolveViaIngresoCode, clinical-service-resolution.ts) — see
+  // export-readiness.ts's own SERVICE_VIA_INGRESO_MISSING for the
+  // readiness-layer half. A null value can only ever come from a
+  // historical procedure predating this rule.
+  v.requiredString(`${path}.viaIngresoServicioSalud`, p.viaIngresoServicioSalud, { exactLength: 2 });
   // P07 modalidadGrupoServicioTecSal — same §1.5 fixed-size rule, same
   // "always auto-set to 01, no manual selector, historical-only null
   // risk" safety as the Consulta side — see that file's own comment.
