@@ -1575,6 +1575,22 @@ tiers, coupons, taxes, the LopaDent-benefit spend-tracking mechanism
 (marketing-only today, no real purchase data), and the RLS-retrofit noted
 above.
 
+**RESOLVED (Pilot Readiness Sweep follow-up, 2026-09-22) — Nueva clínica /
+zero clinical professionals → guided empty state.** Agenda's "Nueva cita"
+Profesional field used to fall back to a bare, generic "Sin resultados"
+for a clinic with 0 active `professional_profiles` — hitting the flagship
+Primary Use Case (a solo Clinic-Admin-Dentist) on her very first attempt
+to create a Cita, with no indication of why or what to do.
+`RealNewAppointmentModal` now shows a real empty state instead
+(`resolveProfessionalPickerState()`, unit-tested): a Clinic Admin sees
+"Aún no hay profesionales configurados" plus a "Configurar perfil
+profesional" link to `/clinica` (self-service, `create_my_professional_profile()`,
+unchanged); Dentist/Assistant see "Aún no hay profesionales disponibles"
+with no CTA they couldn't act on. A genuinely non-empty roster with no
+search match still shows the Combobox's own ordinary "Sin resultados" —
+unaffected. Profesional stays required; no placeholder profile is ever
+created.
+
 ## Clínica (real, Clinic Admin)
 
 - `/clinica` — **Información general** (real, editable inline). **Equipo** (real:

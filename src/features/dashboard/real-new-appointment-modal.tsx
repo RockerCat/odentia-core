@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { Combobox } from "@/components/combobox";
 import { useToast } from "@/components/toast";
@@ -12,6 +13,7 @@ import { hasAvailableFutureSlotForDay, isoWeekdayOfDayKey, resolveAgendaSlotsFor
 import { WeekDayPickerContent } from "./real-week-day-picker";
 import type { WeekDay } from "./real-week";
 import type { Patient } from "@/features/patients/data";
+import type { MembershipRole } from "@/features/session/types";
 import type { Appointment } from "./appointments-data";
 import { createAppointment } from "./appointments-actions";
 
@@ -33,6 +35,22 @@ import { createAppointment } from "./appointments-actions";
 //     7 days instead (WeekDayPickerContent below) — same restriction the mock
 //     already had in practice (you can only create an appointment within the
 //     week currently on screen), just without a broken calendar grid.
+export type ProfessionalPickerState = "picker" | "empty-can-configure" | "empty-cannot-configure";
+
+// Pure so the exact branching this checkpoint closes ("0 active clinical
+// professionals" vs. "search found nothing," and "can this role configure
+// one" vs. not) is unit-testable without rendering this modal — same
+// convention as every other pure decision function in this feature (e.g.
+// resumen-tab.tsx's own exported helpers). `professionalsCount` is the
+// RAW roster size (before any Combobox search filter is ever applied) —
+// a real, non-empty roster with zero search matches must stay the
+// Combobox's own generic "Sin resultados," never this notice; only ever
+// called with `professionals.length`, never a filtered count.
+export function resolveProfessionalPickerState(professionalsCount: number, role: MembershipRole): ProfessionalPickerState {
+  if (professionalsCount > 0) return "picker";
+  return role === "clinic_admin" ? "empty-can-configure" : "empty-cannot-configure";
+}
+
 export type BoardProfessional = {
   professionalProfileId: string;
   name: string;
@@ -58,6 +76,7 @@ function toPatientOption(patient: Patient): PatientOption {
 
 export function RealNewAppointmentModal({
   clinicId,
+  role,
   patients,
   professionals,
   lockedProfessional,
@@ -70,6 +89,12 @@ export function RealNewAppointmentModal({
   onCreated,
 }: {
   clinicId: string;
+  // Only used to decide the Profesional field's empty-state copy/CTA below
+  // (0 active clinical professionals) — never a second authorization
+  // check. create_my_professional_profile() (see CLAUDE.md's Clinic Admin
+  // section) is clinic_admin-only, so that's the exact same condition
+  // gating the CTA here.
+  role: MembershipRole;
   patients: Patient[];
   professionals: BoardProfessional[];
   lockedProfessional: BoardProfessional | null;
@@ -116,6 +141,7 @@ export function RealNewAppointmentModal({
 
   const selectedPatient = patientOptions.find((p) => p.id === patientId) ?? null;
   const selectedProfessional = professionals.find((p) => p.professionalProfileId === professionalId) ?? null;
+  const professionalPickerState = resolveProfessionalPickerState(professionals.length, role);
 
   const dayEntry = weekDays.find((d) => d.key === dayKey);
   const dayLabel = dayEntry ? `${dayEntry.label}, ${dayEntry.dateLabel}` : "Selecciona una fecha";
@@ -245,7 +271,9 @@ export function RealNewAppointmentModal({
               <div>
                 <label className="text-[11px] text-label-foreground">Profesional</label>
                 <div className="mt-1">
-                  {lockedProfessional ? (
+                  {professionalPickerState !== "picker" ? (
+                    <NoProfessionalsNotice canConfigureOwnProfile={professionalPickerState === "empty-can-configure"} />
+                  ) : lockedProfessional ? (
                     <div className="flex w-full items-center gap-2.5 rounded-lg border border-border bg-foreground/[0.02] px-3 py-2">
                       <UserAvatar
                         name={lockedProfessional.name}
@@ -410,6 +438,35 @@ export function RealNewAppointmentModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// "0 active clinical professionals" — a genuinely empty roster, never a
+// search-with-no-match (that stays the Combobox's own generic "Sin
+// resultados", unaffected here since this branch only renders when
+// `professionals` itself, before any query, is empty). Hits the flagship
+// Primary Use Case (a solo Clinic-Admin-Dentist who hasn't self-configured
+// yet — see CLAUDE.md's Domain Model) on her very first "Nueva cita."
+// Never creates a placeholder professional_profile — Profesional simply
+// stays unselected, so `canCreate` (already `Boolean(... && professionalId
+// ...)`) keeps "Crear cita" disabled with no change needed here.
+function NoProfessionalsNotice({ canConfigureOwnProfile }: { canConfigureOwnProfile: boolean }) {
+  return (
+    <div className="rounded-lg border border-dashed border-border bg-surface px-3 py-2.5">
+      <p className="text-sm font-medium text-foreground">
+        Aún no hay profesionales {canConfigureOwnProfile ? "configurados" : "disponibles"}
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {canConfigureOwnProfile
+          ? "Para crear citas, primero configura tu perfil profesional o agrega un odontólogo a tu equipo."
+          : "Un administrador de la clínica debe configurar o agregar un profesional antes de crear citas."}
+      </p>
+      {canConfigureOwnProfile && (
+        <Link href="/clinica" className="mt-2 inline-block text-xs font-medium text-primary hover:underline">
+          Configurar perfil profesional
+        </Link>
+      )}
     </div>
   );
 }

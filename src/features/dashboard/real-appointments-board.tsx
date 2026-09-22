@@ -660,6 +660,7 @@ export function RealAppointmentsBoard({
       {showNewAppointment && (
         <RealNewAppointmentModal
           clinicId={clinicId}
+          role={role}
           patients={patients}
           professionals={scopedProfessionals}
           lockedProfessional={isDentist ? ownProfessionalDisplay : null}
