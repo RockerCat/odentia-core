@@ -1,19 +1,4 @@
 import { createClient } from "@/lib/supabase/client";
-import type { AccountFormData } from "./types";
-
-export type SignUpOutcome =
-  | { status: "signed-in" }
-  | { status: "confirmation-required" }
-  | { status: "error"; message: string };
-
-// Pure so all three real signup contexts (/registro's own default,
-// /invitacion/[token], /portal/invitacion/[token]) are each provably
-// covered without mocking Supabase — see api.test.ts. See
-// signUpAccount()'s own comment for why this is the real destination
-// itself, not a query string this app builds.
-export function buildSignUpRedirectTo(origin: string, next: string): string {
-  return `${origin}${next}`;
-}
 
 export type RegistroReentryDecision = "redirect-to-product" | "redirect-to-portal" | "redirect-to-demo";
 
@@ -69,88 +54,6 @@ export function decideRegistroReentry(
   if (hasActiveMembership) return "redirect-to-product";
   if (hasPatientAccess) return "redirect-to-portal";
   return "redirect-to-demo";
-}
-
-// Real Supabase Auth signup — the traditional AccountStep path. Its ONE
-// real remaining caller is /invitacion/[token]'s own traditional branch
-// for a Clinic-Admin-issued invitation with no pre-provisioned identity —
-// either a genuinely historical one created before "Unify clinic team
-// invitation activation" (7 real such pending invitations existed at that
-// checkpoint's own close, confirmed by direct query — never assume that
-// count is zero without re-checking), or the defensive fallback if that
-// migration's own identity requirement were ever somehow bypassed.
-// /portal/invitacion/[token] (Patient) never calls this at all — always
-// password-only. /registro's own Paso 1 no longer calls this either — see
-// "Odentia — retirar self-service de /registro y eliminar Confirm
-// Signup": public self-service clinic onboarding is retired; a genuinely
-// new anonymous visitor is sent to /demo instead (see
-// registro-reentry.tsx). Do not remove this function while
-// /invitacion/[token]'s traditional branch still has real, live
-// invitations depending on it. first_name/last_name travel in
-// user_metadata; the on_auth_user_created trigger (see the foundation
-// schema migration) is what actually creates the profiles row — never
-// insert into profiles from the client.
-export async function signUpAccount(data: AccountFormData, next: string = "/registro"): Promise<SignUpOutcome> {
-  const supabase = createClient();
-  const { data: result, error } = await supabase.auth.signUp({
-    email: data.email.trim(),
-    password: data.password,
-    options: {
-      data: {
-        first_name: data.firstName.trim(),
-        last_name: data.lastName.trim(),
-      },
-      // Points directly at the real post-confirm destination (/registro,
-      // or the Equipo/Patient Portal invitation this signup started from —
-      // see src/app/invitacion/[token]/page.tsx and
-      // src/app/portal/invitacion/[token]/page.tsx) — NOT at
-      // /auth/confirm?next=... the way this used to be built. That old
-      // shape relied on Supabase's default {{ .ConfirmationURL }} template
-      // variable, which is known not to propagate emailRedirectTo through
-      // for a PKCE-flow signup (this app forces PKCE — see
-      // src/lib/supabase/client.ts), and separately broke again once the
-      // Confirm Signup template was hand-edited to embed
-      // {{ .RedirectTo }} as a URL PREFIX: {{ .RedirectTo }} either
-      // already contained its own "?next=..." query string (making
-      // "&token_hash=..." invalid without a second "?") or, if the
-      // Redirect URLs allow-list ever rejected it, silently collapsed to
-      // bare {{ .SiteURL }} with no path/query at all — either way,
-      // GoTrue's own /auth/v1/verify hop is never actually involved here
-      // (this route handles token_hash+type via verifyOtp() directly), so
-      // emailRedirectTo's ONLY job is supplying {{ .RedirectTo }}'s value.
-      //
-      // Sending the real destination directly sidesteps both failure
-      // modes: the REQUIRED Confirm Signup template is now
-      //   {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next={{ .RedirectTo }}
-      // — a fixed, always-well-formed prefix with {{ .RedirectTo }} used
-      // only as a VALUE, never as a URL a query string gets appended onto.
-      // resolveSafeNext() (src/app/auth/confirm/resolve-safe-next.ts) turns
-      // that value — a same-origin absolute URL when the allow-list
-      // accepted it, or a bare origin if it didn't — back into a safe
-      // relative path, defaulting to /registro either way if nothing
-      // usable survives. Dynamic origin (not hardcoded), so this keeps
-      // working in local dev and whatever domain this app is actually
-      // deployed to, as long as that destination is covered by Supabase
-      // Auth's Redirect URLs allow-list (Dashboard → Authentication → URL
-      // Configuration) — e.g. a single `<origin>/**` entry.
-      emailRedirectTo: buildSignUpRedirectTo(window.location.origin, next),
-    },
-  });
-
-  if (error) return { status: "error", message: friendlySignUpError(error.message) };
-  if (result.session) return { status: "signed-in" };
-  return { status: "confirmation-required" };
-}
-
-function friendlySignUpError(message: string): string {
-  const normalized = message.toLowerCase();
-  if (normalized.includes("already registered") || normalized.includes("already exists")) {
-    return "Ya existe una cuenta con este correo. Intenta iniciar sesión o usa otro correo.";
-  }
-  if (normalized.includes("password")) {
-    return "La contraseña no cumple los requisitos de seguridad. Intenta con otra.";
-  }
-  return "No pudimos crear tu cuenta. Intenta de nuevo en unos minutos.";
 }
 
 // Reentry: does the currently authenticated user already belong to an

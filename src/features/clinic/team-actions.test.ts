@@ -8,11 +8,11 @@ import { decideInvitationSessionView, hasPreProvisionedIdentity } from "./team-a
 // /invitacion/[token]'s own session-vs-invitation UI branch, extracted so
 // it's testable without a DOM/mocked Supabase client.
 describe("decideInvitationSessionView", () => {
-  it("no session, invited email already has an Odentia account → existing-user (never AccountStep)", () => {
+  it("no session, invited email already has an Odentia account → existing-user (never the activation view)", () => {
     expect(decideInvitationSessionView(null, "alexsosa.me@gmail.com", true)).toBe("existing-user");
   });
 
-  it("no session, invited email is genuinely new → need-auth (AccountStep, unchanged)", () => {
+  it("no session, invited email is genuinely new → need-auth (password-only activation, unchanged)", () => {
     expect(decideInvitationSessionView(null, "new-dentist@example.com", false)).toBe("need-auth");
   });
 
@@ -32,18 +32,20 @@ describe("decideInvitationSessionView", () => {
 
 // Regression coverage for "Platform → Clínica → Equipo: gestión
 // transversal por Superadmin", extended by "Unify clinic team invitation
-// activation" (2026-09-21) — the exact branch that decides between the
-// password-only activation view and the traditional AccountStep.
-// Generalized from clinic_admin-only to all three roles, and (since
-// invite_clinic_member() itself now requires first_name/last_name/phone,
-// migration 20260921140000) no longer gated on who issued the invitation
-// either — a brand-new Clinic-Admin-issued invitation now activates by
-// password only, same as a Superadmin-issued one. The "no identity at
-// all" case below is kept as the defensive fallback for a genuinely
-// historical invitation created before this checkpoint, or an incomplete
-// pre-provisioned one (provision_first_clinic_admin_invitation()/
-// provision_clinic_team_member()/invite_clinic_member() all enforce
-// completeness server-side, but the UI must not assume it blindly).
+// activation" and "Odentia — eliminar invitaciones legacy de prueba y
+// retirar Confirm Signup" (both 2026-09-21) — the exact branch that
+// decides between the password-only activation view and the fail-closed
+// dead end (see team-actions.ts's own updated comment: the traditional
+// AccountStep/signUpAccount() path this used to fall back to was removed
+// entirely once it reached zero real callers). Generalized from
+// clinic_admin-only to all three roles, and no longer gated on who issued
+// the invitation either — a brand-new Clinic-Admin-issued invitation now
+// activates by password only, same as a Superadmin-issued one. The "no
+// identity at all" case below stays a defensive check even though the
+// last 7 legacy rows missing it were revoked (migration 20260921150000) —
+// provision_first_clinic_admin_invitation()/provision_clinic_team_member()/
+// invite_clinic_member() all enforce completeness server-side, but the UI
+// must not assume it blindly.
 describe("hasPreProvisionedIdentity", () => {
   const complete = { firstName: "Ana", lastName: "Admin", phone: "+57 300 1234567" };
 
@@ -63,15 +65,15 @@ describe("hasPreProvisionedIdentity", () => {
     expect(hasPreProvisionedIdentity({ firstName: "Camila", lastName: "Odontóloga", phone: "+57 300 3333333" })).toBe(true);
   });
 
-  it("a genuinely historical invitation with no identity at all → AccountStep, never password-only", () => {
+  it("no identity at all → fail-closed dead end, never password-only (should be structurally impossible now, checked defensively)", () => {
     expect(hasPreProvisionedIdentity({ firstName: null, lastName: null, phone: null })).toBe(false);
   });
 
-  it("missing phone → falls back to AccountStep, defensively", () => {
+  it("missing phone → falls back to the fail-closed dead end, defensively", () => {
     expect(hasPreProvisionedIdentity({ ...complete, phone: null })).toBe(false);
   });
 
-  it("missing first_name → falls back to AccountStep, defensively", () => {
+  it("missing first_name → falls back to the fail-closed dead end, defensively", () => {
     expect(hasPreProvisionedIdentity({ ...complete, firstName: null })).toBe(false);
   });
 });

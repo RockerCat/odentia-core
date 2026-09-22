@@ -563,10 +563,19 @@ operation that ever creates a `clinic_memberships` row:
   dentist, or assistant alike) OR, since "Unify clinic team invitation
   activation" (2026-09-21), a Clinic Admin's own `invite_clinic_member()`
   invitation (the secret token itself is the proof of legitimate access
-  in both cases) — never disable Confirm Email globally. The ONLY
-  remaining real caller of `auth.signUp()`/Confirm Signup anywhere in this
-  codebase is `/registro`'s own public self-service signup
-  (`signUpAccount()`, `src/features/onboarding/api.ts`). If Auth/sign-in
+  in both cases) — never disable Confirm Email globally. **`Confirm
+  Signup = NOT USED` and `auth.signUp() = 0 callers`, codebase-wide**
+  ("Odentia — eliminar invitaciones legacy de prueba y retirar Confirm
+  Signup", 2026-09-21): the 7 legacy `clinic_invitations` rows that
+  predated the identity requirement (real dev-test data, never real
+  users) were revoked (migration `20260921150000`), and
+  `/invitacion/[token]`'s own former fallback for that case —
+  `AccountStep`/`signUpAccount()`/`EmailConfirmationPending`, all
+  removed, zero callers verified first — now shows a fail-closed dead
+  end ("pide un enlace nuevo") instead, never a resurrected public
+  signup form, for the structurally-should-never-happen case of a future
+  invitation somehow still missing identity. `Reset Password` is the
+  only Supabase Auth email Odentia currently sends. If Auth/sign-in
   succeed but the automatic accept fails, never retry account creation,
   never sign the person out, never fabricate a membership — she's already
   authenticated, so she recovers through the same manual "Aceptar

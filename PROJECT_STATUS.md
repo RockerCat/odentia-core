@@ -648,24 +648,6 @@ touched; if code and this section ever disagree, the code wins (see CLAUDE.md).
     with `/demo`'s own real wording ("Quiero Odentia para mi clínica"),
     replacing "Crear cuenta" → `/registro`. No other hardcoded `/registro`
     link remains anywhere in `odentia-core` (confirmed by full-repo grep).
-  - **`Confirm Signup` — down to exactly one real, protected caller, not
-    zero.** `auth.signUp()`'s only remaining real code path is
-    `signUpAccount()` (`src/features/onboarding/api.ts`), called only by
-    `/invitacion/[token]`'s own traditional AccountStep branch for a
-    Clinic-Admin-issued invitation with no pre-provisioned identity.
-    Confirmed via a direct, read-only query against the real linked
-    project: **7 real, currently-`pending` invitations** created before
-    "Unify clinic team invitation activation" still have null
-    first_name/last_name/phone and structurally depend on this exact path
-    to ever be accepted — removing it would permanently strand those real
-    invitations, so it was deliberately preserved (explicitly out of
-    scope this checkpoint: "NO tocar invitaciones staff ya cerradas").
-    `AccountStep`, `EmailConfirmationPending`, and `buildSignUpRedirectTo()`
-    are kept for the same reason — genuinely shared, not dead.
-    `/portal/invitacion/[token]` (Patient) never called `auth.signUp()` at
-    all, unaffected. **`Reset Password` remains fully active and
-    untouched** (`resetPasswordForEmail()`/`/forgot-password`/
-    `/reset-password`, unchanged).
   - **Dead code removed** (real callers were exclusively `/registro`'s own
     retired Paso 2/3): `src/features/onboarding/clinic-step.tsx`
     (`ClinicStep`), `role-step.tsx` (`RoleStep`), `success-step.tsx`
@@ -695,6 +677,71 @@ touched; if code and this section ever disagree, the code wins (see CLAUDE.md).
     own 2 tests were removed along with the dead function); `eslint`
     clean on every changed file; `git diff --check` clean. No migration —
     this checkpoint touched only application code, never the database.
+- **RESOLVED (2026-09-21) — "Odentia — eliminar invitaciones legacy de
+  prueba y retirar Confirm Signup": `Confirm Signup = NOT USED`,
+  `auth.signUp() callers = 0`.** Closes the one real caller the previous
+  checkpoint above deliberately preserved.
+  - **Legacy test data cleaned.** Product-confirmed: the 7 real,
+    currently-`pending` `clinic_invitations` rows missing
+    first_name/last_name/phone (created before "Unify clinic team
+    invitation activation") were Alex's own development test
+    invitations, never real users. Precondition re-verified immediately
+    before cleanup via a direct, read-only query against the real linked
+    project: exactly 7 such rows, none with a materialized
+    `clinic_memberships` row for its email in its clinic. Migration
+    `20260921150000` (`update ... set status = 'revoked' where id in
+    (<7 hardcoded ids>) and status = 'pending' and (identity columns
+    still null)`) revoked exactly those 7, by id — never a broad
+    `WHERE` clause, never touching the 4 separate `accepted` legacy rows
+    (real, historical, already-consumed invitations with resulting real
+    memberships — untouched, as required). Post-migration read-only
+    verification: `pending` rows missing identity = 0.
+  - **`/invitacion/[token]`'s traditional signup branch removed —
+    fail-closed, not deleted-without-a-trace.** The
+    `need-auth && !hasPreProvisionedIdentity(preview)` branch no longer
+    renders `AccountStep` (public `auth.signUp()` + Confirm Signup); it
+    now shows a static, actionable dead end ("Esta invitación no se
+    puede activar. Pide a tu administrador que te comparta un enlace
+    nuevo.") with no internal detail. Since every legacy row without
+    identity is now revoked, and every issuing RPC
+    (`invite_clinic_member()`/`provision_clinic_team_member()`/
+    `provision_first_clinic_admin_invitation()`) requires it, a real
+    pending invitation should never reach this branch again — it exists
+    purely as a fail-closed guard against future data corruption, never
+    a resurrected signup form.
+  - **Dead code removed, real callers verified at zero first**:
+    `src/features/onboarding/account-step.tsx` (`AccountStep`),
+    `email-confirmation-pending.tsx` (`EmailConfirmationPending`), and —
+    from `api.ts` — `signUpAccount()`, `SignUpOutcome`,
+    `buildSignUpRedirectTo()`, `friendlySignUpError()` (`auth.signUp()`
+    itself no longer appears anywhere in application code — confirmed by
+    grep). `AccountFormData`/`EMPTY_ACCOUNT` (`types.ts`) removed too,
+    their only real callers being `account-step.tsx` and `signUpAccount()`
+    itself. `/invitacion/[token]/page.tsx`'s own password-only state now
+    uses a minimal local `{ password, confirmPassword }` shape instead.
+  - **Confirmed untouched, as required**: `resetPasswordForEmail()`/
+    `updateUser({password})` (Reset Password); `/portal/invitacion/[token]`
+    (Patient, always password-only, never called `auth.signUp()` at
+    all); `mailer_autoconfirm`/SMTP/templates/Site URL/Redirect URLs
+    (no Supabase project configuration changed); Superadmin provisioning
+    RPCs.
+  - **Final state**: every valid staff invitation today goes through
+    exactly one of two paths — (1) existing user: login/session →
+    `accept_clinic_invitation()` → membership; (2) new pre-provisioned
+    user: password-only → `activatePreProvisionedInvitationAction()` →
+    `admin.createUser({email_confirm:true})` → `signInWithPassword` →
+    `accept_clinic_invitation()` → membership. No email of any kind
+    fires in either path. `Reset Password` is the only Supabase Auth
+    email Odentia currently sends.
+  - QA: `npx tsc --noEmit` clean; full `npx vitest run` — 665/665 passed
+    (6 unrelated integration tests skipped, no local Docker; count is 5
+    lower than the previous checkpoint's 670 because
+    `buildSignUpRedirectTo`'s own 5 tests were removed along with the
+    dead function); `eslint` clean on every changed file; `git diff
+    --check` clean. Migration `20260921150000` applied and confirmed in
+    sync (`supabase migration list`, local = remote); final read-only
+    query confirmed 0 pending legacy invitations without identity
+    remain.
 - **Historical — `/registro`'s original 3-step wizard (Cuenta → Clínica →
   Rol), retired above.** It used to create a real Supabase Auth user, a
   real `clinics` row (name, slug, sede principal with a real

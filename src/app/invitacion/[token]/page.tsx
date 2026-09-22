@@ -13,21 +13,13 @@ import {
   previewClinicInvitation,
   type InvitationPreview,
 } from "@/features/clinic/team-actions";
-import { AccountStep } from "@/features/onboarding/account-step";
-import { signUpAccount, type SignUpOutcome } from "@/features/onboarding/api";
-import { EmailConfirmationPending } from "@/features/onboarding/email-confirmation-pending";
 import { INPUT_CLASS } from "@/features/onboarding/field-classes";
-import { EMPTY_ACCOUNT } from "@/features/onboarding/types";
 import { resolveClinicContext } from "@/features/session/resolve-clinic-context";
 import { resolvePatientContext } from "@/features/session/resolve-patient-context";
 import { bridgeAuthenticatedContext } from "@/features/session/role-bridge";
 import { signOutSupabase } from "@/features/session/sign-out";
 import { createClient } from "@/lib/supabase/client";
 
-// Same rule AccountStep's own local validate() already enforces
-// (src/features/onboarding/account-step.tsx) — not exported from there,
-// restated here rather than adding a cross-file dependency for one
-// constant. Must stay in sync if that file's own policy ever changes.
 const MIN_PASSWORD_LENGTH = 8;
 
 // Accepting a Clínica → Equipo invitation (see invite_clinic_member()/
@@ -44,20 +36,31 @@ const MIN_PASSWORD_LENGTH = 8;
 // Not gated by src/lib/supabase/proxy.ts (not a clinic private path), so
 // it's reachable whether authenticated or not, same as /login.
 //
-// Reuses AccountStep/signUpAccount/EmailConfirmationPending from
-// /registro's own wizard as-is (same real Supabase Auth signUp, just
-// pointed at this page via signUpAccount's `next` param) rather than a
-// second signup implementation.
+// "Odentia — eliminar invitaciones legacy de prueba y retirar Confirm
+// Signup" (2026-09-21): every invite_clinic_member() call now requires
+// complete pre-provisioned identity (see "Unify clinic team invitation
+// activation", migration 20260921140000), so a genuinely new invitee
+// ALWAYS activates by password only (activatePreProvisionedInvitationAction(),
+// admin.createUser({email_confirm:true}) — no Confirm Signup email, ever)
+// — same shape below, mirroring the traditional public signup this page
+// used to reuse from /registro's own retired onboarding wizard.
+// hasPreProvisionedIdentity(view.preview) is now a FAIL-CLOSED check, not
+// a UI branch between two equally-valid paths: the 7 known legacy
+// invitations that predated the identity requirement were revoked
+// (migration 20260921150000, verified 0 remaining), so a real pending
+// invitation should never reach the "false" branch again — if it somehow
+// does (future data corruption, a manual DB edit), this page shows an
+// actionable dead end pointing at the clinic to regenerate the link,
+// never a public signup form.
 //
 // PROMPT NINJA "Checkpoint 1 — reparar infraestructura común de
 // invitaciones": the mount effect now validates the token itself first
 // (previewClinicInvitation(), a real, anon-callable RPC — see its own
 // migration comment), BEFORE ever checking for a session or offering
-// signup. An invalid/expired/accepted/revoked token now stops here,
-// immediately, instead of only surfacing after a full signup + email
-// confirmation round trip. accept_clinic_invitation() remains the only
-// real authority — this preview only improves UX, it never substitutes
-// for that RPC's own validation at acceptance time.
+// activation. An invalid/expired/accepted/revoked token now stops here,
+// immediately. accept_clinic_invitation() remains the only real
+// authority — this preview only improves UX, it never substitutes for
+// that RPC's own validation at acceptance time.
 type ViewState =
   | { kind: "validating" }
   | { kind: "invalid" }
@@ -69,9 +72,8 @@ type ViewState =
   // (preview_clinic_invitation()'s own user_exists, resolved server-side
   // from public.profiles off the token's own invited email — never a
   // client-supplied email). No session yet, but there is nothing to
-  // sign up for: never render AccountStep here, only a path to /login.
+  // sign up for: only a path to /login.
   | { kind: "existing-user"; preview: UsablePreview }
-  | { kind: "confirmation-pending"; email: string; preview: UsablePreview }
   // notice is optional and only ever set by the chained auto-accept
   // failure recovery (see handleActivateAccount) — Auth/sign-in succeeded
   // but accept_clinic_invitation() didn't, so this authenticated user
@@ -96,11 +98,12 @@ type UsablePreview = {
   role: "clinic_admin" | "dentist" | "assistant";
   clinicName: string | null;
   userExists: boolean;
-  // Null for every traditional Clinic-Admin-issued dentist/assistant
-  // invitation (invite_clinic_member()); all three present, regardless of
-  // role, only for a Superadmin-issued Platform invitation
-  // (provision_first_clinic_admin_invitation()/provision_clinic_team_member()
-  // — see hasPreProvisionedIdentity()).
+  // Always present together for any invitation issued today — every
+  // issuing RPC (invite_clinic_member()/provision_clinic_team_member()/
+  // provision_first_clinic_admin_invitation()) requires complete identity
+  // — see hasPreProvisionedIdentity(). Typed nullable purely as a
+  // defensive fail-closed signal for a genuinely historical/corrupted row
+  // (see this file's own header comment); never expected in practice.
   firstName: string | null;
   lastName: string | null;
   phone: string | null;
@@ -142,17 +145,14 @@ export default function InvitationPage() {
   // real-appointment-detail-modal.tsx's "Ver paciente"/"Ver historial
   // completo").
   const [navigatingToClinic, setNavigatingToClinic] = useState(false);
-  const [accountData, setAccountData] = useState(EMPTY_ACCOUNT);
+  // Password-only activation is the only real signup path left on this
+  // page (see this file's own header comment) — just the two password
+  // fields the activation form actually needs, never a full account/
+  // identity shape (that comes entirely from the invitation itself,
+  // server-side, in activatePreProvisionedInvitationAction()).
+  const [passwordData, setPasswordData] = useState({ password: "", confirmPassword: "" });
   const [signingUp, setSigningUp] = useState(false);
   const [signUpError, setSignUpError] = useState<string | null>(null);
-  // Password-only activation — reuses accountData's own
-  // password/confirmPassword fields (never its firstName/lastName/email,
-  // which stay blank/unused in this branch) and the SAME signingUp/
-  // signUpError state AccountStep uses, but calls
-  // activatePreProvisionedInvitationAction() (handleActivateAccount
-  // below), never signUpAccount()/handleSignUp() — see that action's own
-  // comment for why this branch needs a genuinely different mechanism,
-  // not just a different payload.
   const [activationErrors, setActivationErrors] = useState<{ password?: string; confirmPassword?: string }>({});
 
   useEffect(() => {
@@ -192,37 +192,18 @@ export default function InvitationPage() {
     };
   }, [token]);
 
-  const handleSignUp = async (data: typeof accountData) => {
-    setSigningUp(true);
-    setSignUpError(null);
-    setAccountData(data);
-    const outcome: SignUpOutcome = await signUpAccount(data, `/invitacion/${token}`);
-    setSigningUp(false);
-    if (outcome.status === "error") {
-      setSignUpError(outcome.message);
-      return;
-    }
-    if (view.kind !== "need-auth") return; // narrows preview below; always true here
-    if (outcome.status === "confirmation-required") {
-      setView({ kind: "confirmation-pending", email: data.email.trim(), preview: view.preview });
-      return;
-    }
-    setView({ kind: "ready", authedEmail: data.email.trim(), preview: view.preview });
-  };
-
-  // Password-only activation — deliberately NOT signUpAccount()/
-  // handleSignUp() above: that path is a public, anonymous
-  // supabase.auth.signUp() and always triggers Confirm Signup email,
-  // which this checkpoint's whole point is to skip for a pre-provisioned
-  // clinic_admin invitation (see activatePreProvisionedInvitationAction's
-  // own comment for why that email adds no real security here). Only
-  // `token` and the password just typed are sent to the server — never
-  // preview.email/firstName/lastName/phone, which the server re-resolves
-  // itself from the invitation and never trusts from the browser.
+  // Password-only activation — the only real signup path left on this
+  // page (see this file's own header comment): never a public, anonymous
+  // supabase.auth.signUp(), so Confirm Signup never fires (see
+  // activatePreProvisionedInvitationAction's own comment for why that
+  // email adds no real security here). Only `token` and the password just
+  // typed are sent to the server — never preview.email/firstName/
+  // lastName/phone, which the server re-resolves itself from the
+  // invitation and never trusts from the browser.
   const handleActivateAccount = async (preview: UsablePreview) => {
     setSigningUp(true);
     setSignUpError(null);
-    const outcome = await activatePreProvisionedInvitationAction(token, accountData.password);
+    const outcome = await activatePreProvisionedInvitationAction(token, passwordData.password);
 
     if (outcome.status === "error") {
       setSigningUp(false);
@@ -243,7 +224,7 @@ export default function InvitationPage() {
     const supabase = createClient();
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: outcome.email,
-      password: accountData.password,
+      password: passwordData.password,
     });
 
     if (signInError) {
@@ -307,12 +288,12 @@ export default function InvitationPage() {
   const handleActivationSubmit = (e: FormEvent, preview: UsablePreview) => {
     e.preventDefault();
     const errors: typeof activationErrors = {};
-    if (!accountData.password) {
+    if (!passwordData.password) {
       errors.password = "Ingresa una contraseña.";
-    } else if (accountData.password.length < MIN_PASSWORD_LENGTH) {
+    } else if (passwordData.password.length < MIN_PASSWORD_LENGTH) {
       errors.password = `Debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.`;
     }
-    if (accountData.confirmPassword !== accountData.password) {
+    if (passwordData.confirmPassword !== passwordData.password) {
       errors.confirmPassword = "Las contraseñas no coinciden.";
     }
     setActivationErrors(errors);
@@ -349,13 +330,6 @@ export default function InvitationPage() {
   };
 
   const loginHref = `/login?next=${encodeURIComponent(`/invitacion/${token}`)}`;
-
-  // EmailConfirmationPending already renders its own full-page shell
-  // (Logo/card) — nesting it inside this page's own shell below would
-  // show the Odentia logo twice.
-  if (view.kind === "confirmation-pending") {
-    return <EmailConfirmationPending email={view.email} />;
-  }
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-surface px-4 py-10">
@@ -431,8 +405,8 @@ export default function InvitationPage() {
                     id="activationPassword"
                     type="password"
                     className={INPUT_CLASS}
-                    value={accountData.password}
-                    onChange={(e) => setAccountData((prev) => ({ ...prev, password: e.target.value }))}
+                    value={passwordData.password}
+                    onChange={(e) => setPasswordData((prev) => ({ ...prev, password: e.target.value }))}
                     autoComplete="new-password"
                     placeholder="••••••••"
                     disabled={signingUp}
@@ -445,8 +419,8 @@ export default function InvitationPage() {
                     id="activationConfirmPassword"
                     type="password"
                     className={INPUT_CLASS}
-                    value={accountData.confirmPassword}
-                    onChange={(e) => setAccountData((prev) => ({ ...prev, confirmPassword: e.target.value }))}
+                    value={passwordData.confirmPassword}
+                    onChange={(e) => setPasswordData((prev) => ({ ...prev, confirmPassword: e.target.value }))}
                     autoComplete="new-password"
                     placeholder="••••••••"
                     disabled={signingUp}
@@ -468,29 +442,22 @@ export default function InvitationPage() {
           )}
 
           {view.kind === "need-auth" && !hasPreProvisionedIdentity(view.preview) && (
-            <>
-              <p className="mb-1 text-sm text-foreground">
-                Te invitaron a unirte a{" "}
-                <span className="font-medium">{view.preview.clinicName ?? "una clínica"}</span> en Odentia como{" "}
-                <span className="font-medium">{ROLE_LABEL[view.preview.role]}</span>.
+            // Fail-closed (see this file's own header comment): a real,
+            // pending, usable invitation should never reach this branch
+            // anymore — every issuing RPC requires complete identity, and
+            // the last legacy rows without it were revoked. If it somehow
+            // still happens, never fall back to a public signup form —
+            // just point at the one real fix (a fresh link from the
+            // clinic), with no internal detail about why.
+            <div className="text-center">
+              <p className="text-sm text-danger">Esta invitación no se puede activar.</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Pide a tu administrador que te comparta un enlace nuevo.
               </p>
-              <p className="mb-4 text-sm text-muted-foreground">
-                Crea tu cuenta con <span className="font-medium text-foreground">{view.preview.email}</span> para
-                continuar.
-              </p>
-              <AccountStep
-                initial={accountData}
-                submitting={signingUp}
-                submitError={signUpError}
-                onContinue={handleSignUp}
-              />
-              <p className="mt-4 text-center text-xs text-muted-foreground">
-                ¿Ya tienes cuenta con ese correo?{" "}
-                <Link href={loginHref} className="font-medium text-primary hover:underline">
-                  Inicia sesión
-                </Link>
-              </p>
-            </>
+              <Link href="/login" className="mt-4 inline-block text-xs font-medium text-primary hover:underline">
+                Ir a iniciar sesión
+              </Link>
+            </div>
           )}
 
           {view.kind === "existing-user" && (

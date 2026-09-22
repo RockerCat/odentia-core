@@ -295,11 +295,12 @@ export function decideInvitationSessionView(
 }
 
 // Checkpoint 3 — the exact branch behind /invitacion/[token]'s
-// password-only vs. traditional AccountStep decision, extracted for the
-// same independent-testability reason as decideInvitationSessionView
-// above. Only ever meaningful for a brand-new email (the "need-auth"
-// session view) — an existing-user/ready/wrong-session flow never
-// touches signup at all, so this is never consulted there.
+// password-only activation vs. fail-closed dead-end decision, extracted
+// for the same independent-testability reason as
+// decideInvitationSessionView above. Only ever meaningful for a
+// brand-new email (the "need-auth" session view) — an existing-user/
+// ready/wrong-session flow never touches activation at all, so this is
+// never consulted there.
 //
 // Generalized (Platform → Clínica → Equipo checkpoint) to ALL THREE
 // roles — deliberately NOT gated on role === "clinic_admin", and (since
@@ -310,9 +311,15 @@ export function decideInvitationSessionView(
 // now requires complete pre-provisioned identity. The identity-
 // completeness check alone is a safe, structural way to route a brand-new
 // invitation (never a heuristic): those three columns are only ever
-// non-null together. Only a genuinely historical Clinic-Admin invitation
-// created BEFORE this checkpoint can still have all three null, in which
-// case this correctly falls back to the traditional AccountStep path.
+// non-null together. Since "Odentia — eliminar invitaciones legacy de
+// prueba y retirar Confirm Signup" (same day, migration 20260921150000)
+// revoked the last 7 legacy rows missing identity, a real pending
+// invitation should never reach `false` here again — if it somehow does
+// (future data corruption), /invitacion/[token] shows a fail-closed dead
+// end pointing at the clinic to regenerate the link, never a public
+// signup form (that path — AccountStep/signUpAccount()/
+// EmailConfirmationPending — was removed entirely in that same
+// checkpoint, having reached zero real callers).
 export function hasPreProvisionedIdentity(preview: {
   firstName: string | null;
   lastName: string | null;
