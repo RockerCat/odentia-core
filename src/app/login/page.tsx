@@ -149,8 +149,8 @@ export default function LoginPage() {
 
         <p className="mt-4 text-center text-xs text-muted-foreground">
           ¿Aún no tienes una clínica?{" "}
-          <Link href="/registro" className="font-medium text-primary hover:underline">
-            Crear cuenta
+          <Link href="/demo" className="font-medium text-primary hover:underline">
+            Quiero Odentia para mi clínica
           </Link>
         </p>
       </div>

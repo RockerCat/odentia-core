@@ -36,9 +36,12 @@ export function decideAuthenticatedRedirect(
 
   // Deliberately NOT escalating a bare "not-linked" the same way here —
   // see restricted-reason.ts's own comment on why: this same fallthrough
-  // also covers a brand-new staff founder mid-onboarding (neither a
-  // clinic membership nor a patient link yet), for whom /registro is
-  // still correct. Only an ambiguous/blocked patient state escalates.
+  // also covers a genuinely new/unlinked account (neither a clinic
+  // membership nor a patient link) — /registro now resolves that case to
+  // /demo itself (see registro-reentry.tsx, "Odentia — retirar
+  // self-service de /registro y eliminar Confirm Signup"), never a
+  // resurrected onboarding form. Only an ambiguous/blocked patient state
+  // escalates.
   if (patientContext.status === "multiple-links" || patientContext.status === "clinic-suspended") {
     return `/acceso-restringido?motivo=${restrictedReasonForPatient(patientContext.status)}`;
   }

@@ -618,12 +618,91 @@ touched; if code and this section ever disagree, the code wins (see CLAUDE.md).
 
 ## Onboarding (real)
 
-- `/registro` — a real 3-step wizard (Cuenta → Clínica → Rol) that creates a real
-  Supabase Auth user, a real `clinics` row (name, slug, sede principal with a real
-  Leaflet/Nominatim map picker + geocoding, logo upload to a public Storage
-  bucket), and the founding `clinic_admin` membership via a `SECURITY DEFINER`
-  bootstrap RPC (`bootstrap_clinic`). Handles email-confirmation-pending and
-  mid-onboarding-reentry states.
+- **RESOLVED (2026-09-21) — "Public self-service clinic onboarding" fully
+  closed.** `/registro` is no longer a wizard at all — it never renders
+  AccountStep/ClinicStep/RoleStep, never calls `auth.signUp()`, never
+  calls `bootstrap_clinic()`. It is now purely real Auth/reentry
+  infrastructure (`RegistroReentry`, `src/features/onboarding/
+  registro-reentry.tsx`): every real branch is a redirect, never a form.
+  **Final state:**
+  - `/registro` = reentry/fallback técnico only (still the real hardcoded
+    destination for `resolveSafeNext()`'s default, `proxy.ts`'s
+    `decideClinicRedirect()` "no-membership, not a linked Patient"
+    branch, and `decideAuthenticatedRedirect()`'s own fallthrough — the
+    route itself could never be deleted, only its self-service capability
+    could).
+  - Nuevos prospectos → `/demo` (Odentia's real commercial entry point).
+    `decideRegistroReentry()` now returns `"redirect-to-demo"` for BOTH a
+    genuinely new anonymous visitor (no session) AND an authenticated
+    visitor with neither an active clinic membership nor Patient access —
+    the old `"account"`/`"clinic"` branches (Paso 1/Paso 2 of the retired
+    wizard) are gone. Membership/Patient-access precedence is otherwise
+    unchanged (membership wins, same as `decideAuthenticatedRedirect()`).
+  - Clínicas → provisionadas por SUPERADMIN (`provision_clinic()`,
+    unchanged, untouched by this checkpoint).
+  - Initial admin / staff / patient → all invitation/access link, all
+    password-only activation, unchanged, untouched by this checkpoint —
+    see "Equipo — real invitations" above and "Patient Portal — identidad
+    y acceso" below.
+  - Login's own CTA ("¿Aún no tienes una clínica?") now links to `/demo`
+    with `/demo`'s own real wording ("Quiero Odentia para mi clínica"),
+    replacing "Crear cuenta" → `/registro`. No other hardcoded `/registro`
+    link remains anywhere in `odentia-core` (confirmed by full-repo grep).
+  - **`Confirm Signup` — down to exactly one real, protected caller, not
+    zero.** `auth.signUp()`'s only remaining real code path is
+    `signUpAccount()` (`src/features/onboarding/api.ts`), called only by
+    `/invitacion/[token]`'s own traditional AccountStep branch for a
+    Clinic-Admin-issued invitation with no pre-provisioned identity.
+    Confirmed via a direct, read-only query against the real linked
+    project: **7 real, currently-`pending` invitations** created before
+    "Unify clinic team invitation activation" still have null
+    first_name/last_name/phone and structurally depend on this exact path
+    to ever be accepted — removing it would permanently strand those real
+    invitations, so it was deliberately preserved (explicitly out of
+    scope this checkpoint: "NO tocar invitaciones staff ya cerradas").
+    `AccountStep`, `EmailConfirmationPending`, and `buildSignUpRedirectTo()`
+    are kept for the same reason — genuinely shared, not dead.
+    `/portal/invitacion/[token]` (Patient) never called `auth.signUp()` at
+    all, unaffected. **`Reset Password` remains fully active and
+    untouched** (`resetPasswordForEmail()`/`/forgot-password`/
+    `/reset-password`, unchanged).
+  - **Dead code removed** (real callers were exclusively `/registro`'s own
+    retired Paso 2/3): `src/features/onboarding/clinic-step.tsx`
+    (`ClinicStep`), `role-step.tsx` (`RoleStep`), `success-step.tsx`
+    (`SuccessStep`), `progress-steps.tsx` (`ProgressSteps`), and — from
+    `api.ts` — `bootstrapClinic()`, `friendlyBootstrapError()`,
+    `uploadClinicLogo()` (that file's own thin wrapper; the shared
+    `src/features/clinic/logo.ts` implementation Platform/`/clinica` use
+    is untouched), `decideAfterSignOut()` (its only caller was the retired
+    wizard's own "Cerrar sesión"), and the role-only shapes in `types.ts`
+    (`RoleFormData`/`WorkMode`/`AppointmentDuration`/`EMPTY_ROLE`/
+    `OnboardingStep`). `ClinicFormData`/`ClinicLocationData`/`ClinicLogo`/
+    `EMPTY_CLINIC`/`EMPTY_CLINIC_LOCATION`/`EMPTY_CLINIC_LOGO`/
+    `sanitizeTaxId()`/`isValidTaxIdLength()` were all kept — genuinely
+    reused by Platform's own `clinic-form.tsx` (`/platform/clinicas/nueva`,
+    prospect conversion).
+  - **`bootstrap_clinic()` (the RPC itself): LEGACY, NO PRODUCT CALLERS —
+    not dropped.** Zero remaining TypeScript callers anywhere in
+    `odentia-core` (confirmed by grep), but per this checkpoint's own
+    instruction ("NO hacer DROP automáticamente... si existe riesgo de
+    compatibilidad"), the SQL function was left exactly as deployed
+    (already Superadmin-gated since the 2026-09-16 checkpoint below) —
+    dropping it is a separate, future, explicitly-decided cleanup, not
+    bundled into a UI-retirement checkpoint.
+  - QA: `npx tsc --noEmit` clean; full `npx vitest run` — 670/670 passed
+    (6 unrelated integration tests skipped, no local Docker; count is 2
+    lower than the previous checkpoint's 672 because `decideAfterSignOut`'s
+    own 2 tests were removed along with the dead function); `eslint`
+    clean on every changed file; `git diff --check` clean. No migration —
+    this checkpoint touched only application code, never the database.
+- **Historical — `/registro`'s original 3-step wizard (Cuenta → Clínica →
+  Rol), retired above.** It used to create a real Supabase Auth user, a
+  real `clinics` row (name, slug, sede principal with a real
+  Leaflet/Nominatim map picker + geocoding, logo upload to a public
+  Storage bucket), and the founding `clinic_admin` membership via
+  `bootstrap_clinic()`. Kept here for history — do not resurrect this flow
+  without an explicit, new product decision reversing the checkpoint
+  above.
 - **Checkpoint 2026-09-16 — self-service clinic creation is being retired.**
   Odentia Core is moving to a commercial/provisioning model where only
   SUPERADMIN can create a clinic (see the read-only audit that scoped this

@@ -1,10 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
-import { uploadClinicLogo as uploadClinicLogoFile } from "@/features/clinic/logo";
-import type { SignOutOutcome } from "@/features/session/sign-out";
-import { slugCandidate, slugifyClinicName } from "./slug";
-import type { AccountFormData, ClinicFormData, ClinicLocationData, ClinicLogo, RoleFormData } from "./types";
-
-const MAX_SLUG_ATTEMPTS = 5;
+import type { AccountFormData } from "./types";
 
 export type SignUpOutcome =
   | { status: "signed-in" }
@@ -20,10 +15,10 @@ export function buildSignUpRedirectTo(origin: string, next: string): string {
   return `${origin}${next}`;
 }
 
-export type RegistroReentryDecision = "account" | "clinic" | "redirect-to-product" | "redirect-to-portal";
+export type RegistroReentryDecision = "redirect-to-product" | "redirect-to-portal" | "redirect-to-demo";
 
 // The exact branch behind /registro's reentry check (see
-// onboarding-wizard.tsx's mount effect, the only caller), extracted so
+// registro-reentry.tsx's mount effect, the only caller), extracted so
 // it's independently testable without a DOM/mocked Supabase client — same
 // "pure decide-where-to-go function" convention this codebase already
 // uses for decideClinicRedirect/decideAuthenticatedRedirect
@@ -47,47 +42,51 @@ export type RegistroReentryDecision = "account" | "clinic" | "redirect-to-produc
 // Paciente sea enviado al onboarding de clínica"): hasActiveMembership
 // alone can't tell a genuinely new staff founder apart from a real
 // Patient — a Patient never has a clinic_memberships row at all (see
-// CLAUDE.md Domain Model), so she used to fall through to the exact same
-// "clinic" branch as someone mid-onboarding, landing on Paso 2 of a
-// clinic-creation wizard she has no business seeing. hasPatientAccess is
-// resolved from patient_user_links (via hasAnyPatientLink(), the same
-// real source src/lib/supabase/proxy.ts's own decideClinicRedirect and
+// CLAUDE.md Domain Model). hasPatientAccess is resolved from
+// patient_user_links (via hasAnyPatientLink(), the same real source
+// src/lib/supabase/proxy.ts's own decideClinicRedirect and
 // decideAuthenticatedRedirect already treat as authoritative for "is this
 // account a linked Patient") — never a client-supplied flag. Precedence
 // mirrors decideAuthenticatedRedirect exactly: an active clinic
-// membership wins first (unchanged from before), Patient access is
-// checked only once that's ruled out, and "neither" still falls through
-// to "clinic" unchanged — that last case is deliberately NOT redesigned
-// here (see this task's own scope note: it changes once self-service
-// clinic creation is retired, not before).
+// membership wins first, Patient access is checked only once that's
+// ruled out.
+//
+// "redirect-to-demo" (PROMPT NINJA "Odentia — retirar self-service de
+// /registro y eliminar Confirm Signup", 2026-09-21) — replaces the old
+// "account"/"clinic" branches now that public self-service clinic
+// onboarding is retired (see CLAUDE.md's Domain Model: only a Superadmin
+// provisions a clinic). A genuinely new anonymous visitor with no session
+// AND an authenticated visitor with neither an active membership nor
+// Patient access both land on the same real commercial entry point
+// (/demo) — there is no clinic-creation UI left anywhere in this app for
+// either case to fall through to.
 export function decideRegistroReentry(
   hasSession: boolean,
   hasActiveMembership: boolean,
   hasPatientAccess: boolean,
 ): RegistroReentryDecision {
-  if (!hasSession) return "account";
+  if (!hasSession) return "redirect-to-demo";
   if (hasActiveMembership) return "redirect-to-product";
   if (hasPatientAccess) return "redirect-to-portal";
-  return "clinic";
+  return "redirect-to-demo";
 }
 
-export type AfterSignOutAction = "navigate-to-login" | "show-error";
-
-// PROMPT NINJA "Retirar debug temporal y permitir cerrar sesión desde
-// onboarding" — the same "pure decide-what-the-UI-does-next" convention as
-// decideRegistroReentry above, so "success navigates, failure shows an
-// error and never navigates" is independently testable without rendering
-// onboarding-wizard.tsx. signOutSupabase() (src/features/session/
-// sign-out.ts) already degrades safely on a transient server-side error
-// (auth-js clears the local session regardless) for the app shell's own
-// "Salir" — but a user stuck on /registro with the WRONG account has no
-// other screen to retry from, so this call site deliberately does NOT
-// navigate on error and surfaces it instead, rather than assuming success.
-export function decideAfterSignOut(outcome: SignOutOutcome): AfterSignOutAction {
-  return outcome.status === "ok" ? "navigate-to-login" : "show-error";
-}
-
-// Paso 1 — real Supabase Auth signup. first_name/last_name travel in
+// Real Supabase Auth signup — the traditional AccountStep path. Its ONE
+// real remaining caller is /invitacion/[token]'s own traditional branch
+// for a Clinic-Admin-issued invitation with no pre-provisioned identity —
+// either a genuinely historical one created before "Unify clinic team
+// invitation activation" (7 real such pending invitations existed at that
+// checkpoint's own close, confirmed by direct query — never assume that
+// count is zero without re-checking), or the defensive fallback if that
+// migration's own identity requirement were ever somehow bypassed.
+// /portal/invitacion/[token] (Patient) never calls this at all — always
+// password-only. /registro's own Paso 1 no longer calls this either — see
+// "Odentia — retirar self-service de /registro y eliminar Confirm
+// Signup": public self-service clinic onboarding is retired; a genuinely
+// new anonymous visitor is sent to /demo instead (see
+// registro-reentry.tsx). Do not remove this function while
+// /invitacion/[token]'s traditional branch still has real, live
+// invitations depending on it. first_name/last_name travel in
 // user_metadata; the on_auth_user_created trigger (see the foundation
 // schema migration) is what actually creates the profiles row — never
 // insert into profiles from the client.
@@ -154,10 +153,9 @@ function friendlySignUpError(message: string): string {
   return "No pudimos crear tu cuenta. Intenta de nuevo en unos minutos.";
 }
 
-// Reentry (see CLAUDE.md task scope, section 7): does the currently
-// authenticated user already belong to an active clinic? Used both to
-// resume an incomplete onboarding at Paso 2 (no membership yet) and to
-// refuse creating a second clinic from /registro (membership found).
+// Reentry: does the currently authenticated user already belong to an
+// active clinic? Used by registro-reentry.tsx's own mount check
+// (decideRegistroReentry above) to route to /agenda instead of /demo.
 export async function findActiveMembership(): Promise<{ found: boolean }> {
   const supabase = createClient();
   const {
@@ -177,19 +175,16 @@ export async function findActiveMembership(): Promise<{ found: boolean }> {
   return { found: data !== null };
 }
 
-const nullIfEmpty = (value: string) => {
-  const trimmed = value.trim();
-  return trimmed === "" ? null : trimmed;
-};
-
 // tax_id (RIPS #3's clinics_tax_id_format CHECK: digits only, 4-12 chars)
 // needs the SAME normalization src/features/clinic/actions.ts's
 // updateClinicInfo() already applies for the exact same column — strip
-// everything but digits, empty → null. Missing here (bootstrap_clinic is
-// a separate write path, added before that check existed) meant a real
-// Colombian NIT typed with its customary "-DV" check-digit suffix (e.g.
-// "900123456-7") made the RPC's INSERT fail the constraint, surfaced to
-// the user only as the generic "No pudimos crear tu clínica" message.
+// everything but digits, empty → null. Real callers today: Platform's own
+// clinic provisioning (src/features/platform/api.ts, src/features/
+// platform/clinic-form.tsx) and the commercial-prospects conversion form
+// — /registro's own bootstrap_clinic() call site that originally needed
+// this was retired in "Odentia — retirar self-service de /registro y
+// eliminar Confirm Signup" (bootstrap_clinic() itself is untouched,
+// legacy/no product callers — see that checkpoint's own report).
 export const sanitizeTaxId = (value: string) => value.replace(/[^0-9]/g, "") || null;
 
 // Mirrors clinics_tax_id_format's own bounds exactly (RIPS #3 migration —
@@ -197,106 +192,11 @@ export const sanitizeTaxId = (value: string) => value.replace(/[^0-9]/g, "") || 
 // guarantees a digits-only result, so length is the ONLY way a sanitized
 // value can still violate that CHECK — a short QA placeholder ("123") or
 // an accidentally-pasted longer number (a phone number with country
-// code, say) both sanitize to an all-digit string outside [4, 12].
-// Exported so clinic-step.tsx can reject those BEFORE bootstrap_clinic()
-// ever runs, instead of surfacing a raw 23514 as the generic "no pudimos
-// crear tu clínica" — same bounds, checked in exactly one place.
+// code, say) both sanitize to an all-digit string outside [4, 12]. Same
+// real callers as sanitizeTaxId() above.
 const TAX_ID_MIN_LENGTH = 4;
 const TAX_ID_MAX_LENGTH = 12;
 
 export function isValidTaxIdLength(sanitized: string | null): boolean {
   return sanitized === null || (sanitized.length >= TAX_ID_MIN_LENGTH && sanitized.length <= TAX_ID_MAX_LENGTH);
-}
-
-export type BootstrapResult = {
-  clinicId: string;
-  slug: string;
-};
-
-// Paso 3 — the one sanctioned path past RLS's deny-by-default on
-// clinics/clinic_locations/clinic_memberships/professional_profiles INSERT
-// (see the bootstrap_clinic migration). Retries with a numbered slug
-// suffix only on an actual unique_violation from clinics.slug — the DB
-// stays the single source of truth for uniqueness (see slug.ts).
-export async function bootstrapClinic(
-  clinic: ClinicFormData,
-  location: ClinicLocationData,
-  role: RoleFormData,
-): Promise<BootstrapResult> {
-  const supabase = createClient();
-  const baseSlug = slugifyClinicName(clinic.name);
-  const isDentist = role.workMode === "admin-dentist";
-
-  let lastError: { code?: string; message: string } | null = null;
-
-  for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
-    const { data, error } = await supabase.rpc("bootstrap_clinic", {
-      clinic_name: clinic.name.trim(),
-      clinic_slug: slugCandidate(baseSlug, attempt),
-      clinic_legal_name: nullIfEmpty(clinic.legalName),
-      clinic_tax_id: sanitizeTaxId(clinic.taxId),
-      clinic_email: nullIfEmpty(clinic.institutionalEmail),
-      clinic_phone: nullIfEmpty(clinic.phone),
-      clinic_logo_url: null,
-      location_name: "Sede principal",
-      location_address: nullIfEmpty(location.locationAddress),
-      location_city: nullIfEmpty(location.locationCity),
-      location_state: nullIfEmpty(location.locationState),
-      location_country: "CO",
-      location_phone: nullIfEmpty(clinic.phone),
-      location_timezone: "America/Bogota",
-      is_dentist: isDentist,
-      primary_specialty_id: null,
-      license_number: isDentist ? nullIfEmpty(role.registrationNumber) : null,
-      agenda_color: null,
-      default_appointment_duration_minutes: isDentist ? Number(role.appointmentDuration) : null,
-      bio: null,
-      // Both null (no pin — Nominatim found nothing, or the user never
-      // clicked "Ubicar en el mapa") or both a real number (a geocoded or
-      // manually-dragged pin) — see ClinicLocationData in types.ts and the
-      // both-or-neither constraint/check added on the DB side in this
-      // task's migration. Never sent as separate optional fields that
-      // could drift out of sync.
-      location_latitude: location.locationLatitude,
-      location_longitude: location.locationLongitude,
-    });
-
-    if (!error) {
-      const row = Array.isArray(data) ? data[0] : data;
-      return { clinicId: row.clinic_id, slug: row.slug };
-    }
-
-    if (error.code === "23505" && error.message.includes("clinics_slug_key")) {
-      lastError = error;
-      continue;
-    }
-
-    throw error;
-  }
-
-  throw lastError ?? new Error("No se pudo generar un identificador único para la clínica.");
-}
-
-export function friendlyBootstrapError(error: unknown): string {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = String((error as { message: unknown }).message).toLowerCase();
-    if (message.includes("session")) {
-      return "Tu sesión expiró. Recarga la página e inicia sesión de nuevo para continuar.";
-    }
-  }
-  return "No pudimos crear tu clínica. Intenta de nuevo en unos minutos.";
-}
-
-export type LogoUploadOutcome = { logoUrl: string } | { failed: true };
-
-// Only called once bootstrap_clinic() has returned a real clinicId — the
-// storage path is <clinic_id>/logo.<ext> (see the clinic-logos Storage
-// migration), which can't exist before the clinic does. A failure here is
-// deliberately non-fatal to the caller (see onboarding-wizard.tsx): the
-// clinic itself is already created successfully by this point. Thin
-// wrapper: the actual upload/logo_url update is shared with /clinica's own
-// "cambiar logo" (see src/features/clinic/logo.ts) — never duplicated.
-export async function uploadClinicLogo(clinicId: string, logo: ClinicLogo): Promise<LogoUploadOutcome> {
-  if (!logo.file) return { failed: true };
-  return uploadClinicLogoFile(clinicId, logo.file);
 }

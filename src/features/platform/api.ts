@@ -18,16 +18,18 @@ export type ProvisionClinicResult = {
 
 // Superadmin-only clinic creation (Checkpoint 3: Platform → Clínicas →
 // Nueva clínica). Calls provision_clinic() — a SEPARATE RPC from
-// onboarding's own bootstrap_clinic(), never that one — because
-// bootstrap_clinic() unconditionally makes its caller a clinic_admin
-// member of the clinic it creates, which is exactly wrong here: a
-// Superadmin provisioning a clinic for a customer must never become an
-// artificial member of it (see the migration's own comment). Reuses
-// isValidTaxIdLength/sanitizeTaxId (same validation the onboarding wizard
-// already applies before its own RPC call) and slugifyClinicName/
-// slugCandidate (same client-side slug-candidate-with-retry convention as
-// bootstrapClinic() in src/features/onboarding/api.ts) — never a second,
-// diverging implementation of either.
+// bootstrap_clinic() (the old public self-service RPC, unused by any
+// product code since "Odentia — retirar self-service de /registro y
+// eliminar Confirm Signup" — see that checkpoint's own report; not
+// dropped from the database), never that one — because bootstrap_clinic()
+// unconditionally makes its caller a clinic_admin member of the clinic it
+// creates, which is exactly wrong here: a Superadmin provisioning a
+// clinic for a customer must never become an artificial member of it
+// (see the migration's own comment). Reuses isValidTaxIdLength/
+// sanitizeTaxId/slugifyClinicName/slugCandidate (same validation and
+// client-side slug-candidate-with-retry convention, both still exported
+// from src/features/onboarding/api.ts/slug.ts for exactly this kind of
+// shared reuse) — never a second, diverging implementation of either.
 export async function provisionClinic(clinic: ClinicFormData, location: ClinicLocationData): Promise<ProvisionClinicResult> {
   const supabase = createClient();
   const baseSlug = slugifyClinicName(clinic.name);

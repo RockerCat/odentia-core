@@ -440,11 +440,16 @@ converge on the SAME administrative provisioning mechanism
 (`provision_clinic()`, `src/features/platform/api.ts`) rather than each
 implementing its own clinic/sede-principal insert logic — never a second,
 diverging path to the same result. `provision_clinic()` is itself a
-separate function from onboarding's own `bootstrap_clinic()` (self-
-service, retained only until that path is formally retired) — never
-reuse `bootstrap_clinic()` for admin-driven provisioning, since it
+separate function from the old self-service `bootstrap_clinic()` —
+**retired from product code entirely** ("Odentia — retirar self-service
+de /registro y eliminar Confirm Signup", 2026-09-21): `/registro` no
+longer renders any onboarding UI or calls it, and no other real caller
+exists anywhere in this codebase. The SQL function itself was left
+physically present, undropped, Superadmin-gated since the 2026-09-16
+checkpoint below — legacy, no product callers, not a live path. Never
+reuse `bootstrap_clinic()` for admin-driven provisioning even so, since it
 unconditionally makes its caller a `clinic_admin` member of the clinic it
-creates, which is correct for a founder bootstrapping her own clinic but
+creates, which was correct for a founder bootstrapping her own clinic but
 would incorrectly enroll the Superadmin as a member of every clinic she
 provisions. A clinic provisioned this way may legitimately exist with
 zero members (no Clinic Admin, no team) until a separate, later

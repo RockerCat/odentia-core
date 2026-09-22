@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSignUpRedirectTo, decideAfterSignOut, decideRegistroReentry, isValidTaxIdLength, sanitizeTaxId } from "./api";
+import { buildSignUpRedirectTo, decideRegistroReentry, isValidTaxIdLength, sanitizeTaxId } from "./api";
 
 // Regression coverage for "PROMPT NINJA — Fix Supabase Auth email
 // RedirectTo / Confirm Signup": proves signUpAccount()'s own
@@ -61,16 +61,22 @@ describe("sanitizeTaxId", () => {
 
 // Regression coverage for "PROMPT NINJA — Bug: /registro queda en bucle y
 // no permite reiniciar onboarding" plus "Checkpoint 1B — Impedir que un
-// Paciente sea enviado al onboarding de clínica": the exact branch behind
-// the reentry check, covering every diagnostic state from both tasks.
+// Paciente sea enviado al onboarding de clínica", updated by "Odentia —
+// retirar self-service de /registro y eliminar Confirm Signup"
+// (2026-09-21): the exact branch behind the reentry check. Public
+// self-service clinic onboarding is retired — the old "account"/"clinic"
+// branches (Paso 1 / Paso 2 of a wizard that no longer exists) are both
+// replaced by "redirect-to-demo", Odentia's real commercial entry point.
 describe("decideRegistroReentry", () => {
-  // A — no session
-  it("a brand-new visitor with no session starts at Paso 1 (account)", () => {
-    expect(decideRegistroReentry(false, false, false)).toBe("account");
+  // A — no session: a genuinely new anonymous visitor has nothing to
+  // self-service here anymore — /demo is Odentia's real commercial entry
+  // point.
+  it("a brand-new visitor with no session goes to /demo, never a self-service signup form", () => {
+    expect(decideRegistroReentry(false, false, false)).toBe("redirect-to-demo");
   });
 
   it("no session always wins, even if a stale membership/patient lookup somehow says true", () => {
-    expect(decideRegistroReentry(false, true, true)).toBe("account");
+    expect(decideRegistroReentry(false, true, true)).toBe("redirect-to-demo");
   });
 
   // B — session + active clinic membership
@@ -79,13 +85,16 @@ describe("decideRegistroReentry", () => {
   });
 
   // C — session + Patient access, no clinic membership
-  it("a real session with Patient access and no clinic membership redirects to the Patient Portal, never Paso 2 of clinic onboarding", () => {
+  it("a real session with Patient access and no clinic membership redirects to the Patient Portal", () => {
     expect(decideRegistroReentry(true, false, true)).toBe("redirect-to-portal");
   });
 
-  // D — session, neither clinic membership nor Patient access (still onboarding, unchanged for now)
-  it("a real session with no active membership and no Patient access resumes at Paso 2 (clinic), never blocked", () => {
-    expect(decideRegistroReentry(true, false, false)).toBe("clinic");
+  // D — session, neither clinic membership nor Patient access: this used
+  // to resume Paso 2 of clinic self-service onboarding; now there is no
+  // clinic-creation UI left anywhere in this app for this case to fall
+  // through to, so it goes to /demo like a brand-new visitor.
+  it("a real session with no active membership and no Patient access goes to /demo — no self-service clinic creation left to resume", () => {
+    expect(decideRegistroReentry(true, false, false)).toBe("redirect-to-demo");
   });
 
   // E — session + both clinic membership and Patient access: clinic wins,
@@ -127,18 +136,5 @@ describe("isValidTaxIdLength", () => {
 
   it("rejects a value that's too long even after sanitizing — e.g. a phone number pasted by mistake", () => {
     expect(isValidTaxIdLength(sanitizeTaxId("1234567890123"))).toBe(false);
-  });
-});
-
-// Regression coverage for "PROMPT NINJA — Retirar debug temporal y
-// permitir cerrar sesión desde onboarding": a successful sign-out
-// navigates away; a failed one must never navigate as if it had worked.
-describe("decideAfterSignOut", () => {
-  it("navigates to /login when signOut succeeds", () => {
-    expect(decideAfterSignOut({ status: "ok" })).toBe("navigate-to-login");
-  });
-
-  it("shows an error and never navigates when signOut fails", () => {
-    expect(decideAfterSignOut({ status: "error" })).toBe("show-error");
   });
 });

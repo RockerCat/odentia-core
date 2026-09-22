@@ -1,25 +1,29 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 // Server-side proxy to Nominatim (OpenStreetMap's public geocoding
-// service) for the onboarding's "Ubicar en el mapa" step (Paso 2 — see
-// src/features/onboarding/clinic-location-picker.tsx). The browser never
-// calls Nominatim directly: this route is the one place that shapes the
-// query, identifies the app, and could later add rate limiting/caching
-// without touching the client.
+// service) for the "Ubicar en el mapa" step shared by clinic-provisioning
+// forms (see src/features/onboarding/clinic-location-picker.tsx — reused
+// by Platform's own src/features/platform/clinic-form.tsx; onboarding's
+// own former Paso 2 caller was retired in "Odentia — retirar self-service
+// de /registro y eliminar Confirm Signup"). The browser never calls
+// Nominatim directly: this route is the one place that shapes the query,
+// identifies the app, and could later add rate limiting/caching without
+// touching the client.
 //
 // Usage-policy compliance
 // (https://operations.osmfoundation.org/policies/nominatim/):
 // - Identifying User-Agent (required — see USER_AGENT below; the default
 //   User-Agent a bare fetch/library sends is explicitly not enough).
 // - This endpoint is hit once per explicit "Ubicar en el mapa" click by a
-//   real user during onboarding — never in bulk, never on a timer, never
-//   reverse-geocoding a dataset. Odentia's primary function is dental
-//   practice management, not geocoding, which is what the policy's
-//   "applications whose primary function is related to geocoding must run
-//   their own service" clause is aimed at — this is occasional, low-volume,
-//   incidental use of the kind the public API is meant for.
+//   real Superadmin provisioning a clinic — never in bulk, never on a
+//   timer, never reverse-geocoding a dataset. Odentia's primary function
+//   is dental practice management, not geocoding, which is what the
+//   policy's "applications whose primary function is related to
+//   geocoding must run their own service" clause is aimed at — this is
+//   occasional, low-volume, incidental use of the kind the public API is
+//   meant for.
 // - Results are geocoded once and then persisted (see
-//   src/features/onboarding/api.ts bootstrapClinic, which writes
+//   src/features/platform/api.ts's own provisionClinic(), which writes
 //   latitude/longitude straight into clinic_locations) rather than
 //   re-queried — no repeated identical lookups. The outbound fetch below
 //   also opts into Next.js's fetch cache for the rare case of the exact
