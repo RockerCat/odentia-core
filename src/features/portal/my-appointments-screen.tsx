@@ -7,11 +7,14 @@ import { UserAvatar } from "@/components/user-avatar";
 import { formatDateLabel, formatTimeLabel } from "@/features/dashboard/real-format";
 import { getDisplayStatus, getHistoryStatusBadgeClass, getStatusLabel, getStatusStyle } from "@/features/dashboard/real-status";
 import type { PatientContext } from "@/features/session/types";
-import { canPatientConfirmAppointment } from "./appointment-eligibility";
-import { confirmMyAppointment } from "./appointments-actions";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
+import { canPatientChangeAppointment, canPatientConfirmAppointment } from "./appointment-eligibility";
+import { cancelMyAppointment, confirmMyAppointment } from "./appointments-actions";
+import { CANCELLATION_REASONS, isValidCancellationInput } from "./cancellation-reasons";
+import { requestMyAppointment, requestMyAppointmentReschedule } from "./requests-actions";
 import type { PortalAppointment } from "./appointments-data";
-import { appointmentReasonLabel, buildMyAppointmentsView, professionalCardFields } from "./my-appointments-view";
-import { RequestAppointmentScheduler } from "./request-appointment-scheduler";
+import { appointmentReasonLabel, buildMyAppointmentsView, pendingRescheduleFor, professionalCardFields } from "./my-appointments-view";
+import { RequestAppointmentScheduler, type SchedulerSubmitOutcome } from "./request-appointment-scheduler";
 import {
   REQUEST_STATUS_LABELS,
   REQUEST_STATUS_STYLES,
@@ -28,7 +31,7 @@ function waLink(phone: string): string {
 // Listing, real statuses (getDisplayStatus, the same "Sin cerrar" derivation
 // the real Agenda uses — see CLAUDE.md's Appointment Lifecycle), and
 // próximas/historial split (see appointments-split.ts) are read-only. The
-// two real write paths are:
+// real write paths are:
 //   - "Confirmar asistencia" — confirm_my_appointment(), see
 //     appointments-actions.ts: a Patient confirming her OWN attendance on
 //     her OWN still-"scheduled" Cita.
@@ -36,8 +39,12 @@ function waLink(phone: string): string {
 //     a Solicitud de Cita, a SEPARATE entity from a Cita (CLAUDE.md's
 //     Appointment Lifecycle). It creates NO appointment and reserves no
 //     slot; only the clinic accepting it does.
-// Nothing else — reprogramar/cancelar by the Patient stay removed rather
-// than kept as fake, non-persisting buttons from the mock version.
+//   - "Reprogramar" — request_my_appointment_reschedule(): a reschedule
+//     REQUEST for her own Cita; the Cita only moves when the clinic accepts.
+//   - "Cancelar cita" — cancel_my_appointment(): cancels her own future
+//     scheduled/confirmed Cita with the approved motivo (never deleted).
+// Buttons only render when canPatientChangeAppointment() allows it; the
+// backend re-checks everything.
 export function MyAppointmentsScreen({
   context,
   appointments,
@@ -63,17 +70,26 @@ export function MyAppointmentsScreen({
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
-  // The clinic's decision is what turns a request into a Cita, so a brand
-  // new request only ever lands here as "Pendiente" — never as an
-  // optimistic appointment in `items`.
-  const handleRequested = (request: { id: string; professionalProfileId: string; preferredStartsAt: string; createdAt: string }) => {
-    const professionalName =
-      professionals.find((p) => p.professionalProfileId === request.professionalProfileId)?.name ?? "Profesional";
+  const [rescheduling, setRescheduling] = useState<PortalAppointment | null>(null);
+  const [cancelling, setCancelling] = useState<PortalAppointment | null>(null);
+
+  const professionalNameOf = (professionalProfileId: string) =>
+    professionals.find((p) => p.professionalProfileId === professionalProfileId)?.name ?? "Profesional";
+
+  // A request only ever lands here as "Pendiente" — never as an optimistic
+  // Cita: the clinic's decision is what creates/moves a Cita.
+  const addPendingRequest = (
+    kind: PortalAppointmentRequest["kind"],
+    appointmentId: string | null,
+    request: { id: string; professionalProfileId: string; preferredStartsAt: string; createdAt: string },
+  ) => {
     setRequestItems((prev) => [
       {
         id: request.id,
+        kind,
+        appointmentId,
         professionalProfileId: request.professionalProfileId,
-        professionalName,
+        professionalName: professionalNameOf(request.professionalProfileId),
         preferredStartsAt: request.preferredStartsAt,
         status: "pending",
         acceptedAppointmentId: null,
@@ -81,8 +97,35 @@ export function MyAppointmentsScreen({
       },
       ...prev,
     ]);
+  };
+
+  const submitNewRequest = async (professionalProfileId: string, preferredStartsAt: string): Promise<SchedulerSubmitOutcome> => {
+    const outcome = await requestMyAppointment(professionalProfileId, preferredStartsAt);
+    if (outcome.status === "error") return outcome;
+    addPendingRequest("new", null, outcome.request);
     setScheduling(false);
     showToast("Solicitud enviada. La clínica la revisará y te confirmará la cita.");
+    return { status: "ok" };
+  };
+
+  const submitReschedule =
+    (appointment: PortalAppointment) =>
+    async (professionalProfileId: string, preferredStartsAt: string): Promise<SchedulerSubmitOutcome> => {
+      const outcome = await requestMyAppointmentReschedule(appointment.id, professionalProfileId, preferredStartsAt);
+      if (outcome.status === "error") return outcome;
+      addPendingRequest("reschedule", appointment.id, outcome.request);
+      showToast("Solicitud de reprogramación enviada.");
+      return { status: "ok" };
+    };
+
+  const handleCancelled = (appointmentId: string) => {
+    setItems((prev) => prev.map((a) => (a.id === appointmentId ? { ...a, status: "cancelled" } : a)));
+    // cancel_my_appointment closes any pending reschedule for this Cita too.
+    setRequestItems((prev) =>
+      prev.map((r) => (r.kind === "reschedule" && r.appointmentId === appointmentId && r.status === "pending" ? { ...r, status: "rejected" } : r)),
+    );
+    setCancelling(null);
+    showToast("Cita cancelada.");
   };
 
   const handleConfirmAttendance = async (appointment: PortalAppointment) => {
@@ -153,7 +196,7 @@ export function MyAppointmentsScreen({
                 ← Volver a Mis citas
               </button>
             </div>
-            <RequestAppointmentScheduler professionals={professionals} onRequested={handleRequested} />
+            <RequestAppointmentScheduler professionals={professionals} onSubmit={submitNewRequest} />
           </div>
         ) : (
           <>
@@ -167,6 +210,9 @@ export function MyAppointmentsScreen({
                   onConfirm={() => handleConfirmAttendance(nextAppointment)}
                   confirming={confirming}
                   confirmError={confirmError}
+                  pendingReschedule={pendingRescheduleFor(nextAppointment.id, requestItems)}
+                  onReschedule={() => setRescheduling(nextAppointment)}
+                  onCancel={() => setCancelling(nextAppointment)}
                 />
                 {historyPanel}
               </div>
@@ -249,6 +295,24 @@ export function MyAppointmentsScreen({
         />
       )}
 
+      {rescheduling && (
+        <RescheduleModal
+          appointment={rescheduling}
+          professionals={professionals}
+          onSubmit={submitReschedule(rescheduling)}
+          onClose={() => setRescheduling(null)}
+        />
+      )}
+
+      {cancelling && (
+        <CancelAppointmentModal
+          appointment={cancelling}
+          clinicName={context.clinic.name}
+          onCancelled={handleCancelled}
+          onClose={() => setCancelling(null)}
+        />
+      )}
+
       {selectedAppointment && (
         <AppointmentDetailModal
           appointment={selectedAppointment}
@@ -278,6 +342,7 @@ function RequestRow({
     <>
       <div className="min-w-0">
         <p className="truncate text-sm font-medium">
+          {request.kind === "reschedule" ? "Reprogramación · " : ""}
           {formatDateLabel(request.preferredStartsAt)}, {formatTimeLabel(request.preferredStartsAt)}
         </p>
         <p className="truncate text-xs text-muted-foreground">
@@ -472,15 +537,22 @@ function AppointmentDetails({
   onConfirm,
   confirming,
   confirmError,
+  pendingReschedule,
+  onReschedule,
+  onCancel,
 }: {
   appointment: PortalAppointment;
   clinicName: string;
   onConfirm: () => void;
   confirming: boolean;
   confirmError: string | null;
+  pendingReschedule: PortalAppointmentRequest | null;
+  onReschedule: () => void;
+  onCancel: () => void;
 }) {
   const displayStatus = getDisplayStatus(appointment);
   const canConfirm = canPatientConfirmAppointment(appointment);
+  const canChange = canPatientChangeAppointment(appointment);
   return (
     <div className="flex flex-col justify-between gap-4">
       <div>
@@ -512,23 +584,52 @@ function AppointmentDetails({
             </div>
           )}
         </dl>
+
+        {pendingReschedule && (
+          <p className="mt-3 rounded-lg border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-warning">
+            Solicitud de reprogramación pendiente — {formatDateLabel(pendingReschedule.preferredStartsAt)},{" "}
+            {formatTimeLabel(pendingReschedule.preferredStartsAt)} con {pendingReschedule.professionalName}. Tu cita actual
+            sigue vigente hasta que la clínica apruebe el cambio.
+          </p>
+        )}
       </div>
 
-      {/* Confirmar asistencia — the only real action a Patient can take on
-          her own Cita here (see appointment-eligibility.ts's own comment
-          for exactly which statuses/timing qualify — mirrors
-          confirm_my_appointment's own check, backend stays authoritative). */}
-      {canConfirm && (
+      {/* Real actions only (see appointment-eligibility.ts; the backend
+          re-checks every one): Confirmar asistencia, Reprogramar (a
+          request) and Cancelar cita — only while the Cita is her own,
+          future and still scheduled/confirmed. */}
+      {(canConfirm || canChange) && (
         <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={confirming}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {confirming ? "Confirmando…" : "Confirmar asistencia"}
-          </button>
+          {canConfirm && (
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={confirming}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {confirming ? "Confirmando…" : "Confirmar asistencia"}
+            </button>
+          )}
           {confirmError && <p className="text-xs text-danger">{confirmError}</p>}
+          {canChange && (
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={onReschedule}
+                disabled={Boolean(pendingReschedule)}
+                className="rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground/80 hover:bg-foreground/5 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {pendingReschedule ? "Solicitud pendiente" : "Reprogramar"}
+              </button>
+              <button
+                type="button"
+                onClick={onCancel}
+                className="rounded-lg border border-danger/20 bg-background px-3 py-2 text-sm font-medium text-danger/80 hover:bg-danger/5 hover:text-danger"
+              >
+                Cancelar cita
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -724,6 +825,231 @@ function AppointmentDetailModal({
               <dd className="font-medium">{appointment.durationMinutes} min</dd>
             </div>
           </dl>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// "Reprogramar cita" — the approved modal: the CURRENT Cita's real summary,
+// then the same real picker as "Agendar nueva cita" (preselected on her
+// current professional) and "Solicitar reprogramación". Sends a REQUEST;
+// the Cita itself is untouched until the clinic accepts it.
+function RescheduleModal({
+  appointment,
+  professionals,
+  onSubmit,
+  onClose,
+}: {
+  appointment: PortalAppointment;
+  professionals: PortalProfessional[];
+  onSubmit: (professionalProfileId: string, preferredStartsAt: string) => Promise<SchedulerSubmitOutcome>;
+  onClose: () => void;
+}) {
+  const [sent, setSent] = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Reprogramar cita"
+        onClick={(e) => e.stopPropagation()}
+        className="relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-background shadow-xl sm:max-h-[85vh] sm:w-full sm:max-w-md sm:rounded-xl"
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3">
+          <p className="text-sm font-semibold">Reprogramar cita</p>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar"
+            className="flex size-8 items-center justify-center rounded-lg text-foreground/60 hover:bg-foreground/5"
+          >
+            <CloseIcon className="size-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {sent ? (
+            <p className="py-6 text-center text-sm font-medium text-foreground">
+              Solicitud de reprogramación enviada. Tu cita actual continúa vigente hasta que la clínica apruebe el cambio.
+            </p>
+          ) : (
+            <>
+              <dl className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-xs text-label-foreground">Cita actual</dt>
+                  <dd className="font-medium">
+                    {formatDateLabel(appointment.startsAt)}, {formatTimeLabel(appointment.startsAt)}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-xs text-label-foreground">Tratamiento</dt>
+                  <dd className="font-medium">{appointmentReasonLabel(appointment)}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-xs text-label-foreground">Odontólogo</dt>
+                  <dd className="font-medium">{appointment.professionalName}</dd>
+                </div>
+              </dl>
+
+              <RequestAppointmentScheduler
+                professionals={professionals}
+                initialProfessionalId={appointment.professionalProfileId}
+                submitLabel="Solicitar reprogramación"
+                skipConfirm
+                onSubmit={async (professionalProfileId, preferredStartsAt) => {
+                  const outcome = await onSubmit(professionalProfileId, preferredStartsAt);
+                  if (outcome.status === "ok") setSent(true);
+                  return outcome;
+                }}
+              />
+            </>
+          )}
+        </div>
+
+        {sent && (
+          <div className="shrink-0 border-t border-border px-5 py-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+            >
+              Entendido
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// "Cancelar cita" — the approved confirmation modal with the Cita's real
+// data and the approved "Motivo de cancelación" options
+// (cancellation-reasons.ts). Cancels for real via cancel_my_appointment —
+// the view updates only after the backend confirms.
+function CancelAppointmentModal({
+  appointment,
+  clinicName,
+  onCancelled,
+  onClose,
+}: {
+  appointment: PortalAppointment;
+  clinicName: string;
+  onCancelled: (appointmentId: string) => void;
+  onClose: () => void;
+}) {
+  const [reasonCode, setReasonCode] = useState("");
+  const [detail, setDetail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isOther = reasonCode === "other";
+  const canConfirm = isValidCancellationInput(reasonCode, detail) && !submitting;
+
+  const handleConfirm = async () => {
+    if (!canConfirm) return;
+    setSubmitting(true);
+    setError(null);
+    const outcome = await cancelMyAppointment(appointment.id, reasonCode, isOther ? detail.trim() : null);
+    setSubmitting(false);
+    if (outcome.status === "error") {
+      setError(outcome.message);
+      return;
+    }
+    onCancelled(appointment.id);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4" onClick={submitting ? undefined : onClose}>
+      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Cancelar cita"
+        onClick={(e) => e.stopPropagation()}
+        className="relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-background shadow-xl sm:max-h-[85vh] sm:w-full sm:max-w-md sm:rounded-xl"
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3">
+          <p className="text-sm font-semibold">Cancelar cita</p>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            aria-label="Cerrar"
+            className="flex size-8 items-center justify-center rounded-lg text-foreground/60 hover:bg-foreground/5 disabled:opacity-40"
+          >
+            <CloseIcon className="size-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          <p className="text-sm text-foreground/80">¿Estás seguro de que deseas cancelar esta cita?</p>
+
+          <dl className="mt-4 flex flex-col gap-2 rounded-lg border border-border bg-surface p-3 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-xs text-label-foreground">Fecha y hora</dt>
+              <dd className="font-medium">
+                {formatDateLabel(appointment.startsAt)}, {formatTimeLabel(appointment.startsAt)}
+              </dd>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-xs text-label-foreground">Tratamiento</dt>
+              <dd className="font-medium">{appointmentReasonLabel(appointment)}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-xs text-label-foreground">Odontólogo</dt>
+              <dd className="font-medium">{appointment.professionalName}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-xs text-label-foreground">Clínica</dt>
+              <dd className="font-medium">{clinicName}</dd>
+            </div>
+          </dl>
+
+          <label className="mt-4 flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-foreground">Motivo de cancelación</span>
+            <select value={reasonCode} onChange={(e) => setReasonCode(e.target.value)} disabled={submitting} className={FIELD_CLASS}>
+              <option value="">Selecciona un motivo</option>
+              {CANCELLATION_REASONS.map((reason) => (
+                <option key={reason.code} value={reason.code}>
+                  {reason.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {isOther && (
+            <textarea
+              value={detail}
+              onChange={(e) => setDetail(e.target.value)}
+              disabled={submitting}
+              placeholder="Cuéntanos brevemente el motivo"
+              rows={3}
+              className={`${FIELD_CLASS} mt-2 resize-none`}
+            />
+          )}
+
+          {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+        </div>
+
+        <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-border px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground/80 hover:bg-foreground/5 disabled:opacity-40"
+          >
+            Volver
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={!canConfirm}
+            className="rounded-lg bg-danger px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {submitting ? "Cancelando…" : "Cancelar cita"}
+          </button>
         </div>
       </div>
     </div>

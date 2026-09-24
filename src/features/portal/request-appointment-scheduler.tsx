@@ -1,14 +1,26 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircleIcon, ChevronIcon, CloseIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { AnchoredPopover } from "@/features/dashboard/form-primitives";
-import { hasAvailableFutureSlot, initialsOf, isPastSlot, slotStartIso } from "@/features/dashboard/real-format";
+import { initialsOf, isPastSlot, slotStartIso } from "@/features/dashboard/real-format";
 import { getWeekDaysForOffset, getWeekLabelForOffset } from "@/features/dashboard/real-week";
-import { TIME_SLOTS } from "@/features/dashboard/schedule-config";
-import { requestMyAppointment } from "./requests-actions";
+import { createClient } from "@/lib/supabase/client";
 import type { PortalProfessional } from "./requests-data";
+import {
+  fetchMyProfessionalSchedule,
+  isPortalDaySelectable,
+  portalSlotsForDay,
+  type PortalProfessionalSchedule,
+} from "./schedule-data";
+
+export type SchedulerSubmitOutcome = { status: "ok" } | { status: "error"; message: string };
+
+type ScheduleState =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "ready"; schedule: PortalProfessionalSchedule };
 
 // Real "Solicitar cita" — a faithful port of the approved Portal booking
 // picker (the demo's NewAppointmentScheduler/AppointmentSlotFields:
@@ -23,15 +35,17 @@ import type { PortalProfessional } from "./requests-data";
 //     changed ("Solicitar cita" / "Confirma tu solicitud"), never the
 //     layout, hierarchy, spacing or components.
 //
-//  2. No "Próx. disponibilidad" line and no occupied/taken slot styling.
-//     The demo computed both from WEEK_APPOINTMENTS — every appointment in
-//     the clinic, mock data a Patient could freely read. In the real system
-//     she cannot (and must not) read another patient's Cita, so exact
-//     availability is genuinely unknown here. Rather than invent it, the
-//     grid offers every non-past slot as a PREFERENCE and says so plainly.
-//     The clinic is where availability is actually resolved: accepting the
-//     request runs the full real Agenda rule set (overlap, horario,
-//     ausencias) and can move the Cita to a slot that works.
+//  2. Days/slots come from the chosen professional's REAL schedule
+//     (get_my_professional_schedule: her weekly blocks + absence dates —
+//     no other patient's data) through the same agenda-hours.ts rules every
+//     staff picker uses; it used to offer a fixed 08:00–18:00 grid every
+//     day. Other patients' Citas stay invisible (a Patient must never read
+//     them), so an offered slot is still a PREFERENCE: accepting the request
+//     is where the clinic's full rule set (overlap, horario, ausencias) is
+//     enforced, atomically.
+//
+// Shared by "Agendar nueva cita" and "Reprogramar cita" — the caller owns
+// what submitting means (onSubmit), never a second copy of this picker.
 //
 // Past days/times are still disabled, from the same single source of truth
 // every real Agenda picker uses (real-format.ts's hasAvailableFutureSlot/
@@ -39,12 +53,26 @@ import type { PortalProfessional } from "./requests-data";
 // (request_my_appointment), so this is UX, not the guarantee.
 export function RequestAppointmentScheduler({
   professionals,
-  onRequested,
+  onSubmit,
+  initialProfessionalId,
+  submitLabel = "Solicitar cita",
+  skipConfirm = false,
 }: {
   professionals: PortalProfessional[];
-  onRequested: (request: { id: string; professionalProfileId: string; preferredStartsAt: string; createdAt: string }) => void;
+  // Resolves only on a confirmed backend result — never optimistic.
+  onSubmit: (professionalProfileId: string, preferredStartsAtIso: string) => Promise<SchedulerSubmitOutcome>;
+  initialProfessionalId?: string;
+  submitLabel?: string;
+  // The approved Reprogramar modal sends directly from its own CTA; the
+  // new-request flow keeps its confirmation step.
+  skipConfirm?: boolean;
 }) {
-  const [selectedProfessionalId, setSelectedProfessionalId] = useState(professionals[0]?.professionalProfileId ?? "");
+  const [selectedProfessionalId, setSelectedProfessionalId] = useState(
+    initialProfessionalId && professionals.some((p) => p.professionalProfileId === initialProfessionalId)
+      ? initialProfessionalId
+      : (professionals[0]?.professionalProfileId ?? ""),
+  );
+  const [scheduleState, setScheduleState] = useState<ScheduleState>({ status: "loading" });
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
@@ -54,12 +82,34 @@ export function RequestAppointmentScheduler({
   const [error, setError] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
+  // The selected professional's real schedule — refetched whenever the
+  // selection changes; loading/error are explicit, never a fallback grid.
+  useEffect(() => {
+    if (!selectedProfessionalId) return;
+    let cancelled = false;
+    fetchMyProfessionalSchedule(createClient(), selectedProfessionalId).then(
+      (schedule) => {
+        if (!cancelled) setScheduleState({ status: "ready", schedule });
+      },
+      () => {
+        if (!cancelled) setScheduleState({ status: "error" });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProfessionalId]);
+
+  const schedule = scheduleState.status === "ready" ? scheduleState.schedule : null;
+
   const weekDays = getWeekDaysForOffset(weekOffset);
   const weekLabel = getWeekLabelForOffset(weekOffset);
   const selectedProfessional = professionals.find((p) => p.professionalProfileId === selectedProfessionalId) ?? null;
   const selectedDayInfo = selectedDay ? weekDays.find((d) => d.key === selectedDay) : null;
   const staleTime = Boolean(selectedDay && selectedTime) && isPastSlot(selectedDay!, selectedTime!);
-  const canSubmit = Boolean(selectedProfessionalId && selectedDay && selectedTime) && !staleTime && !submitting;
+  const canSubmit = Boolean(schedule && selectedProfessionalId && selectedDay && selectedTime) && !staleTime && !submitting;
+  const slotsForSelectedDay = schedule && selectedDay ? portalSlotsForDay(schedule, selectedDay) : [];
+  const weekHasAvailability = schedule ? weekDays.some((d) => isPortalDaySelectable(schedule, d.key)) : false;
 
   if (professionals.length === 0) {
     return (
@@ -79,17 +129,15 @@ export function RequestAppointmentScheduler({
     if (!canSubmit || !selectedDay || !selectedTime) return;
     setSubmitting(true);
     setError(null);
-    const outcome = await requestMyAppointment(selectedProfessionalId, slotStartIso(selectedDay, selectedTime));
+    const outcome = await onSubmit(selectedProfessionalId, slotStartIso(selectedDay, selectedTime));
     setSubmitting(false);
     if (outcome.status === "error") {
       setError(outcome.message);
       return;
     }
-    // The confirmation modal only ever closes on a confirmed backend
-    // success — never optimistically. The parent owns the toast and the
-    // "Pendiente" state from here (see my-appointments-screen.tsx).
+    // Closes only on a confirmed backend success — never optimistically.
+    // The caller owns the toast/pending state from here.
     setShowConfirm(false);
-    onRequested(outcome.request);
   };
 
   return (
@@ -115,9 +163,9 @@ export function RequestAppointmentScheduler({
           />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-foreground">{selectedProfessional?.name ?? "Sin asignar"}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {selectedProfessional?.specialty ?? "Odontología general"}
-            </p>
+            {selectedProfessional?.specialty && (
+              <p className="truncate text-xs text-muted-foreground">{selectedProfessional.specialty}</p>
+            )}
           </div>
           <ChevronIcon
             className={`size-4 shrink-0 text-muted-foreground transition-transform ${dropdownOpen ? "rotate-90" : "-rotate-90"}`}
@@ -140,6 +188,11 @@ export function RequestAppointmentScheduler({
                   role="option"
                   aria-selected={active}
                   onClick={() => {
+                    if (professional.professionalProfileId !== selectedProfessionalId) {
+                      setScheduleState({ status: "loading" });
+                      setSelectedDay(null);
+                      setSelectedTime(null);
+                    }
                     setSelectedProfessionalId(professional.professionalProfileId);
                     setDropdownOpen(false);
                   }}
@@ -155,9 +208,7 @@ export function RequestAppointmentScheduler({
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-foreground">{professional.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {professional.specialty ?? "Odontología general"}
-                    </p>
+                    {professional.specialty && <p className="truncate text-xs text-muted-foreground">{professional.specialty}</p>}
                   </div>
                   {active && <CheckCircleIcon className="size-4 shrink-0 text-primary" />}
                 </button>
@@ -193,7 +244,7 @@ export function RequestAppointmentScheduler({
       <div className="mt-3 grid grid-cols-7 gap-1.5">
         {weekDays.map((day) => {
           const active = day.key === selectedDay;
-          const past = !hasAvailableFutureSlot(day.key);
+          const past = !schedule || !isPortalDaySelectable(schedule, day.key);
           return (
             <button
               key={day.key}
@@ -205,6 +256,8 @@ export function RequestAppointmentScheduler({
                 setSelectedTime(null);
               }}
               className={`flex flex-col items-center gap-1 rounded-lg border px-1 py-2 transition-colors ${
+                scheduleState.status === "loading" ? "animate-pulse " : ""
+              }${
                 past
                   ? "cursor-not-allowed border-border/60 text-muted-foreground/30"
                   : active
@@ -225,11 +278,20 @@ export function RequestAppointmentScheduler({
         })}
       </div>
 
-      {selectedDay && (
+      {scheduleState.status === "error" && (
+        <p className="mt-3 text-center text-xs text-danger">No pudimos cargar el horario de este profesional. Intenta de nuevo.</p>
+      )}
+      {schedule && !weekHasAvailability && (
+        <p className="mt-3 rounded-lg border border-dashed border-border px-3 py-3 text-center text-xs text-muted-foreground">
+          Este profesional no tiene horarios disponibles esta semana. Prueba con otra semana u otro profesional.
+        </p>
+      )}
+
+      {selectedDay && schedule && (
         <div className="mt-4">
           <p className="text-sm font-medium text-foreground">Horario preferido — {selectedDayInfo?.label}</p>
           <div className="mt-2 grid grid-cols-3 gap-2">
-            {TIME_SLOTS.map((slot) => {
+            {slotsForSelectedDay.map((slot) => {
               const past = isPastSlot(selectedDay, slot);
               const active = selectedTime === slot;
               return (
@@ -264,12 +326,13 @@ export function RequestAppointmentScheduler({
         type="button"
         onClick={() => {
           setError(null);
-          setShowConfirm(true);
+          if (skipConfirm) void handleSubmit();
+          else setShowConfirm(true);
         }}
         disabled={!canSubmit}
         className="mt-3 w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        Solicitar cita
+        {skipConfirm && submitting ? "Enviando…" : submitLabel}
       </button>
 
       {showConfirm && selectedProfessional && selectedDayInfo && selectedTime && (
@@ -340,7 +403,7 @@ function ConfirmRequestModal({
             />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-foreground">{professional.name}</p>
-              <p className="truncate text-xs text-muted-foreground">{professional.specialty ?? "Odontología general"}</p>
+              {professional.specialty && <p className="truncate text-xs text-muted-foreground">{professional.specialty}</p>}
             </div>
           </div>
 

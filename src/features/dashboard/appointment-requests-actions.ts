@@ -86,6 +86,9 @@ export async function acceptAppointmentRequest(
     if (error.message.includes("professional is not available")) {
       return { status: "error", message: "Ese profesional ya no está activo en la clínica." };
     }
+    if (error.message.includes("can no longer be rescheduled") || error.message.includes("appointment to reschedule not found")) {
+      return { status: "error", message: "La cita original ya no se puede reprogramar (cambió de estado o ya no existe). Rechaza la solicitud." };
+    }
     if (error.message.includes("active catalog")) {
       return { status: "error", message: "El consultorio o tratamiento elegido ya no está activo." };
     }

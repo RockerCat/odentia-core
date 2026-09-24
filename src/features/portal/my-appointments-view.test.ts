@@ -47,6 +47,8 @@ function appt(id: string, overrides: Partial<PortalAppointment> = {}): PortalApp
 function request(overrides: Partial<PortalAppointmentRequest> = {}): PortalAppointmentRequest {
   return {
     id: "req-1",
+    kind: "new",
+    appointmentId: null,
     professionalProfileId: "prof-1",
     professionalName: "Admin Borcelle 2",
     preferredStartsAt: "2026-09-28T14:00:00.000Z",
@@ -95,6 +97,16 @@ describe("buildMyAppointmentsView", () => {
     expect(buildMyAppointmentsView([], [], NOW)).toEqual({ nextAppointment: null, otherUpcoming: [], heroHistory: [], history: [], pendingRequest: null });
   });
 
+  it("a pending RESCHEDULE never blocks 'Agendar nueva cita' and is found per Cita", async () => {
+    const { pendingRescheduleFor } = await import("./my-appointments-view");
+    const reschedule = request({ id: "rs-1", kind: "reschedule", appointmentId: "next" });
+    const view = buildMyAppointmentsView([], [reschedule], NOW);
+    expect(view.pendingRequest).toBeNull();
+    expect(pendingRescheduleFor("next", [reschedule])?.id).toBe("rs-1");
+    expect(pendingRescheduleFor("other", [reschedule])).toBeNull();
+    expect(pendingRescheduleFor("next", [{ ...reschedule, status: "rejected" }])).toBeNull();
+  });
+
   it("a pending Solicitud is surfaced as a request, never as a Cita", () => {
     const view = buildMyAppointmentsView([], [request({ status: "rejected", id: "old" }), request()], NOW);
     expect(view.pendingRequest?.id).toBe("req-1");
@@ -113,20 +125,26 @@ describe("/portal/citas sources", () => {
   const dir = path.resolve(__dirname);
   const screen = fs.readFileSync(path.join(dir, "my-appointments-screen.tsx"), "utf8");
 
-  it("'Agendar nueva cita' opens the existing real scheduler (request_my_appointment) — no second request path", () => {
-    expect(screen).toContain("<RequestAppointmentScheduler professionals={professionals} onRequested={handleRequested} />");
+  it("'Agendar nueva cita' and 'Reprogramar' share the one real scheduler — no second picker", () => {
+    expect(screen).toContain("<RequestAppointmentScheduler professionals={professionals} onSubmit={submitNewRequest} />");
+    expect(screen).toContain('submitLabel="Solicitar reprogramación"');
+    expect(screen).toContain("requestMyAppointment(professionalProfileId, preferredStartsAt)");
+    expect(screen).toContain("requestMyAppointmentReschedule(appointment.id, professionalProfileId, preferredStartsAt)");
     expect(screen).toContain("Agendar nueva cita");
     expect(screen).toContain("Volver a Mis citas");
     expect(screen).not.toContain("RequestAppointmentModal");
     const scheduler = fs.readFileSync(path.join(dir, "request-appointment-scheduler.tsx"), "utf8");
-    expect(scheduler).toContain("requestMyAppointment(");
+    expect(scheduler).toContain("fetchMyProfessionalSchedule(");
+    expect(scheduler).not.toContain("TIME_SLOTS");
   });
 
-  it("no Reprogramar/Cancelar for the Patient (no real backend) and no invented fallbacks", () => {
+  it("Reprogramar/Cancelar render only behind the real eligibility rule; no invented fallbacks", () => {
     const code = screen.split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
-    expect(code).not.toMatch(/>\s*Reprogramar\s*<|Cancelar cita/);
+    expect(code).toContain("const canChange = canPatientChangeAppointment(appointment);");
+    expect(code).toMatch(/\{canChange && \(\s*<div className="grid grid-cols-2 gap-2">/);
     expect(code).not.toContain('"Odontología general"');
     expect(code).not.toContain('?? "Consulta"');
+    expect(code).not.toContain("window.confirm");
   });
 
   it("loading shows a skeleton, never mock/previous data; no mock strings anywhere on this route", () => {

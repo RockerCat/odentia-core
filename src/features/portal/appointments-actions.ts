@@ -39,3 +39,38 @@ export async function confirmMyAppointment(appointmentId: string): Promise<Confi
   const row = Array.isArray(data) ? data[0] : data;
   return { status: "ok", appointmentId: row.id, newStatus: row.status };
 }
+
+// "Cancelar cita" — the Patient cancels her OWN future, still
+// scheduled/confirmed Cita (cancel_my_appointment), with the approved
+// modal's motivo. Nothing is deleted: the Cita becomes `cancelled` and
+// stays in her history.
+export type CancelMyAppointmentOutcome = { status: "ok"; appointmentId: string } | { status: "error"; message: string };
+
+export async function cancelMyAppointment(
+  appointmentId: string,
+  reasonCode: string,
+  reasonDetail: string | null,
+): Promise<CancelMyAppointmentOutcome> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("cancel_my_appointment", {
+    p_appointment_id: appointmentId,
+    p_reason_code: reasonCode,
+    p_reason_detail: reasonDetail,
+  });
+
+  if (error) {
+    if (error.message.includes("not found or not yours") || error.message.includes("no linked patient")) {
+      return { status: "error", message: "Esta cita no existe o no te pertenece." };
+    }
+    if (error.message.includes("cannot be cancelled") || error.message.includes("already occurred") || error.message.includes("completed")) {
+      return { status: "error", message: "Esta cita ya no se puede cancelar." };
+    }
+    if (error.message.includes("cancellation reason")) {
+      return { status: "error", message: "Selecciona un motivo de cancelación válido." };
+    }
+    return { status: "error", message: "No pudimos cancelar la cita. Intenta de nuevo." };
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  return { status: "ok", appointmentId: row.id };
+}

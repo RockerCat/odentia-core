@@ -735,8 +735,9 @@ Can, for their own data only:
 - Request an appointment (a `Solicitud de Cita`, below) — never schedule one
   directly; the clinic accepting the request is what creates the `Cita`
 - View their own appointments, and confirm their own attendance on one; request
-  a reschedule or cancellation (never edit the appointment directly — changes
-  are proposals the clinic approves)
+  a reschedule (never edit the appointment directly — a reschedule is a
+  proposal the clinic approves) and cancel her own future, still
+  scheduled/confirmed Cita directly (product decision 2026-09-24)
 - View their own medical/dental record
 - View their own clinic's info
 
@@ -744,12 +745,24 @@ Never sees other patients' data, clinic administration, or any clinic-team
 screen. Has its own portal experience, not a role variant of the clinic
 dashboard (see Architecture above).
 
-**Current implementation note:** every bullet above is real except
-"request a reschedule or cancellation" — that proposal-approval lifecycle
-has no backend yet (the old mock buttons for it were removed outright,
-never kept as fake non-persisting ones); requesting an appointment,
-confirming attendance, and viewing citas/historia/clínica/perfil are all
-real. Mi salud dental (`/portal/salud`, a short summary separate from Mi
+**Current implementation note:** every bullet above is real (2026-09-24,
+migration `20260924120000`). "Reprogramar" is a Solicitud de Cita with
+`kind = 'reschedule'` linked to the Cita (`appointment_requests.appointment_id`,
+`request_my_appointment_reschedule()`): same staff inbox and
+`accept_appointment_request()`/`reject_appointment_request()`, but accepting
+UPDATES that same Cita in place (re-validated atomically by the
+availability trigger + overlap constraint) — never a second Cita;
+rejecting leaves it untouched. At most one pending reschedule per Cita and
+one pending NEW request per patient (two partial unique indexes).
+"Cancelar cita" (`cancel_my_appointment()`) cancels her own future
+scheduled/confirmed Cita directly, storing the approved motivo
+(`appointments.cancellation_reason_code/detail`, `cancelled_by =
+'patient'`) and closing any pending reschedule for it; never
+patient_arrived/waiting_room/in_progress/completed. Both Portal pickers
+offer slots from the professional's REAL schedule
+(`get_my_professional_schedule()`: her blocks + absence dates only, no
+appointment/patient data) via `agenda-hours.ts` — still a preference;
+acceptance is where overlap/horario/ausencias are enforced. Mi salud dental (`/portal/salud`, a short summary separate from Mi
 Historia Clínica) is real too: allergies, "Odontólogo habitual", recent
 services and finalized atenciones from the same patient-scoped fetchers
 `/portal/historia` uses (`dental-health-data.ts`), with per-section

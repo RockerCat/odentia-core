@@ -15,7 +15,9 @@ export type MyAppointmentsView = {
   otherUpcoming: PortalAppointment[];
   heroHistory: PortalAppointment[];
   history: PortalAppointment[];
-  // At most one open Solicitud at a time (appointment_requests_one_pending_per_patient).
+  // At most one open NEW-appointment Solicitud at a time
+  // (appointment_requests_one_pending_per_patient, kind 'new'). A pending
+  // reschedule is per Cita instead — see pendingRescheduleFor.
   pendingRequest: PortalAppointmentRequest | null;
 };
 
@@ -30,8 +32,14 @@ export function buildMyAppointmentsView(
     otherUpcoming: upcoming.slice(1),
     heroHistory: history.slice(0, HERO_HISTORY_LIMIT),
     history,
-    pendingRequest: requests.find((r) => r.status === "pending") ?? null,
+    pendingRequest: requests.find((r) => r.status === "pending" && r.kind === "new") ?? null,
   };
+}
+
+// The open reschedule request for THIS Cita, if any (at most one —
+// appointment_requests_one_pending_reschedule_per_appointment).
+export function pendingRescheduleFor(appointmentId: string, requests: PortalAppointmentRequest[]): PortalAppointmentRequest | null {
+  return requests.find((r) => r.status === "pending" && r.kind === "reschedule" && r.appointmentId === appointmentId) ?? null;
 }
 
 // The "Próxima cita" professional card's fields — real values or null,

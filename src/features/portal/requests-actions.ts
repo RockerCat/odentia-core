@@ -73,3 +73,51 @@ export async function requestMyAppointment(
     },
   };
 }
+
+// "Solicitar reprogramación" — a reschedule REQUEST for her own Cita
+// (request_my_appointment_reschedule). The Cita itself never changes here;
+// only the clinic accepting the request moves it.
+export async function requestMyAppointmentReschedule(
+  appointmentId: string,
+  professionalProfileId: string,
+  preferredStartsAt: string,
+): Promise<RequestMyAppointmentOutcome> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("request_my_appointment_reschedule", {
+    p_appointment_id: appointmentId,
+    p_professional_profile_id: professionalProfileId,
+    p_preferred_starts_at: preferredStartsAt,
+  });
+
+  if (error) {
+    if (error.message.includes("not found or not yours") || error.message.includes("no linked patient")) {
+      return { status: "error", message: "No encontramos esta cita en tu cuenta." };
+    }
+    if (error.message.includes("cannot be rescheduled") || error.message.includes("already occurred")) {
+      return { status: "error", message: "Esta cita ya no se puede reprogramar." };
+    }
+    if (error.message.includes("preferred date is in the past")) {
+      return { status: "error", message: "El horario elegido ya pasó. Elige otro." };
+    }
+    if (error.message.includes("professional is not available")) {
+      return { status: "error", message: "Ese profesional ya no está disponible en tu clínica." };
+    }
+    if (error.message.includes("a pending reschedule request already exists") || error.code === "23505") {
+      return { status: "error", message: "Ya tienes una solicitud de reprogramación pendiente para esta cita." };
+    }
+    return { status: "error", message: GENERIC_ERROR };
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    status: "ok",
+    request: {
+      id: row.id,
+      professionalProfileId: row.professional_profile_id,
+      preferredStartsAt: row.preferred_starts_at,
+      status: row.status,
+      acceptedAppointmentId: row.accepted_appointment_id,
+      createdAt: row.created_at,
+    },
+  };
+}

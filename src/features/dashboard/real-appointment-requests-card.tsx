@@ -93,7 +93,14 @@ export function RealAppointmentRequestsCard({
                   className="flex w-full items-center gap-2.5 rounded-lg border border-border px-3 py-2.5 text-left transition-colors hover:border-primary/30 hover:bg-primary/[0.03]"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{request.patientName}</p>
+                    <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                      <span className="truncate">{request.patientName}</span>
+                      {request.kind === "reschedule" && (
+                        <span className="shrink-0 rounded-full border border-info/25 bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info">
+                          Reprogramación
+                        </span>
+                      )}
+                    </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {formatDateLabel(request.preferredStartsAt)} · {formatTimeLabel(request.preferredStartsAt)} ·{" "}
                       {professional?.name ?? "Profesional"}
@@ -177,12 +184,21 @@ function AppointmentRequestModal({
   const [dayKey, setDayKey] = useState(preferred.dayKey);
   const [time, setTime] = useState(preferred.time);
   const [durationMinutes, setDurationMinutes] = useState(
-    preferredProfessional?.defaultAppointmentDurationMinutes ?? DEFAULT_APPOINTMENT_DURATION,
+    // A reschedule keeps the Cita's own length by default; a new request
+    // starts from the professional's default, as before.
+    request.rescheduleTarget?.durationMinutes ??
+      preferredProfessional?.defaultAppointmentDurationMinutes ??
+      DEFAULT_APPOINTMENT_DURATION,
   );
   const [durationTouched, setDurationTouched] = useState(false);
-  const [room, setRoom] = useState("");
-  const [reason, setReason] = useState("");
-  const [notes, setNotes] = useState("");
+  // A reschedule moves an EXISTING Cita — its own consultorio/tratamiento/
+  // observaciones carry over unless the clinic changes them (the accept RPC
+  // writes exactly what's submitted here).
+  const isReschedule = request.kind === "reschedule";
+  const target = request.rescheduleTarget;
+  const [room, setRoom] = useState(target?.room ?? "");
+  const [reason, setReason] = useState(target?.reason ?? "");
+  const [notes, setNotes] = useState(target?.notes ?? "");
   const [editingField, setEditingField] = useState<"date" | "time" | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -242,7 +258,7 @@ function AppointmentRequestModal({
     // Only ever on confirmed backend success — the Cita is real by now, so
     // it goes straight into the board's shared appointment state.
     onAppointmentCreated(outcome.appointment);
-    showToast(`Solicitud aceptada — ${request.patientName} · ${dayLabel} · ${time}`);
+    showToast(`${isReschedule ? "Cita reprogramada" : "Solicitud aceptada"} — ${request.patientName} · ${dayLabel} · ${time}`);
     onResolved(request.id);
   };
 
@@ -266,12 +282,12 @@ function AppointmentRequestModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Solicitud de cita"
+        aria-label={isReschedule ? "Solicitud de reprogramación" : "Solicitud de cita"}
         onClick={(e) => e.stopPropagation()}
         className="relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-background shadow-xl sm:max-h-[85vh] sm:w-full sm:max-w-lg sm:rounded-xl"
       >
         <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3">
-          <p className="text-sm font-semibold">Solicitud de cita</p>
+          <p className="text-sm font-semibold">{isReschedule ? "Solicitud de reprogramación" : "Solicitud de cita"}</p>
           <button
             type="button"
             onClick={onClose}
@@ -290,6 +306,18 @@ function AppointmentRequestModal({
               Solicitud del paciente
             </p>
             <dl className="mt-2 flex flex-col gap-1.5 text-sm">
+              {isReschedule && (
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-xs text-label-foreground">Cita actual</dt>
+                  <dd className="font-medium">
+                    {target
+                      ? `${formatDateLabel(target.startsAt)}, ${formatTimeLabel(target.startsAt)} · ${
+                          professionals.find((p) => p.professionalProfileId === target.professionalProfileId)?.name ?? "Profesional"
+                        }`
+                      : "No disponible"}
+                  </dd>
+                </div>
+              )}
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-xs text-label-foreground">Paciente</dt>
                 <dd className="font-medium">{request.patientName}</dd>
@@ -315,7 +343,9 @@ function AppointmentRequestModal({
 
           {/* La cita que se va a crear — same fields, same order, same
               components as Nueva cita. */}
-          <p className="mt-4 text-[11px] font-semibold tracking-wide text-label-foreground uppercase">Cita a agendar</p>
+          <p className="mt-4 text-[11px] font-semibold tracking-wide text-label-foreground uppercase">
+            {isReschedule ? "Nueva fecha de la cita" : "Cita a agendar"}
+          </p>
 
           <div className="mt-2 flex flex-col gap-2.5">
             <Field icon={UserIcon} label="Profesional">
@@ -473,7 +503,7 @@ function AppointmentRequestModal({
             disabled={!canAccept}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {accepting ? "Aceptando…" : "Aceptar y agendar"}
+            {accepting ? "Aceptando…" : isReschedule ? "Aceptar y reprogramar" : "Aceptar y agendar"}
           </button>
         </div>
       </div>

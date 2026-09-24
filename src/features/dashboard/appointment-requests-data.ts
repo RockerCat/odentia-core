@@ -17,8 +17,27 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type AppointmentRequestStatus = "pending" | "accepted" | "rejected";
 
+export type AppointmentRequestKind = "new" | "reschedule";
+
+// For a "reschedule" request: the Cita the patient asked to move, as it
+// stands now (read under the staff member's own appointments RLS).
+export type RescheduleTarget = {
+  appointmentId: string;
+  professionalProfileId: string;
+  startsAt: string;
+  durationMinutes: number;
+  reason: string | null;
+  room: string | null;
+  notes: string | null;
+  status: string;
+};
+
 export type AppointmentRequest = {
   id: string;
+  // "new" = Solicitud de nueva cita (creates a Cita on acceptance);
+  // "reschedule" = move the linked Cita (updated in place on acceptance).
+  kind: AppointmentRequestKind;
+  rescheduleTarget: RescheduleTarget | null;
   clinicId: string;
   patientId: string;
   patientName: string;
@@ -32,6 +51,8 @@ export type AppointmentRequest = {
 
 type RequestRow = {
   id: string;
+  kind: AppointmentRequestKind;
+  appointment_id: string | null;
   clinic_id: string;
   patient_id: string;
   professional_profile_id: string;
@@ -42,7 +63,7 @@ type RequestRow = {
 };
 
 const REQUEST_COLUMNS =
-  "id, clinic_id, patient_id, professional_profile_id, preferred_starts_at, status, accepted_appointment_id, created_at";
+  "id, kind, appointment_id, clinic_id, patient_id, professional_profile_id, preferred_starts_at, status, accepted_appointment_id, created_at";
 
 async function mapRows(supabase: SupabaseClient, rows: RequestRow[]): Promise<AppointmentRequest[]> {
   if (rows.length === 0) return [];
@@ -51,10 +72,34 @@ async function mapRows(supabase: SupabaseClient, rows: RequestRow[]): Promise<Ap
   if (error) throw error;
   const patientById = new Map((data ?? []).map((p) => [p.id, p]));
 
+  const targetIds = [...new Set(rows.map((r) => r.appointment_id).filter((id): id is string => Boolean(id)))];
+  const targetById = new Map<string, RescheduleTarget>();
+  if (targetIds.length > 0) {
+    const { data: targets, error: targetsError } = await supabase
+      .from("appointments")
+      .select("id, professional_profile_id, starts_at, duration_minutes, reason, room, notes, status")
+      .in("id", targetIds);
+    if (targetsError) throw targetsError;
+    for (const t of targets ?? []) {
+      targetById.set(t.id, {
+        appointmentId: t.id,
+        professionalProfileId: t.professional_profile_id,
+        startsAt: t.starts_at,
+        durationMinutes: t.duration_minutes,
+        reason: t.reason,
+        room: t.room,
+        notes: t.notes,
+        status: t.status,
+      });
+    }
+  }
+
   return rows.map((row) => {
     const patient = patientById.get(row.patient_id);
     return {
       id: row.id,
+      kind: row.kind,
+      rescheduleTarget: row.appointment_id ? (targetById.get(row.appointment_id) ?? null) : null,
       clinicId: row.clinic_id,
       patientId: row.patient_id,
       patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : "Paciente",

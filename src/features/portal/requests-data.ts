@@ -25,8 +25,14 @@ export type PortalProfessional = {
   licenseNumber: string | null;
 };
 
+export type PortalAppointmentRequestKind = "new" | "reschedule";
+
 export type PortalAppointmentRequest = {
   id: string;
+  // "new" = Solicitud de nueva cita; "reschedule" = asks to move the linked
+  // Cita (appointmentId) — the two are never conflated.
+  kind: PortalAppointmentRequestKind;
+  appointmentId: string | null;
   professionalProfileId: string;
   professionalName: string;
   preferredStartsAt: string;
@@ -46,6 +52,8 @@ type ProfessionalRow = {
 
 type RequestRow = {
   id: string;
+  kind: PortalAppointmentRequestKind;
+  appointment_id: string | null;
   professional_profile_id: string;
   preferred_starts_at: string;
   status: AppointmentRequestStatus;
@@ -79,13 +87,15 @@ export async function fetchMyAppointmentRequests(
 ): Promise<PortalAppointmentRequest[]> {
   const { data, error } = await supabase
     .from("appointment_requests")
-    .select("id, professional_profile_id, preferred_starts_at, status, accepted_appointment_id, created_at")
+    .select("id, kind, appointment_id, professional_profile_id, preferred_starts_at, status, accepted_appointment_id, created_at")
     .order("created_at", { ascending: false });
   if (error) throw error;
 
   const nameById = new Map(professionals.map((p) => [p.professionalProfileId, p.name]));
   return ((data as RequestRow[] | null) ?? []).map((row) => ({
     id: row.id,
+    kind: row.kind,
+    appointmentId: row.appointment_id,
     professionalProfileId: row.professional_profile_id,
     // A professional who has since been deactivated is no longer in the
     // bookable list, but her past request must still render — honest

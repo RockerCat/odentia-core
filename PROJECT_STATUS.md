@@ -531,10 +531,20 @@ built for this MVP:
   her last finalized atenciones, from the same patient-scoped fetchers/RLS as
   Mi Historia Clínica; skeleton/empty/error per section. The Portal header's
   fictitious "Sonrisa Perfecta" logo fallback was replaced by a neutral icon.
-- **Patient-initiated reprogramación/cancelación** — deliberately not built (the
-  old mock buttons were removed, not kept as fake non-persisting ones). Per
-  CLAUDE.md, these are proposals the clinic approves; that approval lifecycle has
-  no backend yet.
+- **Patient-initiated reprogramación/cancelación** — **real since 2026-09-24**
+  (migration `20260924120000`, applied to the linked project). Reprogramar =
+  a Solicitud with `kind = 'reschedule'` linked to the Cita; the clinic
+  accepts it from the same "Solicitudes de cita" card (labeled
+  "Reprogramación", "Aceptar y reprogramar"), which UPDATES that same Cita
+  atomically (no second Cita), or rejects it (Cita untouched). Cancelar cita
+  cancels her own future scheduled/confirmed Cita with the approved motivo
+  and `cancelled_by = 'patient'`. The Portal pickers now use the
+  professional's real schedule (`get_my_professional_schedule()`). QA:
+  unit + static SQL predicate tests (`reschedule-cancel.test.ts`); live
+  smoke of the real-schedule picker; the reschedule/cancel buttons and
+  modals were NOT exercised live (the pilot patient had no future
+  eligible Cita). Known limits: staff Agenda doesn't yet display the
+  patient's cancellation motivo; SQL tests not run locally (no Postgres).
 - **Automated communications** — no transactional email, WhatsApp, SMS, or push
   notifications anywhere in the codebase. Every "invitation" (staff or patient) is
   a real, persisted, tokenized link the admin/assistant copies and shares
@@ -3708,7 +3718,6 @@ Full manual QA by role (Clinic Admin → Dentist → Assistant → Patient — s
 "Functional Freeze Policy" above) is the actual next phase — not more feature
 building. Only after that:
 
-- Patient-initiated reprogramación/cancelación proposal lifecycle.
 - Configuración's remaining secondary sections (agenda defaults, notifications,
   regional preferences) real-data conversion.
 - Mi Suscripción real-data conversion (still contingent on a payment-provider

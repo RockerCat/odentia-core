@@ -1,18 +1,24 @@
 import type { AppointmentStatus } from "@/features/dashboard/appointments-data";
 
-// Mirrors confirm_my_appointment's own eligibility check exactly (the RPC
-// is the actual authority — see that migration's own comment; this only
-// decides whether to SHOW the "Confirmar asistencia" button, never a
-// second source of truth). Only a still-"scheduled" appointment (Agenda's
-// "Programada" stage, before the clinic or patient does anything else to
-// it) that hasn't started yet is confirmable — every other real status
-// (confirmed/patient_arrived/waiting_room/in_progress/completed/no_show/
-// cancelled) is excluded, and a `scheduled` appointment whose starts_at is
-// already in the past is excluded too (the RPC rejects it as "already
-// occurred").
+// Mirrors confirm_my_appointment's own check (backend stays authoritative).
 export function canPatientConfirmAppointment(
   appointment: { status: AppointmentStatus; startsAt: string },
   now: Date = new Date(),
 ): boolean {
   return appointment.status === "scheduled" && new Date(appointment.startsAt).getTime() >= now.getTime();
+}
+
+// Reprogramar / Cancelar cita from the Portal — only her own FUTURE Cita
+// that is still scheduled/confirmed. Never once the clinical flow has
+// started (Paciente llegó, Sala de espera, En curso) or it's closed
+// (Completada, No asistió, Cancelada). Same rule, in the same terms, as
+// request_my_appointment_reschedule()/cancel_my_appointment() in Postgres
+// (20260924120000) — this only decides whether the buttons show.
+const PATIENT_CHANGEABLE_STATUSES: AppointmentStatus[] = ["scheduled", "confirmed"];
+
+export function canPatientChangeAppointment(
+  appointment: { status: AppointmentStatus; startsAt: string },
+  now: Date = new Date(),
+): boolean {
+  return PATIENT_CHANGEABLE_STATUSES.includes(appointment.status) && new Date(appointment.startsAt).getTime() > now.getTime();
 }
