@@ -57,6 +57,8 @@ import { updateAppointment } from "./appointments-actions";
 import { fetchAppointmentsForPatient, type Appointment } from "./appointments-data";
 import { getEncounterFinalizeBlockers, isConsultationCausaMotivoMissing } from "./encounter-finalize-readiness";
 import { resolveCausaOnFinalidadChange } from "./finalidad-causa";
+import { causeOptionSearchText, isFrequentDentalCause, orderCauseOptions } from "./consultation-cause-options";
+import { Combobox } from "@/components/combobox";
 import { OdontogramPreview } from "./odontogram-teeth";
 import type { BoardProfessional } from "./real-appointments-board";
 import { endTimeIso, formatDateLabel, formatTimeLabel, initialsOf } from "./real-format";
@@ -228,6 +230,9 @@ export function RealClinicalEncounterScreen({
   professionalSpecialtyId: string | null;
   professionalSpecialtyName: string | null;
 }) {
+  // Catalog order with frequent dental causes first — computed once per
+  // render from the already-loaded official list, never refetched/filtered.
+  const orderedCausaMotivoOptions = orderCauseOptions(causaMotivoOptions);
   const router = useRouter();
   // Clinical action — never Assistant (see CLAUDE.md's Roles: Assistant
   // supports operations, it doesn't attend patients). Same gating
@@ -1150,20 +1155,30 @@ export function RealClinicalEncounterScreen({
                                 optional injury field, so a pilot user left
                                 it empty and only learned at Finalizar. */}
                             {s.ripsServiceType === "consultation" && (
-                              <div className="flex flex-col gap-1">
-                                <select
-                                  value={s.causaMotivoCode}
-                                  onChange={(e) => updateService(s.id, { causaMotivoCode: e.target.value })}
-                                  aria-label="Causa o motivo de la consulta"
-                                  className={FIELD_CLASS}
-                                >
-                                  <option value="">Causa o motivo de la consulta</option>
-                                  {causaMotivoOptions.map((o) => (
-                                    <option key={o.code} value={o.code}>
-                                      {o.label}
-                                    </option>
-                                  ))}
-                                </select>
+                              <div className="flex w-full flex-col gap-1 sm:w-80">
+                                {/* Searchable (29 official options, by label,
+                                    accent-free label or code), frequent
+                                    dental causes listed first and tagged —
+                                    every option kept, nothing preselected;
+                                    still writes the exact official code. */}
+                                <Combobox
+                                  items={orderedCausaMotivoOptions}
+                                  getKey={(o) => o.code}
+                                  getSearchText={causeOptionSearchText}
+                                  selectedItem={causaMotivoOptions.find((o) => o.code === s.causaMotivoCode) ?? null}
+                                  onSelect={(o) => updateService(s.id, { causaMotivoCode: o.code })}
+                                  renderItem={(o, isCard) => (
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block text-xs text-foreground">{o.label}</span>
+                                      {!isCard && isFrequentDentalCause(o) && (
+                                        <span className="mt-0.5 block text-[10px] font-medium text-primary">Frecuente en odontología</span>
+                                      )}
+                                    </span>
+                                  )}
+                                  placeholder="Buscar causa o motivo de la consulta…"
+                                  emptyText="Ninguna causa coincide con la búsqueda."
+                                  triggerClassName="px-2.5 py-1.5"
+                                />
                                 {isConsultationCausaMotivoMissing(s) && (
                                   <span className="text-xs text-warning">
                                     Selecciona la causa o motivo de la consulta — es obligatoria para poder finalizar la atención.
