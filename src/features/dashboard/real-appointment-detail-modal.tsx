@@ -33,6 +33,7 @@ import {
   type AppointmentPatch,
 } from "./appointments-actions";
 import { fetchAppointmentsForPatient, type Appointment, type AppointmentStatus } from "./appointments-data";
+import { applyStatusLocally, getCancellationInfo } from "./cancellation-info";
 import { completedEncounterDetailHref } from "@/features/patients/encounter-detail-link";
 import { dateKeyOf, endTimeIso, formatDateLabel, formatTimeLabel, isPastSlot } from "./real-format";
 import { hasAvailableFutureSlotForDay, isoWeekdayOfDayKey, resolveAgendaSlotsForDay, type AgendaAvailabilityBlock } from "./agenda-hours";
@@ -230,7 +231,7 @@ export function RealAppointmentDetailModal({
   const handleSave = async (patch: AppointmentPatch): Promise<void> => {
     const result = await updateAppointment(appointment.id, patch);
     if (result.status === "error") throw new Error(result.message);
-    const updated = { ...appointment, ...patch };
+    const updated = patch.status !== undefined ? { ...applyStatusLocally(appointment, patch.status), ...patch } : { ...appointment, ...patch };
     onUpdated(updated);
     // Only Fecha/Horario (the actual "reschedule" action) always include
     // startsAt in their patch — room/reason/phone/notes/status edits never
@@ -248,6 +249,7 @@ export function RealAppointmentDetailModal({
   const professionalName = professional?.name ?? "Sin asignar";
 
   const isCancelled = appointment.status === "cancelled";
+  const cancellationInfo = getCancellationInfo(appointment);
   const isTerminal = isTerminalStatus(appointment.status);
   const isUnresolved = displayStatus === "unresolved";
   // "Paciente llegó"/"Enviar a sala de espera" are front-desk actions —
@@ -342,7 +344,7 @@ export function RealAppointmentDetailModal({
       setReactivating(true);
       try {
         const result = await reactivateAppointment(appointment.id);
-        if (result.status === "ok") onUpdated({ ...appointment, status: "confirmed" });
+        if (result.status === "ok") onUpdated(applyStatusLocally(appointment, "confirmed"));
         else setActionError(result.message);
       } finally {
         setReactivating(false);
@@ -492,6 +494,29 @@ export function RealAppointmentDetailModal({
             <CloseIcon className="size-4" />
           </button>
         </div>
+
+        {cancellationInfo && (
+          // Real cancellation data only (cancellation-info.ts) — right
+          // under the "Cancelada" badge it explains.
+          <dl className="flex shrink-0 flex-wrap gap-x-6 gap-y-1.5 border-b border-border bg-surface px-5 py-3 text-xs">
+            <div className="flex items-center gap-1.5">
+              <dt className="text-label-foreground">Cancelada por</dt>
+              <dd className="font-medium text-foreground">{cancellationInfo.cancelledByLabel}</dd>
+            </div>
+            {cancellationInfo.reasonLabel && (
+              <div className="flex items-center gap-1.5">
+                <dt className="text-label-foreground">Motivo</dt>
+                <dd className="font-medium text-foreground">{cancellationInfo.reasonLabel}</dd>
+              </div>
+            )}
+            {cancellationInfo.detail && (
+              <div className="flex w-full items-start gap-1.5">
+                <dt className="shrink-0 text-label-foreground">Detalle</dt>
+                <dd className="break-words text-foreground">{cancellationInfo.detail}</dd>
+              </div>
+            )}
+          </dl>
+        )}
 
         {showAttentionTimer && (
           <div className="shrink-0 border-b border-border bg-surface px-5 py-3.5">

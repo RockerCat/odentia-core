@@ -43,6 +43,14 @@ export type Appointment = {
   patientArrivedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  // Set only on a cancelled Cita (see migration 20260924120000): the
+  // approved motivo code (cancellation-reasons.ts), its free text for
+  // "Otro", and "patient" when the Patient cancelled it from the Portal
+  // (null = cancelled by the clinic). Optional: hand-built Appointment
+  // objects elsewhere simply don't carry them.
+  cancellationReasonCode?: string | null;
+  cancellationReasonDetail?: string | null;
+  cancelledBy?: string | null;
 };
 
 type AppointmentRow = {
@@ -58,12 +66,15 @@ type AppointmentRow = {
   notes: string | null;
   status: AppointmentStatus;
   patient_arrived_at: string | null;
+  cancellation_reason_code: string | null;
+  cancellation_reason_detail: string | null;
+  cancelled_by: string | null;
   created_at: string;
   updated_at: string;
 };
 
 const APPOINTMENT_COLUMNS =
-  "id, clinic_id, patient_id, professional_profile_id, starts_at, duration_minutes, reason, room, contact_phone, notes, status, patient_arrived_at, created_at, updated_at";
+  "id, clinic_id, patient_id, professional_profile_id, starts_at, duration_minutes, reason, room, contact_phone, notes, status, patient_arrived_at, created_at, updated_at, cancellation_reason_code, cancellation_reason_detail, cancelled_by";
 
 async function mapRows(supabase: SupabaseClient, rows: AppointmentRow[]): Promise<Appointment[]> {
   const patientIds = [...new Set(rows.map((r) => r.patient_id))];
@@ -92,6 +103,9 @@ async function mapRows(supabase: SupabaseClient, rows: AppointmentRow[]): Promis
       patientArrivedAt: row.patient_arrived_at,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      cancellationReasonCode: row.cancellation_reason_code,
+      cancellationReasonDetail: row.cancellation_reason_detail,
+      cancelledBy: row.cancelled_by,
     };
   });
 }

@@ -85,13 +85,14 @@ export type DisplayStatus = AppointmentStatus | "unresolved";
 export const TERMINAL_STATUSES: AppointmentStatus[] = ["completed", "no_show", "cancelled"];
 
 // "Cancelar cita" — the one rule every real surface uses. A `completed`
-// Cita is never cancellable, for any role: "Cancelada" always happens
+// (or already `cancelled`) Cita is never cancellable, for any role: "Cancelada" always happens
 // BEFORE the encounter (CLAUDE.md Appointment Lifecycle), and a completed
 // one has a finalized atención behind it. Enforced in Postgres too
 // (validate_appointment_status_transition, 20260924110000) — this is UX.
 // Otherwise unchanged: an Assistant still can't cancel an in-progress Cita.
 export function canCancelAppointment(status: AppointmentStatus, role: string): boolean {
-  if (status === "completed") return false;
+  // Already cancelled → nothing to cancel (its own action is "Reactivar").
+  if (status === "completed" || status === "cancelled") return false;
   return !(role === "assistant" && status === "in_progress");
 }
 
