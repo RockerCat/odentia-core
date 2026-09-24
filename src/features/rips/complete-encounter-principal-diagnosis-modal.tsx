@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CloseIcon } from "@/components/shell/icons";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import type { ReferenceValue } from "./catalog-data";
 import { CodeSearchAutocomplete, type CodeSearchResult } from "./code-search-autocomplete";
 import { DIAGNOSIS_BROWSE_SECTIONS, DIAGNOSIS_INITIAL_SUGGESTIONS, searchDentalDiagnosesAction } from "./diagnosis-search-config";

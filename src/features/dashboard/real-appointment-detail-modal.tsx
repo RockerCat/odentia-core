@@ -21,7 +21,7 @@ import {
 } from "@/components/shell/icons";
 import { formatClockLabel, formatElapsed } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
-import { FIELD_CLASS, PopoverFieldRow, TimePopoverContent } from "./appointment-detail-modal";
+import { FIELD_CLASS, PopoverFieldRow, TimePopoverContent } from "./form-primitives";
 import {
   cancelAppointment,
   isPastInstant,

@@ -5,7 +5,7 @@ import { AlertTriangleIcon, CheckCircleIcon } from "@/components/shell/icons";
 import { updatePrimaryLocation } from "@/features/clinic/actions";
 import type { PrimaryLocation } from "@/features/clinic/data";
 import { getRipsClinicConfigStatus } from "@/features/clinic/rips-config-status";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 
 // "Configuración RIPS" — PROMPT NINJA "Crear bloque dedicado Configuración
 // RIPS en Clínica". Anchor target for /rips's own "Corregir" links

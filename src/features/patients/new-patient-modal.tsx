@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { CloseIcon } from "@/components/shell/icons";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { sortCountriesColombiaFirst } from "@/features/rips/complete-patient-rips-data-modal";
 import { ReferenceValueAutocomplete } from "@/features/rips/reference-value-autocomplete";
 import { createPatient } from "./actions";

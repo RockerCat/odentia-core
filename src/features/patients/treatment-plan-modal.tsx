@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { CloseIcon, PencilIcon, PlusIcon } from "@/components/shell/icons";
 import { useToast } from "@/components/toast";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import type { Treatment } from "@/features/treatments/data";
 import {
   createTreatmentPlanItem,

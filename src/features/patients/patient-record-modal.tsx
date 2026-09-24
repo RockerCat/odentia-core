@@ -12,7 +12,7 @@ import type { PatientIdentityCatalogs } from "./patients-screen";
 import { lastVisitLabelFrom, nextAppointmentLabelFrom } from "./resumen-tab";
 import { resolveUsualDentistName } from "./usual-dentist";
 import { fetchAppointmentsForPatient, type Appointment } from "@/features/dashboard/appointments-data";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { formatDateLabel, formatTimeLabel } from "@/features/dashboard/real-format";
 import { getDisplayStatus, getHistoryStatusBadgeClass, getStatusLabel } from "@/features/dashboard/real-status";
 import { findReferenceValueByCodeAction } from "@/features/rips/actions";

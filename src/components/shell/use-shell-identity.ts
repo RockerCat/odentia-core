@@ -1,46 +1,56 @@
 "use client";
 
-import { useAuthenticatedIdentity, type AuthenticatedIdentity } from "@/features/dashboard/use-authenticated-identity";
-import { useCurrentUserContext } from "@/features/session/use-current-user-context";
+import type { CurrentUserContextResult } from "@/features/session/use-current-user-context";
+import { useCurrentUserContextResult } from "@/features/session/use-current-user-context";
 
-// Overlays REAL profile/clinic identity (see
-// src/features/session/use-current-user-context.ts) on top of the existing
-// mock identity (see use-authenticated-identity.ts) for display in the
-// shell chrome only (Header/MobileHeader) — never touches the mock feature
-// screens that still read useAuthenticatedIdentity directly (Agenda's
-// greeting, etc. — see CLAUDE.md task scope, section 15). Only
-// clinic_admin/dentist/assistant can resolve a real context today
-// (superadmin/patient real auth is out of scope); every other case falls
-// straight back to the mock identity, unchanged.
-export function useShellIdentity(): AuthenticatedIdentity {
-  const mock = useAuthenticatedIdentity();
-  const real = useCurrentUserContext();
+// Display identity for the clinic app shell (Header, MobileHeader) and each
+// page's greeting (Greeting, PatientsGreeting) — REAL ONLY. Resolved from
+// the same real ClinicContext as everything else (useCurrentUserContextResult
+// → resolveClinicContext); src/lib/supabase/proxy.ts has already gated the
+// route, so this is display, never authorization.
+//
+// It used to fall back to the dev mock identity (useAuthenticatedIdentity:
+// "Laura Torres" for an Assistant, "María Gómez" + a stock photo + "Clínica
+// Sonrisa Perfecta" for a Clinic Admin, …) whenever the real context was
+// still loading or failed — so a fictitious person flashed in the header/
+// greeting on every page load, and stayed there if resolution failed
+// (Pilot E2E). Now: "loading" → callers render a skeleton; "unavailable"
+// (error, or a non-ok context) → a neutral, nameless state. Never mock.
+export type ShellIdentity = {
+  status: "loading" | "ready" | "unavailable";
+  name: string;
+  initials: string;
+  avatar_url?: string;
+  secondaryLabel: string;
+  // Whether this real user has her own ACTIVE professional_profile (a
+  // Dentist, or a Clinic Admin who also practices) — decides where
+  // "Perfil" goes, same rule as landing-header.tsx.
+  hasActiveProfessionalProfile: boolean;
+};
 
-  if (!real || real.status !== "ok") return mock;
+const EMPTY: Omit<ShellIdentity, "status"> = {
+  name: "",
+  initials: "",
+  secondaryLabel: "",
+  hasActiveProfessionalProfile: false,
+};
 
-  const name = `${real.profile.firstName} ${real.profile.lastName}`.trim() || mock.name;
-  const initials =
-    `${real.profile.firstName[0] ?? ""}${real.profile.lastName[0] ?? ""}`.toUpperCase() || mock.initials;
-  // Never mock.avatar_url as a fallback here — UserAvatar already renders
-  // a neutral initials circle when avatar_url is undefined (see
-  // components/user-avatar.tsx), which is the correct empty state for a
-  // real profile with no avatar_url, not María Gómez's mock photo.
-  const avatar_url = real.profile.avatarUrl ?? undefined;
-
+// Pure — the whole rule, unit-tested without React (use-shell-identity.test.ts).
+export function toShellIdentity(result: CurrentUserContextResult): ShellIdentity {
+  if (result.state === "loading") return { status: "loading", ...EMPTY };
+  if (result.state === "error" || result.context.status !== "ok") return { status: "unavailable", ...EMPTY };
+  const { profile, clinic, professionalProfile } = result.context;
   return {
-    name,
-    initials,
-    avatar_url,
-    // Real clinic name always wins here, regardless of professionalRecord
-    // — use-authenticated-identity.ts's clinic-admin fallback branch
-    // returns CURRENT_USER.clinicName ("Clínica Sonrisa Perfecta") as
-    // secondaryLabel unconditionally (professionalRecord only changes the
-    // *record* shown, never that string), so keeping "mock.secondaryLabel"
-    // for the professionalRecord case was silently re-introducing the mock
-    // clinic name into the header for any real solo-practitioner account.
-    secondaryLabel: real.clinic.name,
-    professionalRecord: mock.professionalRecord
-      ? { ...mock.professionalRecord, name, avatar_url }
-      : null,
+    status: "ready",
+    name: `${profile.firstName} ${profile.lastName}`.trim(),
+    initials: `${profile.firstName[0] ?? ""}${profile.lastName[0] ?? ""}`.toUpperCase(),
+    // No avatar → UserAvatar's own neutral initials circle, never a stock photo.
+    avatar_url: profile.avatarUrl ?? undefined,
+    secondaryLabel: clinic.name,
+    hasActiveProfessionalProfile: Boolean(professionalProfile?.active),
   };
+}
+
+export function useShellIdentity(): ShellIdentity {
+  return toShellIdentity(useCurrentUserContextResult());
 }

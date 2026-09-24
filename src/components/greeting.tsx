@@ -15,11 +15,12 @@ import { PersonalizedHeading } from "./personalized-heading";
 // regardless of who actually authenticated. Always greets whoever is
 // actually authenticated right now — never a static/mock name.
 export function Greeting() {
-  const { name } = useShellIdentity();
+  const { name, status } = useShellIdentity();
   return (
     <PersonalizedHeading
       before="Hola "
       userName={firstName(name)}
+      loading={status === "loading"}
       after=", esta es la agenda para hoy."
     />
   );

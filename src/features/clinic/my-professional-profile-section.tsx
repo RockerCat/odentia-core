@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useToast } from "@/components/toast";
 import { UserAvatar } from "@/components/user-avatar";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import type { ReferenceValue } from "@/features/rips/catalog-data";
 import { fetchWeeklyAvailability, summarizeWeeklyAvailability } from "@/features/settings/availability-data";
 import { createClient } from "@/lib/supabase/client";

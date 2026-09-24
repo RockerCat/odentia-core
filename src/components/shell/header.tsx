@@ -15,10 +15,10 @@ export function Header() {
   const router = useRouter();
   const [showAdminProfile, setShowAdminProfile] = useState(false);
   const [showAssistantProfile, setShowAssistantProfile] = useState(false);
-  // DEV TOOL — see src/dev/role.ts. useShellIdentity() overlays real
-  // profile/clinic data on the same mock derivation the Agenda's greeting
-  // reads (useAuthenticatedIdentity) — see use-shell-identity.ts. useRole()
-  // is only needed here for `role` (which modal onProfileClick opens) —
+  // useShellIdentity() is real-only (skeleton while loading, never mock —
+  // see use-shell-identity.ts). useRole() (DEV TOOL store, fed the REAL
+  // role by role-bridge.ts) is only needed here for `role` (which modal
+  // onProfileClick opens) —
   // AdminProfileModal/AssistantProfileModal now read their own real
   // identity directly (useCurrentUserContext()), so no override state is
   // threaded through here anymore.
@@ -38,7 +38,7 @@ export function Header() {
   // /mi-perfil-profesional — its real creation flow
   // (create_my_professional_profile(), see that migration), never a
   // second local form.
-  const dentistToShow = identity.professionalRecord;
+  const hasOwnProfessionalProfile = identity.hasActiveProfessionalProfile;
 
   return (
     <header className="sticky top-0 z-10 hidden h-20 shrink-0 items-center gap-4 border-b border-border bg-surface px-4 sm:px-6 md:flex">
@@ -50,18 +50,18 @@ export function Header() {
         </div>
 
         <AuthenticatedUserMenu
-          identity={identity}
+          identity={{ ...identity, loading: identity.status === "loading" }}
           // Dentist, or a Clinic Admin who already has her own
           // professional_profile, goes to the real, unified
           // /mi-perfil-profesional — see this block's own comment above
-          // dentistToShow. A Clinic Admin with no professional profile yet
+          // hasOwnProfessionalProfile. A Clinic Admin with no professional profile yet
           // still opens "Mi perfil" (AdminProfileModal, unchanged/out of
           // scope here). An Assistant opens their own simple, non-clinical
           // profile. Every other role keeps the previous no-op behavior —
           // never null here, so "Perfil" always shows in the app shell,
           // same as before this was extracted.
           onProfileClick={() => {
-            if (dentistToShow) router.push("/mi-perfil-profesional");
+            if (hasOwnProfessionalProfile) router.push("/mi-perfil-profesional");
             else if (isClinicAdmin) setShowAdminProfile(true);
             else if (isAssistant) setShowAssistantProfile(true);
           }}

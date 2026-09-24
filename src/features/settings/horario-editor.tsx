@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useToast } from "@/components/toast";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { describeInitialSchedule } from "@/features/dashboard/agenda-hours";
 import { createClient } from "@/lib/supabase/client";
 import {

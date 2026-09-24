@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { CloseIcon, PencilIcon, PlusIcon } from "@/components/shell/icons";
 import { useToast } from "@/components/toast";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { createClient } from "@/lib/supabase/client";
 import { archivePatientClinicalNote, createPatientClinicalNote, updatePatientClinicalNote } from "./clinical-notes-actions";
 import type { ClinicalNoteRecord } from "./clinical-notes-data";

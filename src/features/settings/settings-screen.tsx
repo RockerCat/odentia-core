@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { BellIcon, CalendarIcon, MapPinIcon } from "@/components/shell/icons";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import type { TeamMember } from "@/features/clinic/data";
 import type { Treatment } from "@/features/treatments/data";
 import { TratamientosSection } from "@/features/treatments/treatments-section";

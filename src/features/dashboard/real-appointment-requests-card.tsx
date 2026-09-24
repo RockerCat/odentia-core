@@ -5,7 +5,7 @@ import { Combobox } from "@/components/combobox";
 import { useToast } from "@/components/toast";
 import { UserAvatar } from "@/components/user-avatar";
 import { CalendarIcon, ChevronIcon, ClockIcon, CloseIcon, FlagIcon, MapPinIcon, NoteIcon, UserIcon } from "@/components/shell/icons";
-import { FIELD_CLASS, PopoverFieldRow, TimePopoverContent } from "./appointment-detail-modal";
+import { FIELD_CLASS, PopoverFieldRow, TimePopoverContent } from "./form-primitives";
 import type { Appointment } from "./appointments-data";
 import { acceptAppointmentRequest, rejectAppointmentRequest } from "./appointment-requests-actions";
 import type { AppointmentRequest } from "./appointment-requests-data";

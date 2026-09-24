@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { ChevronIcon, ClipboardIcon, CloseIcon, PhoneIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { useRole } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { chronologicalKey, type Appointment, type Dentist, type WeekDay } from "@/features/dashboard/mock-data";
 import { getPatientVisitSummary, PATIENT_STATUS_LABELS, type Patient } from "./mock-data";
 

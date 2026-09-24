@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AlertTriangleIcon, CheckCircleIcon } from "@/components/shell/icons";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import type { ReferenceValue } from "@/features/rips/catalog-data";
 import { confirmClinicSpecialtyRipsServiceAction } from "@/features/clinic/rips-specialty-service-actions";
 import {

@@ -10,9 +10,24 @@ type PersonalizedHeadingProps = {
   before: string;
   userName: string;
   after: string;
+  // Real name still resolving → a name-shaped skeleton, never a placeholder
+  // or mock name (see use-shell-identity.ts).
+  loading?: boolean;
 };
 
-export function PersonalizedHeading({ before, userName, after }: PersonalizedHeadingProps) {
+export function PersonalizedHeading({ before, userName, after, loading = false }: PersonalizedHeadingProps) {
+  if (loading) {
+    return (
+      <>
+        <span className={MUTED_TEXT_CLASS}>{before}</span>
+        <span aria-hidden="true" className="inline-block h-[0.8em] w-24 animate-pulse rounded bg-foreground/10 align-middle" />
+        <span className={MUTED_TEXT_CLASS}>{after}</span>
+      </>
+    );
+  }
+  // No real name available (resolution failed) → just drop it: "Hola, esta
+  // es la agenda para hoy." — never an invented one.
+  if (!userName) return <span className={MUTED_TEXT_CLASS}>{`${before.trimEnd()}${after}`}</span>;
   return (
     <>
       <span className={MUTED_TEXT_CLASS}>{before}</span>

@@ -31,15 +31,24 @@ export function MobileHeader() {
             aria-expanded={menuOpen}
             className="flex items-center gap-2 rounded-full py-1 pr-1 pl-2 hover:bg-foreground/5"
           >
-            <span className="hidden max-w-24 truncate text-sm font-medium min-[380px]:block">
-              {firstName(identity.name)}
-            </span>
-            <UserAvatar
-              name={identity.name}
-              initials={identity.initials}
-              avatar_url={identity.avatar_url}
-              sizeClassName="size-8"
-            />
+            {identity.status === "loading" ? (
+              <>
+                <span aria-hidden="true" className="hidden h-3 w-16 animate-pulse rounded bg-foreground/10 min-[380px]:block" />
+                <span aria-hidden="true" className="size-8 shrink-0 animate-pulse rounded-full bg-foreground/10" />
+              </>
+            ) : (
+              <>
+                <span className="hidden max-w-24 truncate text-sm font-medium min-[380px]:block">
+                  {firstName(identity.name)}
+                </span>
+                <UserAvatar
+                  name={identity.name}
+                  initials={identity.initials}
+                  avatar_url={identity.avatar_url}
+                  sizeClassName="size-8"
+                />
+              </>
+            )}
           </button>
 
           {menuOpen && (

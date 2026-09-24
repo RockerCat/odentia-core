@@ -9,7 +9,7 @@ import type { MembershipRole } from "@/features/session/types";
 import type { Patient } from "@/features/patients/data";
 import { PatientRecordModal } from "@/features/patients/patient-record-modal";
 import type { PatientIdentityCatalogs } from "@/features/patients/patients-screen";
-import { AnchoredPopover } from "./appointment-detail-modal";
+import { AnchoredPopover } from "./form-primitives";
 import type { Appointment, AppointmentStatus, ClinicalProfessional } from "./appointments-data";
 import { getDisplayStatus, getStatusStyle, pickSlotAppointment, REAL_STATUS_LABELS } from "./real-status";
 import { dateKeyOf, isPastSlot, toBoardProfessional, type BoardProfessional } from "./real-format";

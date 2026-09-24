@@ -64,6 +64,10 @@ export function addMinutesToSlot(slot: string, minutesToAdd: number): string {
   return formatSlotMinutes(parseSlotToMinutes(slot) + minutesToAdd);
 }
 
+// Duration choices offered by every appointment time picker
+// (TimePopoverContent in form-primitives.tsx).
+export const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
+
 // Default appointment length when one hasn't been set explicitly.
 export const DEFAULT_APPOINTMENT_DURATION = CLINIC_HOURS.intervalMinutes;
 

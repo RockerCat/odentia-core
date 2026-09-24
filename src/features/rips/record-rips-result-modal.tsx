@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { CloseIcon } from "@/components/shell/icons";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { recordRipsExportResultAction, type RipsExportHistoryEntry } from "./export-actions";
 
 // RIPS #5B — the ONLY UI that writes a MUV result, and only after the

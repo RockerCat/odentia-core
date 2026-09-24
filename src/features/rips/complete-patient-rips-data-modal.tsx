@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { CloseIcon } from "@/components/shell/icons";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { updatePatient, type PatientPatch } from "@/features/patients/actions";
 import type { PatientIdentityCatalogs } from "@/features/patients/data";
 import type { ReferenceValue } from "./catalog-data";

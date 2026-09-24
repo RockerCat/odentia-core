@@ -4,7 +4,7 @@ import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { BuildingIcon, PencilIcon, PlusIcon } from "@/components/shell/icons";
 import { useToast } from "@/components/toast";
 import { UserAvatar } from "@/components/user-avatar";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { updateClinicInfo } from "@/features/clinic/actions";
 import type { ClinicDetail, PendingInvitation, PrimaryLocation, Specialty, TeamMember } from "@/features/clinic/data";
 import { CLINIC_LOGO_ACCEPTED_TYPES, CLINIC_LOGO_MAX_BYTES, removeClinicLogo, uploadClinicLogo } from "@/features/clinic/logo";

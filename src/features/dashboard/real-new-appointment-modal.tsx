@@ -6,7 +6,7 @@ import { Combobox } from "@/components/combobox";
 import { useToast } from "@/components/toast";
 import { UserAvatar } from "@/components/user-avatar";
 import { CalendarIcon, ClockIcon, CloseIcon, FlagIcon, MapPinIcon, NoteIcon } from "@/components/shell/icons";
-import { FIELD_CLASS, PopoverFieldRow, TimePopoverContent } from "./appointment-detail-modal";
+import { FIELD_CLASS, PopoverFieldRow, TimePopoverContent } from "./form-primitives";
 import { isPastSlot, slotStartIso } from "./real-format";
 import { DEFAULT_APPOINTMENT_DURATION } from "./schedule-config";
 import { hasAvailableFutureSlotForDay, isoWeekdayOfDayKey, resolveAgendaSlotsForDay, type AgendaAvailabilityBlock } from "./agenda-hours";

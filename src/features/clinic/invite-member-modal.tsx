@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { CheckCircleIcon, ClipboardIcon, CloseIcon } from "@/components/shell/icons";
 import { useToast } from "@/components/toast";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { inviteClinicMember, type InvitationRecord } from "./team-actions";
 
 // "Agregar miembro" — creates a real, persisted clinic_invitations row via

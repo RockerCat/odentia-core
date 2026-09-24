@@ -13,7 +13,7 @@ import {
   UsersIcon,
   XCircleIcon,
 } from "@/components/shell/icons";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { fetchPatients, type Patient } from "@/features/patients/data";
 import type { MembershipRole } from "@/features/session/types";
 import { createClient } from "@/lib/supabase/client";

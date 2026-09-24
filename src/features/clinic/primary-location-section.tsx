@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useState } from "react";
 import { updatePrimaryLocation } from "@/features/clinic/actions";
 import type { PrimaryLocation } from "@/features/clinic/data";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { GeocodingError, locateOnMap } from "@/features/location/geocoding";
 
 // Leaflet touches window/document at import time — must never be part of

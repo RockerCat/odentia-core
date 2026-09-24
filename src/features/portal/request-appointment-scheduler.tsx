@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { CheckCircleIcon, ChevronIcon, CloseIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
-import { AnchoredPopover } from "@/features/dashboard/appointment-detail-modal";
+import { AnchoredPopover } from "@/features/dashboard/form-primitives";
 import { hasAvailableFutureSlot, initialsOf, isPastSlot, slotStartIso } from "@/features/dashboard/real-format";
 import { getWeekDaysForOffset, getWeekLabelForOffset } from "@/features/dashboard/real-week";
 import { TIME_SLOTS } from "@/features/dashboard/schedule-config";

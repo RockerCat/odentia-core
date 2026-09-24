@@ -106,7 +106,7 @@ export const TREATMENT_OPTIONS = [
   "Control de ortodoncia",
 ];
 
-export const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
+export { DURATION_OPTIONS } from "./schedule-config";
 
 // Catalog of common clinical procedures for the "Procedimientos realizados"
 // picker in the clinical encounter screen — same small-fixed-catalog

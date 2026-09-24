@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AlertTriangleIcon, CalendarIcon, PlusIcon, SearchIcon, UsersIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import type { Patient, PatientIdentityCatalogs } from "./data";
 import { NewPatientModal } from "./new-patient-modal";
 import type { PatientKpis } from "./patient-kpis";

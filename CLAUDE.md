@@ -177,11 +177,26 @@ shim, still used by those remaining mock screens — never a source of
 authorization for a real feature, and not yet safe to delete. Any
 component that shows a real user's NAME/avatar must read
 `useShellIdentity()` (`src/components/shell/use-shell-identity.ts`), the
-real-overlay hook Header/`PatientsGreeting`/`Greeting` all use — never the
+real-only hook Header/`PatientsGreeting`/`Greeting` all use — never the
 raw mock `useAuthenticatedIdentity()` alone, since the bridge above never
 carries name/avatar into the mock session (a real bug once: `/agenda`'s
 own greeting showed a fixed mock name for every real user until this was
 fixed).
+`useShellIdentity()` is REAL-ONLY: it returns `loading` (callers render a
+skeleton), `ready` (the real profile/clinic), or `unavailable` (a neutral,
+nameless state) — it never falls back to the mock identity (it once did,
+flashing the mock Assistant "Laura Torres"/Clinic Admin "María Gómez" in
+the real header/greeting on every load).
+
+**Zero tolerance for mocks in product.** A real surface shows only real
+data, a skeleton while loading, an explicit empty state, or an error state
+— never mock/demo/sample/hardcoded records, names, counts, or photos, not
+even as a loading placeholder. Fixtures live only in tests, `/dev-qa`, or
+explicitly isolated dev tools. `src/lib/no-mocks-in-product.test.ts` walks
+the real import graph from every non-`/dev-qa` route and fails on any mock
+module outside its documented allowlist (each entry says why); shared UI
+primitives live in `src/features/dashboard/form-primitives.tsx`, never
+imported from a mock module.
 
 There are two shells: `AppShell` (clinic roles — Superadmin, Clinic Admin,
 Dentist, Assistant) and `PortalShell` (Patient only, its own simpler nav —

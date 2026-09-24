@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { CloseIcon } from "@/components/shell/icons";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import {
   FINDING_TEXT_CLASS,
   getToothKind,

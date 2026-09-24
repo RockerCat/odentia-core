@@ -11,6 +11,9 @@ type AuthenticatedUserMenuIdentity = {
   initials: string;
   avatar_url?: string;
   secondaryLabel: string;
+  // True while the real identity is still resolving — renders a skeleton,
+  // never placeholder/mock text (see use-shell-identity.ts).
+  loading?: boolean;
 };
 
 type AuthenticatedUserMenuProps = {
@@ -29,8 +32,8 @@ type AuthenticatedUserMenuProps = {
 // shell's desktop Header so the public landing's authenticated header block
 // (landing-header.tsx) reuses the exact same menu instead of a second,
 // visually-duplicated one. The bell has no real notifications wired up
-// anywhere yet (see CLAUDE.md task scope) — same static badge everywhere
-// this renders.
+// anywhere yet (see CLAUDE.md task scope), so it shows NO count badge —
+// it used to render a hardcoded "2", a fake count on every real screen.
 //
 // The Marketplace icon is a plain external link to the same MARKETPLACE_URL
 // (Marketplace's own SSO start) as nav-items.ts's sidebar/tab-bar entry and
@@ -86,9 +89,6 @@ export function AuthenticatedUserMenu({ identity, onProfileClick, onSignOut, sig
         className="relative flex size-9 items-center justify-center rounded-lg text-foreground/80 hover:bg-foreground/5"
       >
         <BellIcon className="size-5" />
-        <span className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-warning text-[10px] font-medium text-primary-foreground">
-          2
-        </span>
       </button>
 
       <div className="relative">
@@ -99,11 +99,24 @@ export function AuthenticatedUserMenu({ identity, onProfileClick, onSignOut, sig
           aria-expanded={menuOpen}
           className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-foreground/5"
         >
-          <UserAvatar name={identity.name} initials={identity.initials} avatar_url={identity.avatar_url} />
-          <span className="hidden text-left sm:block">
-            <span className="block text-sm leading-tight font-medium">{identity.name}</span>
-            <span className="block text-xs leading-tight text-muted-foreground">{identity.secondaryLabel}</span>
-          </span>
+          {identity.loading ? (
+            <>
+              <span aria-hidden="true" className="size-9 shrink-0 animate-pulse rounded-full bg-foreground/10" />
+              <span aria-hidden="true" className="hidden flex-col gap-1.5 sm:flex">
+                <span className="h-3 w-28 animate-pulse rounded bg-foreground/10" />
+                <span className="h-2.5 w-20 animate-pulse rounded bg-foreground/10" />
+              </span>
+              <span className="sr-only">Cargando usuario</span>
+            </>
+          ) : (
+            <>
+              <UserAvatar name={identity.name} initials={identity.initials} avatar_url={identity.avatar_url} />
+              <span className="hidden text-left sm:block">
+                <span className="block text-sm leading-tight font-medium">{identity.name}</span>
+                <span className="block text-xs leading-tight text-muted-foreground">{identity.secondaryLabel}</span>
+              </span>
+            </>
+          )}
           <ChevronDownIcon className="hidden size-4 shrink-0 text-muted-foreground sm:block" />
         </button>
 

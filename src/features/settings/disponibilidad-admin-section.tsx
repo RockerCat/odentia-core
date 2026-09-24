@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarIcon, PlusIcon, SearchIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import type { TeamMember } from "@/features/clinic/data";
 import { createClient } from "@/lib/supabase/client";
 import { deleteAbsence, fetchAbsences, type Absence } from "./absences-data";

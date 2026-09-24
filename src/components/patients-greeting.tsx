@@ -11,11 +11,12 @@ import { PersonalizedHeading } from "./personalized-heading";
 // and showing a mock name here would be exactly the kind of "María Gómez
 // leaking into real data" this feature's migration must not have.
 export function PatientsGreeting() {
-  const { name } = useShellIdentity();
+  const { name, status } = useShellIdentity();
   return (
     <PersonalizedHeading
       before="Hola "
       userName={firstName(name)}
+      loading={status === "loading"}
       after=", estos son los pacientes de tu clínica."
     />
   );

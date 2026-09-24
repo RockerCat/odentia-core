@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDownIcon, SearchIcon } from "@/components/shell/icons";
-import { AnchoredPopover, FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { AnchoredPopover, FIELD_CLASS } from "@/features/dashboard/form-primitives";
 
 // Shared searchable single-select — collapsed to just a search field until
 // it gains focus or the user types, opening a dropdown of live-filtered

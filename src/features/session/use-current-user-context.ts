@@ -10,8 +10,8 @@ import type { ClinicContext } from "./types";
 // than cached, so a clinic rename/logo change shows up on the next
 // navigation instead of a stale copy. src/lib/supabase/proxy.ts has
 // already gated the route by the time this runs — this hook is purely for
-// DISPLAY, never for authorization. Returns null while loading or if
-// resolution fails; callers fall back to the mock identity in that case.
+// DISPLAY, never for authorization. Never falls back to any mock identity:
+// callers show a skeleton while loading and a neutral state on failure.
 //
 // Header, MobileHeader, and each page's own greeting (PatientsGreeting,
 // Greeting's real-shell equivalents, etc.) all mount this hook
@@ -41,19 +41,28 @@ function resolveOnce(): Promise<ClinicContext> {
 // skip the resolution entirely without breaking the rules of hooks (the
 // hook itself is always called; only the effect's work is conditional).
 // Every existing caller passes no argument and is unaffected.
-export function useCurrentUserContext(enabled = true): ClinicContext | null {
-  const [context, setContext] = useState<ClinicContext | null>(null);
+//
+// Distinguishes "still loading" from "failed" — the shell chrome needs
+// that to show a skeleton vs. a neutral state, never mock data in either
+// case (see use-shell-identity.ts).
+export type CurrentUserContextResult =
+  | { state: "loading" }
+  | { state: "error" }
+  | { state: "ready"; context: ClinicContext };
+
+export function useCurrentUserContextResult(enabled = true): CurrentUserContextResult {
+  const [result, setResult] = useState<CurrentUserContextResult>({ state: "loading" });
 
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
 
     resolveOnce()
-      .then((result) => {
-        if (!cancelled) setContext(result);
+      .then((context) => {
+        if (!cancelled) setResult({ state: "ready", context });
       })
       .catch(() => {
-        if (!cancelled) setContext(null);
+        if (!cancelled) setResult({ state: "error" });
       });
 
     return () => {
@@ -61,5 +70,12 @@ export function useCurrentUserContext(enabled = true): ClinicContext | null {
     };
   }, [enabled]);
 
-  return context;
+  return result;
+}
+
+// Same as before for its existing callers: the resolved context, or null
+// while loading or if resolution failed.
+export function useCurrentUserContext(enabled = true): ClinicContext | null {
+  const result = useCurrentUserContextResult(enabled);
+  return result.state === "ready" ? result.context : null;
 }

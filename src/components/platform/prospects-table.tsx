@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { SearchIcon } from "@/components/shell/icons";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import type { CommercialProspectListItem } from "@/features/commercial-prospects/platform-data";
 import { COMMERCIAL_PROSPECT_STATUS_LABELS, type CommercialProspectStatus } from "@/features/commercial-prospects/state-machine";
 import { ProspectStatusBadge } from "./prospect-status-badge";

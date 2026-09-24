@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { CloseIcon } from "@/components/shell/icons";
-import { FIELD_CLASS } from "./appointment-detail-modal";
+import { FIELD_CLASS } from "./form-primitives";
 import type { FindingType, OdontogramData, ToothFinding, ToothSurface } from "./odontogram-teeth";
 import { FINDING_TEXT_CLASS, getToothKind, LOWER_LEFT, LOWER_RIGHT, ToothGlyph, UPPER_LEFT, UPPER_RIGHT } from "./odontogram-teeth";
 

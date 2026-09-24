@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangleIcon, CheckCircleIcon, ChevronDownIcon, DownloadIcon } from "@/components/shell/icons";
 import { useToast } from "@/components/toast";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { EMPTY_PATIENT_IDENTITY_CATALOGS, type PatientIdentityCatalogs } from "@/features/patients/data";
 import type { ReferenceValue } from "./catalog-data";
 import { CompleteEncounterPrincipalDiagnosisModal } from "./complete-encounter-principal-diagnosis-modal";

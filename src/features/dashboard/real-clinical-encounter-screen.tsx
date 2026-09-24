@@ -52,7 +52,7 @@ import {
   type ClinicalCupsMappingOption,
   type ClinicSpecialtyRipsServiceOption,
 } from "@/features/rips/clinical-service-resolution";
-import { FIELD_CLASS } from "./appointment-detail-modal";
+import { FIELD_CLASS } from "./form-primitives";
 import { updateAppointment } from "./appointments-actions";
 import { fetchAppointmentsForPatient, type Appointment } from "./appointments-data";
 import { getEncounterFinalizeBlockers, isConsultationCausaMotivoMissing } from "./encounter-finalize-readiness";

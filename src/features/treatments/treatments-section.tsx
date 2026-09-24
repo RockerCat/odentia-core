@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { FlagIcon, PlusIcon } from "@/components/shell/icons";
-import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { createTreatment, renameTreatment, setTreatmentActive } from "./actions";
 import type { Treatment } from "./data";
 

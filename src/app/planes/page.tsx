@@ -15,12 +15,11 @@ import {
 import { LandingCtaLink } from "@/components/landing/landing-cta-link";
 import { LandingFooter } from "@/components/landing/landing-footer";
 import { LandingHeader } from "@/components/landing/landing-header";
-import { formatCOP, LOPADENT_BENEFIT_MOCK, SUBSCRIPTION_MOCK } from "@/features/subscription/mock-data";
+import { formatCOP, LOPADENT_BENEFIT_GOAL_COP, PLAN_PRICE_LABEL } from "@/features/subscription/pricing";
 
 // Public "Planes" page — same visual language/tokens as the home landing
-// (src/app/page.tsx). Reuses the subscription feature's mock price/goal
-// (src/features/subscription/mock-data.ts) so the numbers shown here never
-// drift from what a logged-in Clinic Admin sees in Mi Suscripción.
+// (src/app/page.tsx). Price/goal come from the real pricing constants
+// (src/features/subscription/pricing.ts).
 // "Quiero Odentia para mi clínica" opens /demo, same as the home page's
 // own CTA — Odentia's commercial model is assisted onboarding, never
 // public self-service clinic creation (see landing-header.tsx's own
@@ -41,7 +40,7 @@ const HOW_IT_WORKS = [
   {
     icon: StoreIcon,
     title: "Compra en LopaDent",
-    description: `Más de ${formatCOP(LOPADENT_BENEFIT_MOCK.goal)} durante el mes.`,
+    description: `Más de ${formatCOP(LOPADENT_BENEFIT_GOAL_COP)} durante el mes.`,
   },
   { icon: CheckCircleIcon, title: "Siguiente mes", description: "$0 en Odentia." },
 ];
@@ -72,7 +71,7 @@ export default function PlanesPage() {
               Un plan simple que puede salirte gratis.
             </h1>
             <p className="mx-auto mt-5 max-w-xl text-base text-muted-foreground sm:text-lg">
-              Empieza con un mes gratis. Después paga {SUBSCRIPTION_MOCK.priceLabel} o consigue meses sin
+              Empieza con un mes gratis. Después paga {PLAN_PRICE_LABEL} o consigue meses sin
               costo gracias a tus compras en LopaDent.
             </p>
           </div>
@@ -115,7 +114,7 @@ export default function PlanesPage() {
                   <p className="text-sm font-semibold text-foreground/70">Plan Odentia</p>
                 </div>
 
-                <p className="mt-5 text-3xl font-bold tracking-tight">{SUBSCRIPTION_MOCK.priceLabel}</p>
+                <p className="mt-5 text-3xl font-bold tracking-tight">{PLAN_PRICE_LABEL}</p>
                 <p className="mt-1 text-xs text-muted-foreground">Después de tu primer mes gratis.</p>
 
                 <p className="mt-4 flex-1 text-sm text-muted-foreground">
@@ -147,7 +146,7 @@ export default function PlanesPage() {
 
                 <p className="mt-4 flex-1 text-sm text-muted-foreground">
                   Compra más de{" "}
-                  <span className="font-medium text-foreground">{formatCOP(LOPADENT_BENEFIT_MOCK.goal)} COP</span> en
+                  <span className="font-medium text-foreground">{formatCOP(LOPADENT_BENEFIT_GOAL_COP)} COP</span> en
                   LopaDent durante el mes y tu siguiente mensualidad de Odentia es gratis.
                 </p>
               </div>
@@ -181,7 +180,7 @@ export default function PlanesPage() {
               <ClockIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <p className="text-xs text-muted-foreground">
                 Si no alcanzas el monto en un mes, tu suscripción continúa normalmente por{" "}
-                {SUBSCRIPTION_MOCK.priceLabel}.
+                {PLAN_PRICE_LABEL}.
               </p>
             </div>
           </div>
