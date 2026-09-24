@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { hasAvailableFutureSlotForDay, isoWeekdayOfDayKey, resolveAgendaSlotsForDay, type AgendaAvailabilityBlock } from "@/features/dashboard/agenda-hours";
-import { isPastSlot } from "@/features/dashboard/real-format";
+import { isPastSlot, slotStartIso } from "@/features/dashboard/real-format";
 
 // A bookable professional's REAL schedule, as the Patient may see it:
 // her weekly availability blocks and active absence dates, via the
@@ -67,4 +67,20 @@ export function isPortalDaySelectable(schedule: PortalProfessionalSchedule, dayK
 
 export function isPortalSlotSelectable(schedule: PortalProfessionalSchedule, dayKey: string, slot: string): boolean {
   return portalSlotsForDay(schedule, dayKey).includes(slot) && !isPastSlot(dayKey, slot);
+}
+
+// Reprogramar only: the Cita's CURRENT slot (same professional + same
+// instant) is not a real change, so it is never a valid destination. A
+// different professional at the same time, or the same professional at
+// another time, IS a change. Minute precision, same as every slot here.
+// request_my_appointment_reschedule() rejects it server-side too.
+export function isCurrentAppointmentSlot(
+  current: { professionalProfileId: string; startsAt: string } | undefined,
+  professionalProfileId: string,
+  dayKey: string,
+  slot: string,
+): boolean {
+  if (!current || current.professionalProfileId !== professionalProfileId) return false;
+  const toMinute = (iso: string) => Math.floor(new Date(iso).getTime() / 60_000);
+  return toMinute(slotStartIso(dayKey, slot)) === toMinute(current.startsAt);
 }

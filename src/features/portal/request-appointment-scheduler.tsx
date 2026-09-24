@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { PortalProfessional } from "./requests-data";
 import {
   fetchMyProfessionalSchedule,
+  isCurrentAppointmentSlot,
   isPortalDaySelectable,
   portalSlotsForDay,
   type PortalProfessionalSchedule,
@@ -57,6 +58,7 @@ export function RequestAppointmentScheduler({
   initialProfessionalId,
   submitLabel = "Solicitar cita",
   skipConfirm = false,
+  currentSlot,
 }: {
   professionals: PortalProfessional[];
   // Resolves only on a confirmed backend result — never optimistic.
@@ -66,6 +68,10 @@ export function RequestAppointmentScheduler({
   // The approved Reprogramar modal sends directly from its own CTA; the
   // new-request flow keeps its confirmation step.
   skipConfirm?: boolean;
+  // Reprogramar only: the Cita being moved — its exact current slot (same
+  // professional + time) is shown but not selectable. Omitted by "Agendar
+  // nueva cita", whose grid is unaffected.
+  currentSlot?: { professionalProfileId: string; startsAt: string };
 }) {
   const [selectedProfessionalId, setSelectedProfessionalId] = useState(
     initialProfessionalId && professionals.some((p) => p.professionalProfileId === initialProfessionalId)
@@ -107,7 +113,10 @@ export function RequestAppointmentScheduler({
   const selectedProfessional = professionals.find((p) => p.professionalProfileId === selectedProfessionalId) ?? null;
   const selectedDayInfo = selectedDay ? weekDays.find((d) => d.key === selectedDay) : null;
   const staleTime = Boolean(selectedDay && selectedTime) && isPastSlot(selectedDay!, selectedTime!);
-  const canSubmit = Boolean(schedule && selectedProfessionalId && selectedDay && selectedTime) && !staleTime && !submitting;
+  const selectedIsCurrent =
+    Boolean(selectedDay && selectedTime) && isCurrentAppointmentSlot(currentSlot, selectedProfessionalId, selectedDay!, selectedTime!);
+  const canSubmit =
+    Boolean(schedule && selectedProfessionalId && selectedDay && selectedTime) && !staleTime && !selectedIsCurrent && !submitting;
   const slotsForSelectedDay = schedule && selectedDay ? portalSlotsForDay(schedule, selectedDay) : [];
   const weekHasAvailability = schedule ? weekDays.some((d) => isPortalDaySelectable(schedule, d.key)) : false;
 
@@ -292,13 +301,16 @@ export function RequestAppointmentScheduler({
           <p className="text-sm font-medium text-foreground">Horario preferido — {selectedDayInfo?.label}</p>
           <div className="mt-2 grid grid-cols-3 gap-2">
             {slotsForSelectedDay.map((slot) => {
-              const past = isPastSlot(selectedDay, slot);
+              const isCurrent = isCurrentAppointmentSlot(currentSlot, selectedProfessionalId, selectedDay, slot);
+              const past = isPastSlot(selectedDay, slot) || isCurrent;
               const active = selectedTime === slot;
               return (
                 <button
                   key={slot}
                   type="button"
                   disabled={past}
+                  title={isCurrent ? "Este es el horario de tu cita actual" : undefined}
+                  aria-label={isCurrent ? `${slot} — tu cita actual` : undefined}
                   onClick={() => setSelectedTime(slot)}
                   className={`rounded-lg border px-2 py-2.5 text-xs font-medium transition-colors ${
                     past

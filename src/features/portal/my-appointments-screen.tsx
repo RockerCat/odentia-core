@@ -899,6 +899,7 @@ function RescheduleModal({
                 initialProfessionalId={appointment.professionalProfileId}
                 submitLabel="Solicitar reprogramación"
                 skipConfirm
+                currentSlot={{ professionalProfileId: appointment.professionalProfileId, startsAt: appointment.startsAt }}
                 onSubmit={async (professionalProfileId, preferredStartsAt) => {
                   const outcome = await onSubmit(professionalProfileId, preferredStartsAt);
                   if (outcome.status === "ok") setSent(true);

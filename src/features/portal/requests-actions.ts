@@ -99,6 +99,9 @@ export async function requestMyAppointmentReschedule(
     if (error.message.includes("preferred date is in the past")) {
       return { status: "error", message: "El horario elegido ya pasó. Elige otro." };
     }
+    if (error.message.includes("same as the current appointment")) {
+      return { status: "error", message: "Selecciona un horario diferente al de tu cita actual." };
+    }
     if (error.message.includes("professional is not available")) {
       return { status: "error", message: "Ese profesional ya no está disponible en tu clínica." };
     }
