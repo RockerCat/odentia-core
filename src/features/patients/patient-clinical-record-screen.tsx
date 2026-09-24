@@ -21,6 +21,7 @@ import { DocumentosTab } from "./documentos-tab";
 import type { PatientMedicalHistory } from "./medical-history-data";
 import { OdontogramaTab } from "./odontograma-tab";
 import type { ProfessionalDirectory } from "./pdf/real-clinical-record-data";
+import { HISTORIA_CLINICA_TABS, type HistoriaClinicaTab } from "./encounter-detail-link";
 import { ResumenTab } from "./resumen-tab";
 import type { TreatmentPlanItem } from "./treatment-plan-data";
 import type { ToothFindingRecord } from "./tooth-findings-data";
@@ -45,8 +46,8 @@ import type { ToothFindingRecord } from "./tooth-findings-data";
 // now generates a real PDF (see pdf/real-clinical-record-document.tsx)
 // from these same real rows — no more mock content, no more disabled
 // state.
-const TABS = ["Resumen", "Antecedentes", "Odontograma", "Atenciones", "Documentos"] as const;
-type Tab = (typeof TABS)[number];
+const TABS = HISTORIA_CLINICA_TABS;
+type Tab = HistoriaClinicaTab;
 
 function fullName(patient: Patient): string {
   return `${patient.firstName} ${patient.lastName}`.trim();
@@ -78,6 +79,7 @@ export function PatientClinicalRecordScreen({
   medicalHistory: initialMedicalHistory,
   toothFindings: initialToothFindings,
   clinicalEncounters,
+  initialTab = "Resumen",
   usualDentistName = null,
   encounterClinicalData,
   clinicalDocuments: initialClinicalDocuments,
@@ -97,6 +99,9 @@ export function PatientClinicalRecordScreen({
   medicalHistory: PatientMedicalHistory | null;
   toothFindings: ToothFindingRecord[];
   clinicalEncounters: ClinicalEncounterRecord[];
+  // From `?tab=` (resolveHistoriaClinicaTab) — e.g. a completed Cita's
+  // history row in Agenda links straight to Atenciones.
+  initialTab?: Tab;
   // "Odontólogo habitual", resolved server-side by the page with the same
   // rule as the Paciente modal (usual-dentist.ts); null → empty state.
   usualDentistName?: string | null;
@@ -115,7 +120,7 @@ export function PatientClinicalRecordScreen({
   causaMotivoOptions?: ReferenceValue[];
   diagnosisTypeOptions?: ReferenceValue[];
 }) {
-  const [activeTab, setActiveTab] = useState<Tab>("Resumen");
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [medicalHistory, setMedicalHistory] = useState(initialMedicalHistory);
   const [toothFindings, setToothFindings] = useState(initialToothFindings);
   const [clinicalDocuments, setClinicalDocuments] = useState(initialClinicalDocuments);

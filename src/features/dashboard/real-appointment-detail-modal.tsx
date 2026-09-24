@@ -33,6 +33,7 @@ import {
   type AppointmentPatch,
 } from "./appointments-actions";
 import { fetchAppointmentsForPatient, type Appointment, type AppointmentStatus } from "./appointments-data";
+import { completedEncounterDetailHref } from "@/features/patients/encounter-detail-link";
 import { dateKeyOf, endTimeIso, formatDateLabel, formatTimeLabel, isPastSlot } from "./real-format";
 import { hasAvailableFutureSlotForDay, isoWeekdayOfDayKey, resolveAgendaSlotsForDay, type AgendaAvailabilityBlock } from "./agenda-hours";
 import {
@@ -135,7 +136,6 @@ export function RealAppointmentDetailModal({
   const [editingField, setEditingField] = useState<FieldKey | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showNoShowConfirm, setShowNoShowConfirm] = useState(false);
-  const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [reactivating, setReactivating] = useState(false);
   const [markingArrived, setMarkingArrived] = useState(false);
@@ -520,16 +520,6 @@ export function RealAppointmentDetailModal({
               </div>
             </div>
           )}
-          {infoMessage && (
-            <div className="px-5 pt-4">
-              <div className="flex items-start justify-between gap-2 rounded-lg border border-info/25 bg-info/10 px-3 py-2 text-xs font-medium text-info">
-                <span>{infoMessage}</span>
-                <button type="button" onClick={() => setInfoMessage(null)} aria-label="Cerrar aviso" className="shrink-0">
-                  <CloseIcon className="size-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className="sm:grid sm:grid-cols-[1fr_260px]">
             <div className="px-5 py-4">
@@ -558,7 +548,7 @@ export function RealAppointmentDetailModal({
                 now={now}
                 matchHeightRef={leftColumnRef}
                 modalRef={panelRef}
-                onItemClick={() => setInfoMessage("El detalle de esta atención estará disponible próximamente.")}
+                onOpenEncounter={(href) => router.push(href)}
                 onViewFullHistory={() => router.push(`/pacientes/${appointment.patientId}/historial-citas`)}
               />
             </div>
@@ -1158,14 +1148,16 @@ function PatientHistoryPanel({
   now,
   matchHeightRef,
   modalRef,
-  onItemClick,
+  onOpenEncounter,
   onViewFullHistory,
 }: {
   history: Appointment[] | null;
   now: Date;
   matchHeightRef: RefObject<HTMLDivElement | null>;
   modalRef: RefObject<HTMLDivElement | null>;
-  onItemClick: () => void;
+  // A completed Cita's row opens its real atención in Historia Clínica →
+  // Atenciones (completedEncounterDetailHref) — never a placeholder.
+  onOpenEncounter: (href: string) => void;
   onViewFullHistory: () => void;
 }) {
   const candidates = history ?? [];
@@ -1178,6 +1170,8 @@ function PatientHistoryPanel({
   // registered. This component unmounts once the route change lands, so
   // there's nothing to reset navigating back to false for.
   const [navigating, setNavigating] = useState(false);
+  // Same pure-navigation reasoning as `navigating` above, per row.
+  const [openingEncounterFor, setOpeningEncounterFor] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     const recalc = () => {
@@ -1230,7 +1224,18 @@ function PatientHistoryPanel({
         ) : (
           <ol className="flex flex-col gap-2 border-l border-border/70 pl-4">
             {visible.map((item) => (
-              <RealHistoryEntry key={item.id} item={item} now={now} modalRef={modalRef} onClick={onItemClick} />
+              <RealHistoryEntry
+                key={item.id}
+                item={item}
+                now={now}
+                modalRef={modalRef}
+                opening={openingEncounterFor === item.id}
+                onOpenEncounter={(href) => {
+                  if (openingEncounterFor) return;
+                  setOpeningEncounterFor(item.id);
+                  onOpenEncounter(href);
+                }}
+              />
             ))}
           </ol>
         )}
@@ -1238,7 +1243,7 @@ function PatientHistoryPanel({
         <div aria-hidden="true" className="invisible absolute inset-x-0 top-0 -z-10">
           <ol ref={measureListRef} className="flex flex-col gap-2 border-l border-border/70 pl-4">
             {candidates.map((item) => (
-              <RealHistoryEntry key={item.id} item={item} now={now} modalRef={modalRef} onClick={() => {}} />
+              <RealHistoryEntry key={item.id} item={item} now={now} modalRef={modalRef} opening={false} onOpenEncounter={() => {}} />
             ))}
           </ol>
         </div>
@@ -1271,14 +1276,17 @@ function RealHistoryEntry({
   item,
   now,
   modalRef,
-  onClick,
+  opening,
+  onOpenEncounter,
 }: {
   item: Appointment;
   now: Date;
   modalRef: RefObject<HTMLDivElement | null>;
-  onClick: () => void;
+  opening: boolean;
+  onOpenEncounter: (href: string) => void;
 }) {
   const displayStatus = getDisplayStatus(item, now);
+  const encounterHref = completedEncounterDetailHref(item);
   const treatmentLabel = item.status === "completed" ? "Tratamiento realizado" : "Tratamiento planeado";
   const dayLabel = formatDateLabel(item.startsAt);
   const timeLabel = formatTimeLabel(item.startsAt);
@@ -1300,13 +1308,22 @@ function RealHistoryEntry({
               {treatmentLabel}: {item.reason ?? "Sin definir"}
             </p>
             {item.notes && <p className="mt-1 line-clamp-2 text-foreground/65">{item.notes}</p>}
+            {encounterHref && <p className="mt-1 font-medium text-primary">Ver atención en Historia clínica</p>}
           </>
         }
       >
-        <button type="button" onClick={onClick} className="w-full rounded-lg px-2 py-1 text-left leading-tight transition-colors hover:bg-foreground/5">
+        {/* Only a completed Cita has a real atención to open; any other
+            row is informational (its tooltip above), never a dead click. */}
+        <button
+          type="button"
+          onClick={encounterHref ? () => onOpenEncounter(encounterHref) : undefined}
+          disabled={opening}
+          aria-label={encounterHref ? `Ver atención del ${dayLabel} en Historia clínica` : undefined}
+          className={`w-full rounded-lg px-2 py-1 text-left leading-tight transition-colors disabled:opacity-60 ${encounterHref ? "hover:bg-foreground/5" : "cursor-default"}`}
+        >
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-medium text-label-foreground">
-              {dayLabel} · {timeLabel}
+              {opening ? "Abriendo atención…" : `${dayLabel} · ${timeLabel}`}
             </span>
             <span className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${getHistoryStatusBadgeClass(displayStatus)}`}>
               {getStatusLabel(displayStatus)}

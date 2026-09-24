@@ -1,5 +1,6 @@
 "use client";
 
+import { encounterAnchorIdForAppointment } from "./encounter-detail-link";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { findCupsByCodeAction, findDiagnosisByCodeAction } from "@/features/rips/actions";
@@ -237,7 +238,11 @@ export function AtencionesTab({
           const occurredAt = new Date(encounter.occurredAt);
           const attendedByName = encounter.attendedBy ? resolvedByProfileId.get(encounter.attendedBy)?.name : undefined;
           return (
-            <li key={encounter.id} className="relative">
+            <li
+              key={encounter.id}
+              id={encounter.appointmentId ? encounterAnchorIdForAppointment(encounter.appointmentId) : undefined}
+              className="relative scroll-mt-24 rounded-lg target:bg-primary/5 target:ring-1 target:ring-primary/20"
+            >
               <span
                 className="absolute -left-[19px] top-1.5 size-1.5 rounded-full bg-muted-foreground/40 ring-4 ring-surface"
                 aria-hidden="true"

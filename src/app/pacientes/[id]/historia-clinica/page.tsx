@@ -4,6 +4,7 @@ import { fetchAppointmentsForPatient } from "@/features/dashboard/appointments-d
 import { fetchPatientClinicalDocuments } from "@/features/patients/clinical-documents-data";
 import { fetchEncounterClinicalDataForEncounters, fetchPatientClinicalEncounters } from "@/features/patients/clinical-encounters-data";
 import { resolveUsualDentistName } from "@/features/patients/usual-dentist";
+import { resolveHistoriaClinicaTab } from "@/features/patients/encounter-detail-link";
 import { fetchPatientClinicalNotes } from "@/features/patients/clinical-notes-data";
 import { canEditClinicalData } from "@/features/patients/clinical-permissions";
 import { fetchPatientById } from "@/features/patients/data";
@@ -32,8 +33,15 @@ import { createClient } from "@/lib/supabase/server";
 // canEditClinicalData() derives write access from the real
 // membership.role + professional_profile.active resolved here
 // server-side — never the DEV role switcher.
-export default async function PatientClinicalRecordPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PatientClinicalRecordPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string | string[] }>;
+}) {
   const { id } = await params;
+  const initialTab = resolveHistoriaClinicaTab((await searchParams).tab);
   const supabase = await createClient();
   const context = await resolveClinicContext(supabase);
   if (context.status !== "ok") notFound();
@@ -168,6 +176,7 @@ export default async function PatientClinicalRecordPage({ params }: { params: Pr
         medicalHistory={medicalHistory}
         toothFindings={toothFindings}
         clinicalEncounters={clinicalEncounters}
+        initialTab={initialTab}
         usualDentistName={usualDentistName}
         encounterClinicalData={encounterClinicalData}
         clinicalDocuments={clinicalDocuments}
