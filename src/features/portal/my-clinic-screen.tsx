@@ -2,6 +2,7 @@ import { BuildingIcon, MapPinIcon, PhoneIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import type { ClinicGalleryPhoto } from "@/features/clinic/clinic-media-data";
 import type { PrimaryLocation } from "@/features/clinic/data";
+import { normalizeClinicDescription } from "@/features/clinic/description";
 import { initialsOf } from "@/features/dashboard/real-format";
 import type { PatientClinic } from "@/features/session/types";
 import { ClinicLocationView } from "./clinic-location-view";
@@ -40,6 +41,7 @@ export function MyClinicScreen({
 }) {
   const name = clinic?.name ?? "Mi clínica";
   const phone = clinic?.phone;
+  const description = normalizeClinicDescription(clinic?.description);
   const address = formatClinicAddress(location);
   const showMap = location !== null && hasUsableCoordinates(location);
   const directions = directionsUrl(location);
@@ -84,6 +86,15 @@ export function MyClinicScreen({
           </a>
         )}
       </div>
+
+      {/* Sobre nosotros — only when the clinic configured a description
+          (Clínica → Información general); otherwise nothing is rendered. */}
+      {description && (
+        <div className={CARD}>
+          <h2 className="text-base font-semibold">Sobre nosotros</h2>
+          <p className="mt-2 whitespace-pre-line break-words text-sm text-foreground/80">{description}</p>
+        </div>
+      )}
 
       {/* Dónde estamos — only with a real address and/or coordinates. */}
       {(showMap || address) && (

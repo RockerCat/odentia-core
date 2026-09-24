@@ -24,12 +24,14 @@ export type ClinicDetail = {
   // an invented date. Used by Mi Suscripción; harmless additive field for
   // every other existing caller of fetchClinicDetail.
   trialEndsAt: string | null;
+  // Portal "Sobre nosotros" — null when not configured.
+  description: string | null;
 };
 
 export async function fetchClinicDetail(supabase: SupabaseClient, clinicId: string): Promise<ClinicDetail | null> {
   const { data, error } = await supabase
     .from("clinics")
-    .select("id, name, legal_name, tax_id, email, phone, logo_url, status, created_at, trial_ends_at")
+    .select("id, name, legal_name, tax_id, email, phone, logo_url, status, created_at, trial_ends_at, description")
     .eq("id", clinicId)
     .maybeSingle();
   if (error) {
@@ -49,6 +51,7 @@ export async function fetchClinicDetail(supabase: SupabaseClient, clinicId: stri
     status: data.status,
     createdAt: data.created_at,
     trialEndsAt: data.trial_ends_at,
+    description: data.description,
   };
 }
 

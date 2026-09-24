@@ -83,6 +83,29 @@ describe("/portal/clinica sources", () => {
     expect(code(screen)).not.toMatch(/Odontología general|placeholder|demo/i);
   });
 
+  it("'Sobre nosotros': only with a real description, after identity/contact and before 'Dónde estamos', line breaks kept", () => {
+    const body = code(screen);
+    expect(body).toContain("const description = normalizeClinicDescription(clinic?.description);");
+    const section = body.slice(body.indexOf("{description && ("), body.indexOf("{(showMap || address) && ("));
+    expect(section).toContain("Sobre nosotros");
+    expect(section).toContain("whitespace-pre-line");
+    expect(section).toContain("{description}</p>");
+    expect(body.indexOf("{description && (")).toBeGreaterThan(body.indexOf("WhatsApp"));
+    expect(body.indexOf("{description && (")).toBeLessThan(body.indexOf("Dónde estamos"));
+    // Null/blank → nothing rendered at all (no empty card, no placeholder).
+    expect(body.match(/Sobre nosotros/g)?.length).toBe(1);
+    expect(section).not.toMatch(/No configurado|EMPTY_VALUE|:\s*null/);
+  });
+
+  it("the description is read only through resolvePatientContext()'s own clinic embed (patient-scoped)", () => {
+    const resolver = fs.readFileSync(path.resolve(__dirname, "../session/resolve-patient-context.ts"), "utf8");
+    expect(resolver).toContain("clinic:clinics(id, name, slug, logo_url, phone, status, description))");
+    expect(resolver).toContain('.eq("profile_id", user.id)');
+    expect(resolver).toContain("description: clinicRow.description,");
+    expect(page).toContain("if (context.status === \"ok\") clinic = context.clinic;");
+    expect(page).not.toMatch(/from\("clinics"\)/);
+  });
+
   it("'Nuestro equipo' cards: responsive grid, one prominent avatar (photo or same-size initials), optional lines only when real", () => {
     const team = screen.slice(screen.indexOf("{team.length > 0 && ("), screen.indexOf('{professionals.status === "error" && ('));
     expect(team).toContain('className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"');

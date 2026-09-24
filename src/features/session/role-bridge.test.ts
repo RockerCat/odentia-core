@@ -45,7 +45,7 @@ const OK_PATIENT: PatientContext = {
     birthDate: null,
     clinicId: "c1",
   },
-  clinic: { id: "c1", name: "Clínica E2E", slug: "clinica-e2e", logoUrl: null, phone: null, status: "active" },
+  clinic: { id: "c1", name: "Clínica E2E", slug: "clinica-e2e", logoUrl: null, phone: null, status: "active", description: null },
 };
 
 describe("bridgeAuthenticatedContext", () => {

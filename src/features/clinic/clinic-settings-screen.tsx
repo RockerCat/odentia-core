@@ -7,6 +7,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { updateClinicInfo } from "@/features/clinic/actions";
 import type { ClinicDetail, PendingInvitation, PrimaryLocation, Specialty, TeamMember } from "@/features/clinic/data";
+import { CLINIC_DESCRIPTION_MAX_LENGTH, normalizeClinicDescription } from "@/features/clinic/description";
 import { CLINIC_LOGO_ACCEPTED_TYPES, CLINIC_LOGO_MAX_BYTES, removeClinicLogo, uploadClinicLogo } from "@/features/clinic/logo";
 import { InviteMemberModal } from "@/features/clinic/invite-member-modal";
 import { MyProfessionalProfileSection, StatusBadge } from "@/features/clinic/my-professional-profile-section";
@@ -169,6 +170,7 @@ function InformacionGeneralSection({
   const [clinicName, setClinicName] = useState(clinic.name);
   const [phone, setPhone] = useState(clinic.phone ?? "");
   const [email, setEmail] = useState(clinic.email ?? "");
+  const [description, setDescription] = useState<string | null>(clinic.description);
 
   // Only one field editable at a time (see task scope) — a single key here,
   // rather than each InfoField owning its own "isEditing" state.
@@ -186,6 +188,20 @@ function InformacionGeneralSection({
       return;
     }
     apply();
+    setEditingField(null);
+  };
+
+  const saveDescription = async (next: string) => {
+    setSavingField("description");
+    setFieldError(null);
+    const normalized = normalizeClinicDescription(next);
+    const outcome = await updateClinicInfo(clinic.id, { description: normalized });
+    setSavingField(null);
+    if (outcome.status === "error") {
+      setFieldError("No pudimos guardar el cambio. Intenta de nuevo.");
+      return;
+    }
+    setDescription(normalized);
     setEditingField(null);
   };
 
@@ -282,6 +298,15 @@ function InformacionGeneralSection({
             error={editingField === "tax_id" ? fieldError : null}
             onStartEdit={() => setEditingField("tax_id")}
             onSave={(next) => saveClinicField("tax_id", next, () => onTaxIdChange(next))}
+            onCancel={() => setEditingField(null)}
+          />
+          <DescriptionField
+            value={description}
+            isEditing={editingField === "description"}
+            saving={savingField === "description"}
+            error={editingField === "description" ? fieldError : null}
+            onStartEdit={() => setEditingField("description")}
+            onSave={saveDescription}
             onCancel={() => setEditingField(null)}
           />
         </div>
@@ -457,6 +482,106 @@ function InfoField({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// Clinic description — same read-then-edit language as InfoField, but a
+// multi-line textarea (Enter adds a line; Escape cancels) with a live
+// counter, and saving blank text clears it (stored as NULL → the Portal's
+// "Sobre nosotros" section is hidden). Optional.
+function DescriptionField({
+  value,
+  isEditing,
+  saving,
+  error,
+  onStartEdit,
+  onSave,
+  onCancel,
+}: {
+  value: string | null;
+  isEditing: boolean;
+  saving: boolean;
+  error: string | null;
+  onStartEdit: () => void;
+  onSave: (next: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(value ?? "");
+  const label = "Descripción de la clínica";
+  const hint = "Será visible para tus pacientes en el Portal, en la sección “Sobre nosotros”.";
+
+  const startEdit = () => {
+    setDraft(value ?? "");
+    onStartEdit();
+  };
+
+  if (isEditing) {
+    return (
+      <div className="sm:col-span-2">
+        <label htmlFor="clinic-description" className="text-xs text-label-foreground">
+          {label}
+        </label>
+        <textarea
+          id="clinic-description"
+          autoFocus
+          rows={4}
+          maxLength={CLINIC_DESCRIPTION_MAX_LENGTH}
+          value={draft}
+          disabled={saving}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onCancel();
+            }
+          }}
+          className={`${FIELD_CLASS} mt-0.5 resize-y`}
+        />
+        <div className="mt-1 flex items-start justify-between gap-3">
+          <p className="text-xs text-muted-foreground">{hint}</p>
+          <p className="shrink-0 text-xs tabular-nums text-muted-foreground">
+            {draft.length}/{CLINIC_DESCRIPTION_MAX_LENGTH}
+          </p>
+        </div>
+        {error && <p className="mt-1 text-xs text-danger">{error}</p>}
+        <div className="mt-1.5 flex justify-end gap-1.5">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="rounded-md px-2 py-1 text-xs font-medium text-foreground/70 hover:bg-foreground/5 disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => !saving && onSave(draft)}
+            disabled={saving}
+            className="rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+          >
+            {saving ? "Guardando…" : "Guardar"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="sm:col-span-2">
+      <dt className="text-xs text-label-foreground">{label}</dt>
+      <div className="mt-0.5 flex items-start gap-1.5">
+        <dd
+          onClick={startEdit}
+          className={`min-w-0 flex-1 cursor-pointer whitespace-pre-line break-words font-medium hover:text-primary ${value ? "" : "text-muted-foreground"}`}
+        >
+          {value || "No configurado"}
+        </dd>
+        <button type="button" onClick={startEdit} aria-label={`Editar ${label}`} className="mt-0.5 shrink-0 text-muted-foreground/50 hover:text-primary">
+          <PencilIcon className="size-3" />
+        </button>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
     </div>
   );
 }

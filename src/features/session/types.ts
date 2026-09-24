@@ -98,6 +98,8 @@ export type PatientClinic = {
   logoUrl: string | null;
   phone: string | null;
   status: "active" | "suspended";
+  // Portal "Sobre nosotros" (/portal/clinica) — null when not configured.
+  description: string | null;
 };
 
 // See resolve-patient-context.ts for how each status is reached:

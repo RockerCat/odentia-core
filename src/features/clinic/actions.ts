@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { normalizeClinicDescription } from "./description";
 
 export type ActionOutcome = { status: "ok" } | { status: "error" };
 
@@ -16,12 +17,16 @@ export type ActionOutcome = { status: "ok" } | { status: "error" };
 // one and only place that decides the stored shape, without a migration
 // that could reject a legitimate future value the exact format of which
 // wasn't in scope to fully nail down this session.
-export type ClinicInfoPatch = Partial<{ name: string; phone: string; email: string; tax_id: string }>;
+//
+// description (Portal "Sobre nosotros") — blank is stored as NULL, see
+// description.ts; length is enforced by the DB check.
+export type ClinicInfoPatch = Partial<{ name: string; phone: string; email: string; tax_id: string; description: string | null }>;
 
 export async function updateClinicInfo(clinicId: string, patch: ClinicInfoPatch): Promise<ActionOutcome> {
   const supabase = createClient();
-  const normalized =
-    patch.tax_id !== undefined ? { ...patch, tax_id: patch.tax_id.replace(/[^0-9]/g, "") || null } : patch;
+  let normalized: Record<string, string | null> = { ...patch };
+  if (patch.tax_id !== undefined) normalized = { ...normalized, tax_id: patch.tax_id.replace(/[^0-9]/g, "") || null };
+  if (patch.description !== undefined) normalized = { ...normalized, description: normalizeClinicDescription(patch.description) };
   const { error } = await supabase.from("clinics").update(normalized).eq("id", clinicId);
   return error ? { status: "error" } : { status: "ok" };
 }
