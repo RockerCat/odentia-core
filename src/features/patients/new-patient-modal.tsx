@@ -97,6 +97,8 @@ export function NewPatientModal({
   const [municipalityOfResidenceCode, setMunicipalityOfResidenceCode] = useState("");
   const [municipalityLabel, setMunicipalityLabel] = useState("");
   const [residenceZoneCode, setResidenceZoneCode] = useState("");
+  // Separate from País de residencia — never prefilled from it.
+  const [countryOfOriginCode, setCountryOfOriginCode] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Never true until the odontóloga/asistente actually tries to submit
@@ -140,6 +142,7 @@ export function NewPatientModal({
     countryOfResidenceCode,
     municipalityOfResidenceCode,
     residenceZoneCode,
+    countryOfOriginCode,
   });
   const canCreate = missingFields.length === 0 && !creating;
 
@@ -179,6 +182,7 @@ export function NewPatientModal({
       countryOfResidenceCode,
       municipalityOfResidenceCode: isColombia ? municipalityOfResidenceCode : null,
       residenceZoneCode: isColombia ? residenceZoneCode : null,
+      countryOfOriginCode,
     });
 
     setCreating(false);
@@ -424,6 +428,24 @@ export function NewPatientModal({
                 </select>
               </label>
             )}
+
+            <label className="flex flex-col gap-1 text-sm">
+              <FieldLabel invalid={isFieldInvalid("countryOfOriginCode")}>País de origen</FieldLabel>
+              <select
+                value={countryOfOriginCode}
+                onChange={(e) => setCountryOfOriginCode(e.target.value)}
+                className={fieldClassName(isFieldInvalid("countryOfOriginCode"))}
+                aria-invalid={isFieldInvalid("countryOfOriginCode") || undefined}
+                required
+              >
+                <option value="">Selecciona</option>
+                {sortCountriesColombiaFirst(identityCatalogs.Pais).map((p) => (
+                  <option key={p.code} value={p.code}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <p className="text-[11px] text-muted-foreground">* Campos obligatorios</p>
 

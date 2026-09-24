@@ -13,11 +13,20 @@ import type { RipsReadinessError } from "./export-readiness";
 import type { PatientPatch } from "@/features/patients/actions";
 
 // Only the PatientPatch keys a readiness code can ever point at — never
-// firstName/lastName/phone/email/countryOfOriginCode, which no current
-// readiness rule checks and this modal has no reason to expose.
+// firstName/lastName/phone/email, which no readiness rule checks.
+// countryOfOriginCode IS checked (PATIENT_COUNTRY_ORIGIN_MISSING, U11) and
+// was missing here, leaving that pendiente with no way to correct it.
 export type PatientMissingField = Extract<
   keyof PatientPatch,
-  "documentType" | "documentNumber" | "birthDate" | "sexCode" | "userTypeCode" | "countryOfResidenceCode" | "municipalityOfResidenceCode" | "residenceZoneCode"
+  | "documentType"
+  | "documentNumber"
+  | "birthDate"
+  | "sexCode"
+  | "userTypeCode"
+  | "countryOfResidenceCode"
+  | "municipalityOfResidenceCode"
+  | "residenceZoneCode"
+  | "countryOfOriginCode"
 >;
 
 // Human label for the modal's own field list — deliberately separate from
@@ -33,6 +42,7 @@ export const PATIENT_MISSING_FIELD_LABELS: Record<PatientMissingField, string> =
   countryOfResidenceCode: "País de residencia",
   municipalityOfResidenceCode: "Municipio de residencia",
   residenceZoneCode: "Zona de residencia",
+  countryOfOriginCode: "País de origen",
 };
 
 const FIELD_BY_READINESS_CODE: Partial<Record<RipsReadinessError["code"], PatientMissingField>> = {
@@ -44,6 +54,7 @@ const FIELD_BY_READINESS_CODE: Partial<Record<RipsReadinessError["code"], Patien
   PATIENT_COUNTRY_RESIDENCE_MISSING: "countryOfResidenceCode",
   PATIENT_MUNICIPALITY_MISSING: "municipalityOfResidenceCode",
   PATIENT_ZONE_MISSING: "residenceZoneCode",
+  PATIENT_COUNTRY_ORIGIN_MISSING: "countryOfOriginCode",
 };
 
 export type PatientRipsGaps = {

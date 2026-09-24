@@ -69,6 +69,7 @@ export function CompletePatientRipsDataModal({
   const [municipalityOfResidenceCode, setMunicipalityOfResidenceCode] = useState("");
   const [municipalityLabel, setMunicipalityLabel] = useState("");
   const [residenceZoneCode, setResidenceZoneCode] = useState("");
+  const [countryOfOriginCode, setCountryOfOriginCode] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,7 +89,8 @@ export function CompletePatientRipsDataModal({
     (!shows("userTypeCode") || userTypeCode !== "") &&
     (!shows("countryOfResidenceCode") || countryOfResidenceCode !== "") &&
     (!shows("municipalityOfResidenceCode") || municipalityOfResidenceCode !== "") &&
-    (!shows("residenceZoneCode") || residenceZoneCode !== "");
+    (!shows("residenceZoneCode") || residenceZoneCode !== "") &&
+    (!shows("countryOfOriginCode") || countryOfOriginCode !== "");
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -108,6 +110,7 @@ export function CompletePatientRipsDataModal({
     if (shows("countryOfResidenceCode")) patch.countryOfResidenceCode = countryOfResidenceCode;
     if (shows("municipalityOfResidenceCode")) patch.municipalityOfResidenceCode = municipalityOfResidenceCode;
     if (shows("residenceZoneCode")) patch.residenceZoneCode = residenceZoneCode;
+    if (shows("countryOfOriginCode")) patch.countryOfOriginCode = countryOfOriginCode;
 
     const outcome = await updatePatient(gaps.patientId, patch);
     setSaving(false);
@@ -246,6 +249,20 @@ export function CompletePatientRipsDataModal({
                 {identityCatalogs.ZonaVersion2.map((z) => (
                   <option key={z.code} value={z.code}>
                     {z.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {shows("countryOfOriginCode") && (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-label-foreground">{PATIENT_MISSING_FIELD_LABELS.countryOfOriginCode}</span>
+              <select value={countryOfOriginCode} onChange={(e) => setCountryOfOriginCode(e.target.value)} className={FIELD_CLASS}>
+                <option value="">Selecciona</option>
+                {sortCountriesColombiaFirst(identityCatalogs.Pais).map((p) => (
+                  <option key={p.code} value={p.code}>
+                    {p.label}
                   </option>
                 ))}
               </select>

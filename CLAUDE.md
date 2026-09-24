@@ -947,8 +947,9 @@ never accepted merely because the UI offered it, and never validated by
 loading a full catalog into the client (search is always server-side).
 
 New-patient creation (`NewPatientModal`/`createPatient()`) collects RIPS
-identity up front — Sexo, Tipo de usuario, País de residencia, and (when
-Colombia) Municipio/Zona — rather than deferring every one of them to the
+identity up front — Sexo, Tipo de usuario, País de residencia, (when
+Colombia) Municipio/Zona, and País de origen (U11, its own field — never
+copied from residence, never defaulted) — rather than deferring every one of them to the
 contextual `/rips` correction modal. `getMissingNewPatientFields()`
 (`src/features/patients/new-patient-completeness.ts`) is the single source
 of truth for which fields are required and when Municipio/Zona apply

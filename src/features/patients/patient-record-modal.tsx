@@ -17,6 +17,7 @@ import { formatDateLabel, formatTimeLabel } from "@/features/dashboard/real-form
 import { getDisplayStatus, getHistoryStatusBadgeClass, getStatusLabel } from "@/features/dashboard/real-status";
 import { findReferenceValueByCodeAction } from "@/features/rips/actions";
 import { ReferenceValueAutocomplete } from "@/features/rips/reference-value-autocomplete";
+import { sortCountriesColombiaFirst } from "@/features/rips/complete-patient-rips-data-modal";
 import type { ReferenceValue } from "@/features/rips/catalog-data";
 import { createClient } from "@/lib/supabase/client";
 import { fetchPatientMedicalHistory, type PatientMedicalHistory } from "./medical-history-data";
@@ -109,6 +110,7 @@ export function PatientRecordModal({
   const [municipalityCodeDraft, setMunicipalityCodeDraft] = useState(patient.municipalityOfResidenceCode ?? "");
   const [municipalityLabelDraft, setMunicipalityLabelDraft] = useState("");
   const [zoneCodeDraft, setZoneCodeDraft] = useState(patient.residenceZoneCode ?? "");
+  const [countryOfOriginDraft, setCountryOfOriginDraft] = useState(patient.countryOfOriginCode ?? "");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // Purely cosmetic pending flag for "Ver historia clínica" — router.push
@@ -244,6 +246,7 @@ export function PatientRecordModal({
     setCountryCodeDraft(patient.countryOfResidenceCode ?? "");
     setMunicipalityCodeDraft(patient.municipalityOfResidenceCode ?? "");
     setZoneCodeDraft(patient.residenceZoneCode ?? "");
+    setCountryOfOriginDraft(patient.countryOfOriginCode ?? "");
     setSaveError(null);
     setEditing(true);
   };
@@ -264,6 +267,10 @@ export function PatientRecordModal({
       countryOfResidenceCode: countryCodeDraft || null,
       municipalityOfResidenceCode: municipalityCodeDraft || null,
       residenceZoneCode: zoneCodeDraft || null,
+      // Seeded from the patient's own current value on "Editar", so saving
+      // without touching it re-sends exactly what was there — never null
+      // by omission, never copied from residence.
+      countryOfOriginCode: countryOfOriginDraft || null,
     };
     const outcome = await updatePatient(patient.id, patch);
     setSaving(false);
@@ -450,6 +457,21 @@ export function PatientRecordModal({
                           ))}
                         </select>
                       </label>
+                      <label className="flex items-center justify-between gap-2 text-sm">
+                        <span className="text-label-foreground">País de origen</span>
+                        <select
+                          value={countryOfOriginDraft}
+                          onChange={(e) => setCountryOfOriginDraft(e.target.value)}
+                          className={`${FIELD_CLASS} max-w-[60%]`}
+                        >
+                          <option value="">Sin registrar</option>
+                          {sortCountriesColombiaFirst(identityCatalogs.Pais).map((p) => (
+                            <option key={p.code} value={p.code}>
+                              {p.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-2 text-sm">
@@ -468,6 +490,10 @@ export function PatientRecordModal({
                       <div className="flex items-center justify-between gap-2">
                         <dt className="text-label-foreground">Sexo</dt>
                         <dd className="truncate font-medium">{labelFor(identityCatalogs.SEXOconIndeterminado, patient.sexCode)}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <dt className="text-label-foreground">País de origen</dt>
+                        <dd className="truncate font-medium">{labelFor(identityCatalogs.Pais, patient.countryOfOriginCode)}</dd>
                       </div>
                     </div>
                   )}

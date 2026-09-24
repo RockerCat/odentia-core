@@ -44,6 +44,8 @@ export type CreatePatientInput = {
   countryOfResidenceCode: string | null;
   municipalityOfResidenceCode: string | null;
   residenceZoneCode: string | null;
+  // U11 codPaisOrigen — its own column, never derived from residence.
+  countryOfOriginCode: string | null;
 };
 
 export type CreatePatientOutcome = { status: "ok"; patient: Patient } | { status: "error"; message: string };
@@ -129,6 +131,7 @@ export async function createPatient(input: CreatePatientInput): Promise<CreatePa
       country_of_residence_code: input.countryOfResidenceCode,
       municipality_of_residence_code: input.municipalityOfResidenceCode,
       residence_zone_code: input.residenceZoneCode,
+      country_of_origin_code: input.countryOfOriginCode,
     })
     .select(PATIENT_SELECT_COLUMNS)
     .single();

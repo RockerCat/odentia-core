@@ -30,6 +30,7 @@ function base(overrides: Partial<NewPatientCompletenessInput> = {}): NewPatientC
     countryOfResidenceCode: COLOMBIA_CODE,
     municipalityOfResidenceCode: "11001",
     residenceZoneCode: "01",
+    countryOfOriginCode: COLOMBIA_CODE,
     ...overrides,
   };
 }
@@ -113,6 +114,7 @@ describe("getMissingNewPatientFields", () => {
       countryOfResidenceCode: "",
       municipalityOfResidenceCode: "",
       residenceZoneCode: "",
+      countryOfOriginCode: "",
     };
     expect(getMissingNewPatientFields(empty)).toEqual([
       "firstName",
@@ -124,6 +126,7 @@ describe("getMissingNewPatientFields", () => {
       "phone",
       "userTypeCode",
       "countryOfResidenceCode",
+      "countryOfOriginCode",
     ]);
   });
 
@@ -140,6 +143,7 @@ describe("getMissingNewPatientFields", () => {
       countryOfResidenceCode: "",
       municipalityOfResidenceCode: "",
       residenceZoneCode: "",
+      countryOfOriginCode: "",
     };
     // NewPatientCompletenessInput structurally has no email/correo field
     // at all — nothing here could accidentally report it as missing.
@@ -158,6 +162,13 @@ describe("getMissingNewPatientFields", () => {
       base({ countryOfResidenceCode: "840", municipalityOfResidenceCode: "", residenceZoneCode: "" }),
     );
     expect(missing).toEqual([]);
+  });
+
+  it("país de origen is required on its own — a filled País de residencia (Colombia) never satisfies it", () => {
+    expect(getMissingNewPatientFields(base({ countryOfOriginCode: "" }))).toEqual(["countryOfOriginCode"]);
+    expect(getMissingNewPatientFields(base({ countryOfResidenceCode: COLOMBIA_CODE, countryOfOriginCode: "" }))).toContain("countryOfOriginCode");
+    // A foreign origin with Colombian residence is a perfectly valid, distinct combination.
+    expect(getMissingNewPatientFields(base({ countryOfOriginCode: "862" }))).toEqual([]);
   });
 
   it("returns an empty list for a fully complete form", () => {
@@ -182,6 +193,7 @@ describe("getMissingNewPatientFields", () => {
       countryOfResidenceCode: "",
       municipalityOfResidenceCode: "",
       residenceZoneCode: "",
+      countryOfOriginCode: "",
     };
     for (const field of getMissingNewPatientFields(empty)) {
       const label = NEW_PATIENT_MISSING_FIELD_LABELS[field];

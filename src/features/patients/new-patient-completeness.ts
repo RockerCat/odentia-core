@@ -33,6 +33,10 @@ export type NewPatientCompletenessInput = {
   countryOfResidenceCode: string;
   municipalityOfResidenceCode: string;
   residenceZoneCode: string;
+  // U11 codPaisOrigen — a separate fact from residence (never copied from
+  // it, never defaulted); required because export-readiness.ts's
+  // PATIENT_COUNTRY_ORIGIN_MISSING blocks every export without it.
+  countryOfOriginCode: string;
 };
 
 // Stable identifiers — never the raw camelCase state field name surfaced
@@ -51,7 +55,8 @@ export type NewPatientMissingField =
   | "userTypeCode"
   | "countryOfResidenceCode"
   | "municipalityOfResidenceCode"
-  | "residenceZoneCode";
+  | "residenceZoneCode"
+  | "countryOfOriginCode";
 
 export const NEW_PATIENT_MISSING_FIELD_LABELS: Record<NewPatientMissingField, string> = {
   firstName: "Nombres",
@@ -65,6 +70,7 @@ export const NEW_PATIENT_MISSING_FIELD_LABELS: Record<NewPatientMissingField, st
   countryOfResidenceCode: "País de residencia",
   municipalityOfResidenceCode: "Municipio de residencia",
   residenceZoneCode: "Zona territorial",
+  countryOfOriginCode: "País de origen",
 };
 
 // U07/U08 (Municipio/Zona) are only obligatorio when U06 (país) is
@@ -94,6 +100,7 @@ export function getMissingNewPatientFields(input: NewPatientCompletenessInput): 
     if (input.municipalityOfResidenceCode === "") missing.push("municipalityOfResidenceCode");
     if (input.residenceZoneCode === "") missing.push("residenceZoneCode");
   }
+  if (input.countryOfOriginCode === "") missing.push("countryOfOriginCode");
   return missing;
 }
 
