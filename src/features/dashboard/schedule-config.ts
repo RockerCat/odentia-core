@@ -14,6 +14,22 @@ export const CLINIC_HOURS: ClinicHours = {
   intervalMinutes: 30,
 };
 
+// The initial professional schedule — Lunes–Viernes 08:00–17:00, Sábado/
+// Domingo free. The canonical source is the SQL helper
+// seed_default_professional_availability() (20260914090000), which
+// materializes it as real, editable professional_availability rows for
+// every new professional_profiles row (and, via 20260924100000, every
+// pre-existing one that had zero rows). This mirrors it for the UI and for
+// agenda-hours.ts's zero-rows fallback — schedule-config.test.ts fails if
+// the two ever drift. Unrelated to CLINIC_HOURS above, which is only the
+// generic time grid (slot interval, Portal request picker), never a
+// professional's availability.
+export const INITIAL_PROFESSIONAL_SCHEDULE = {
+  daysOfWeek: [1, 2, 3, 4, 5], // ISO 8601: 1=Lunes..7=Domingo
+  startTime: "08:00",
+  endTime: "17:00",
+} as const;
+
 // Exported (was private) so agenda-hours.ts can format real
 // professional_availability-derived minute values into the same "H:MM
 // AM/PM" labels this grid has always used — those can land on ANY minute

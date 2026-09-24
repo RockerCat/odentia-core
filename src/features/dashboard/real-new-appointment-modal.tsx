@@ -101,12 +101,9 @@ export function RealNewAppointmentModal({
   weekDays: WeekDay[];
   treatmentOptions: string[];
   roomOptions: string[];
-  // Optional, additive — defaults to [] (agenda-hours.ts's own "zero rows
-  // = legacy unrestricted" rule then applies the same CLINIC_HOURS
-  // default this modal always used before), so the one other caller with
-  // no availability data (real-clinical-encounter-screen.tsx's "Agendar
-  // próxima cita") keeps its current behavior unchanged.
-  // real-appointments-board.tsx passes the clinic's real
+  // Optional — defaults to [] (agenda-hours.ts's zero-rows Case A then
+  // applies INITIAL_PROFESSIONAL_SCHEDULE). Every live caller
+  // (real-appointments-board.tsx) passes the clinic's real
   // professional_availability rows — see agenda-hours.ts.
   availability?: AgendaAvailabilityBlock[];
   prefill?: { professionalProfileId?: string; dayKey?: string; time?: string; patientId?: string; reason?: string } | null;

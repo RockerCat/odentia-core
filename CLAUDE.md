@@ -854,10 +854,18 @@ Domain Model section. Real (`public.professional_availability`/
 `appointments` write, not just an app-level pre-check. Exact semantics —
 regression-prone, do not simplify or re-derive differently elsewhere:
 
-- **Zero availability rows** for a professional → legacy-unrestricted:
-  every day/time is bookable. This is deliberate backward compatibility
-  (a professional who never configures a schedule isn't suddenly locked
-  out), not an oversight to "fix."
+- **Initial schedule = real rows.** Every new `professional_profiles` row
+  gets Lunes–Viernes 08:00–17:00 materialized as normal, editable
+  `professional_availability` rows at creation
+  (`seed_default_professional_availability()`, called by every real
+  creation RPC; `INITIAL_PROFESSIONAL_SCHEDULE` in `schedule-config.ts`
+  mirrors it, drift-tested). Never an implicit fallback that the first
+  edit silently replaces — editing one day never touches the others.
+- **Zero availability rows** (only reachable by deleting every block) →
+  the DB trigger stays legacy-unrestricted (deliberate backward
+  compatibility, not an oversight to "fix"), while Agenda offers the same
+  initial Lun–Vie 08:00–17:00 schedule and Configuración offers
+  "Restaurar horario inicial".
 - **At least one row with `active = true`** → a Cita must fall entirely
   within one of that professional's active blocks for that day of the
   week; anything outside is rejected.
@@ -884,12 +892,11 @@ as the rules above:
   `start_time` — never a continuous range spanning every block for the
   day (a gap between two blocks, e.g. a lunch split, must stay
   unbookable) and never rounded to a whole hour.
-- The "zero rows → unrestricted" fallback is evaluated **per
-  professional**, never per clinic: a professional with some
-  configuration who simply has no active block for one specific day
-  shows zero slots that day, never the unrestricted default — that
-  default is reserved for a professional who never configured anything
-  at all.
+- The zero-rows fallback (the initial Lun–Vie 08:00–17:00 schedule) is
+  evaluated **per professional**, never per clinic: a professional with
+  some configuration who simply has no active block for one specific day
+  shows zero slots that day, never the fallback — that is reserved for a
+  professional with no rows at all.
 
 ---
 

@@ -101,7 +101,7 @@ describe("resolveAgendaSlotsForDay — real blocks, no envelope, no rounding", (
 
   it("otro día (domingo) sin bloque propio produce CERO slots — nunca inventa fallback cuando el profesional SÍ tiene configuración (solo no para ese día)", () => {
     // Same professional HAS configuration (Saturday) — Sunday, with no
-    // block of its own, must stay empty, never CLINIC_HOURS.
+    // block of its own, must stay empty, never the initial schedule.
     const slots = resolveAgendaSlotsForDay({
       dayOfWeek: SUNDAY,
       professionalProfileIds: [PROFESSIONAL],
@@ -110,16 +110,25 @@ describe("resolveAgendaSlotsForDay — real blocks, no envelope, no rounding", (
     expect(slots).toEqual([]);
   });
 
-  it("fallback CLINIC_HOURS aplica SOLO cuando el profesional no tiene ninguna fila de disponibilidad, nunca cuando tiene configuración pero no para ese día", () => {
-    const slots = resolveAgendaSlotsForDay({
-      dayOfWeek: SATURDAY,
-      professionalProfileIds: [PROFESSIONAL],
-      availability: [], // never configured anything, ever
-    });
-    expect(slots).toEqual(generateTimeSlots(CLINIC_HOURS));
+  it("sin ninguna fila, aplica el horario inicial Lun–Vie 08:00–17:00 — jueves con slots, sábado/domingo sin slots (nunca el viejo Lun–Dom 08:00–18:00)", () => {
+    const thursday = resolveAgendaSlotsForDay({ dayOfWeek: 4, professionalProfileIds: [PROFESSIONAL], availability: [] });
+    expect(thursday).toEqual(generateTimeSlots({ startHour: 8, endHour: 17, intervalMinutes: CLINIC_HOURS.intervalMinutes }));
+    expect(thursday[0]).toBe("8:00 AM");
+    expect(thursday.at(-1)).toBe("4:30 PM");
+    expect(resolveAgendaSlotsForDay({ dayOfWeek: SATURDAY, professionalProfileIds: [PROFESSIONAL], availability: [] })).toEqual([]);
+    expect(resolveAgendaSlotsForDay({ dayOfWeek: SUNDAY, professionalProfileIds: [PROFESSIONAL], availability: [] })).toEqual([]);
   });
 
-  it("no cae a CLINIC_HOURS cuando el único bloque de ese día está inactivo, si el profesional tiene otras filas configuradas (deliberadamente sin horario hoy)", () => {
+  it("el horario inicial sembrado como filas reales produce exactamente los mismos slots que el fallback sin filas", () => {
+    for (let day = 1; day <= 7; day++) {
+      const seeded = [1, 2, 3, 4, 5].map((d) => block({ dayOfWeek: d, startTime: "08:00", endTime: "17:00" }));
+      expect(resolveAgendaSlotsForDay({ dayOfWeek: day, professionalProfileIds: [PROFESSIONAL], availability: seeded })).toEqual(
+        resolveAgendaSlotsForDay({ dayOfWeek: day, professionalProfileIds: [PROFESSIONAL], availability: [] }),
+      );
+    }
+  });
+
+  it("no cae al horario inicial cuando el único bloque de ese día está inactivo, si el profesional tiene otras filas configuradas (deliberadamente sin horario hoy)", () => {
     const slots = resolveAgendaSlotsForDay({
       dayOfWeek: SATURDAY,
       professionalProfileIds: [PROFESSIONAL],
@@ -131,20 +140,21 @@ describe("resolveAgendaSlotsForDay — real blocks, no envelope, no rounding", (
     expect(slots).toEqual([]);
   });
 
-  it("cae a CLINIC_HOURS cuando el profesional realmente nunca configuró nada (ni siquiera para otro día)", () => {
+  it("aplica el horario inicial a un profesional sin filas aunque OTRO profesional sí tenga configuración", () => {
     const slots = resolveAgendaSlotsForDay({
-      dayOfWeek: SATURDAY,
+      dayOfWeek: 1,
       professionalProfileIds: ["someone-never-configured"],
       availability: [block()], // belongs to a DIFFERENT professional
     });
-    expect(slots).toEqual(generateTimeSlots(CLINIC_HOURS));
+    expect(slots[0]).toBe("8:00 AM");
+    expect(slots.at(-1)).toBe("4:30 PM");
   });
 
   it("une correctamente varios profesionales mostrados a la vez: uno con bloque real y otro sin configuración (fallback) — cada uno resuelto de forma independiente", () => {
     const slots = resolveAgendaSlotsForDay({
-      dayOfWeek: SATURDAY,
+      dayOfWeek: 1,
       professionalProfileIds: [PROFESSIONAL, "never-configured"],
-      availability: [block({ startTime: "20:00", endTime: "22:00" })],
+      availability: [block({ dayOfWeek: 1, startTime: "20:00", endTime: "22:00" })],
     });
     // The union includes the fallback's own 08:00 start (from the
     // never-configured professional) AND the real 20:00–21:30 slots.

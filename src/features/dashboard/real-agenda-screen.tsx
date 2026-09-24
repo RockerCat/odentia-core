@@ -11,7 +11,7 @@ import type { AgendaAvailabilityBlock } from "./agenda-hours";
 import { RealAppointmentRequestsCard } from "./real-appointment-requests-card";
 import { RealAppointmentsBoard } from "./real-appointments-board";
 import { RealSummaryCards } from "./real-summary-cards";
-import { resolveScheduleSetupAlert, ScheduleSetupAlert } from "./schedule-setup-alert";
+import { InitialScheduleNotice, resolveInitialScheduleNotice } from "./initial-schedule-notice";
 import { getWeekDaysForOffset, getWeekLabelForOffset, getWeekRangeIso, todayDateKey } from "./real-week";
 import { dateKeyOf, toBoardProfessional } from "./real-format";
 
@@ -149,11 +149,11 @@ export function RealAgendaScreen({
     setSelectedDay(days.find((d) => d.isToday)?.key ?? days[0]?.key ?? todayKey);
   };
 
-  const scheduleSetupAlert = resolveScheduleSetupAlert(role, initialProfessionals, initialAvailability);
+  const initialScheduleNotice = resolveInitialScheduleNotice(role, initialProfessionals, initialAvailability);
 
   return (
     <>
-      {scheduleSetupAlert && <ScheduleSetupAlert professionalNames={scheduleSetupAlert.professionalNames} />}
+      {initialScheduleNotice && <InitialScheduleNotice clinicId={clinicId} professionalNames={initialScheduleNotice.professionalNames} />}
       <div className="grid grid-cols-1 gap-7 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <RealAppointmentsBoard

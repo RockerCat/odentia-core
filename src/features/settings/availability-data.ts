@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { INITIAL_PROFESSIONAL_SCHEDULE } from "@/features/dashboard/schedule-config";
 
 // Real Horario/Disponibilidad del profesional — backs the new Horario
 // editor (horario-editor.tsx), shared by the Clinic Admin's Configuración
@@ -102,6 +103,33 @@ export async function createAvailabilityBlock(
     .single();
   if (error) return { status: "error", message: GENERIC_ERROR };
   return { status: "ok", block: mapRow(data) };
+}
+
+// "Restaurar horario inicial" — only offered when a professional has zero
+// rows (every block deleted by hand; new profiles are seeded server-side by
+// seed_default_professional_availability()). ONE multi-row INSERT, so it
+// either lands all five Lun–Vie blocks or none — never a partial week.
+export type CreateBlocksOutcome = { status: "ok"; blocks: WeeklyAvailabilityBlock[] } | { status: "error"; message: string };
+
+export async function createInitialAvailabilityBlocks(
+  supabase: SupabaseClient,
+  input: { clinicId: string; professionalProfileId: string },
+): Promise<CreateBlocksOutcome> {
+  const { daysOfWeek, startTime, endTime } = INITIAL_PROFESSIONAL_SCHEDULE;
+  const { data, error } = await supabase
+    .from("professional_availability")
+    .insert(
+      daysOfWeek.map((day) => ({
+        clinic_id: input.clinicId,
+        professional_profile_id: input.professionalProfileId,
+        day_of_week: day,
+        start_time: startTime,
+        end_time: endTime,
+      })),
+    )
+    .select(AVAILABILITY_COLUMNS);
+  if (error || !data) return { status: "error", message: GENERIC_ERROR };
+  return { status: "ok", blocks: data.map(mapRow) };
 }
 
 export async function setAvailabilityBlockActive(

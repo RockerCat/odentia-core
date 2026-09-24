@@ -1575,19 +1575,24 @@ tiers, coupons, taxes, the LopaDent-benefit spend-tracking mechanism
 (marketing-only today, no real purchase data), and the RLS-retrofit noted
 above.
 
-**RESOLVED (Pilot E2E, 2026-09-24) — initial schedule guidance/default
-visibility.** A professional with zero `professional_availability` rows
-runs on `agenda-hours.ts`'s Case A default (`CLINIC_HOURS`, every day,
-8:00 AM – 6:00 PM, unchanged), but nothing said so: Agenda gave no
-guidance, and Configuración's "Horario aún no configurado" sat right above
-the add-block form, reading like a configured Monday. Now
-`usesDefaultSchedule()`/`describeDefaultSchedule()` (same module as the
-resolver, never a second hardcoded copy) drive both: a Clinic-Admin-only,
-non-blocking Agenda alert ("Configurar horario" → `/configuracion#horario`,
-derived from real rows, no dismiss) and Configuración's "Horario actual →
-Usando horario predeterminado", with the add-block form in its own
-separate box. Browser-verified on a real pilot clinic, including the alert
-disappearing after a first real block.
+**RESOLVED (Pilot E2E, 2026-09-24) — Initial professional schedule =
+Mon–Fri 08:00–17:00, persisted/editable.** Replaces the same day's earlier
+"initial schedule guidance/default visibility" fix, whose premise (an
+implicit Lun–Dom 08:00–18:00 fallback for zero-row professionals) was
+itself the bug: adding a first block (Lunes) silently removed every other
+day. Root cause of the zero rows: `create_my_professional_profile()`'s
+live 6-argument overload (20260910110000) never seeded — 20260914090000
+had patched a dead 4-argument one. Migration `20260924100000` seeds the
+live overload, drops the dead one, and materializes Lun–Vie 08:00–17:00
+for every existing profile with ZERO rows (profiles with any row are
+never touched) — applied to the shared/linked project (`supabase db
+push --linked`; `migration list` local = remote through `20260924100000`). Configuración now shows the five real, editable rows
+(zero rows only after deleting every block → "Restaurar horario
+inicial"); Agenda's zero-rows fallback is the same initial schedule
+(`INITIAL_PROFESSIONAL_SCHEDULE`, drift-tested against the SQL helper),
+never Lun–Dom 08–18. Agenda's notice is now informative ("Tu horario
+inicial está listo" → "Ver horario"), Clinic Admin only, closable
+(per-browser `localStorage`, per clinic — no preferences store exists).
 
 **RESOLVED (Pilot Readiness Sweep follow-up, 2026-09-22) — Nueva clínica /
 zero clinical professionals → guided empty state.** Agenda's "Nueva cita"

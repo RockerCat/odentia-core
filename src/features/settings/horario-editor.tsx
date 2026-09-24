@@ -3,10 +3,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useToast } from "@/components/toast";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
-import { describeDefaultSchedule } from "@/features/dashboard/agenda-hours";
+import { describeInitialSchedule } from "@/features/dashboard/agenda-hours";
 import { createClient } from "@/lib/supabase/client";
 import {
   createAvailabilityBlock,
+  createInitialAvailabilityBlocks,
   deleteAvailabilityBlock,
   fetchWeeklyAvailability,
   setAvailabilityBlockActive,
@@ -47,10 +48,13 @@ export function HorarioEditor({
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
 
-  const [dayOfWeek, setDayOfWeek] = useState(1);
+  // Sábado — the first day the initial Lun–Vie schedule leaves free, so
+  // the add form never pre-fills a duplicate of an existing Lunes block.
+  const [dayOfWeek, setDayOfWeek] = useState(6);
   const [startTime, setStartTime] = useState("08:00");
   const [endTime, setEndTime] = useState("17:00");
   const [adding, setAdding] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   // professionalProfileId is stable for this component's whole lifetime in
   // both real callers (DentistSettingsScreen: always self; the Clinic
@@ -103,6 +107,21 @@ export function HorarioEditor({
     showToast("Horario actualizado correctamente");
   };
 
+  const handleRestoreInitial = async () => {
+    if (restoring) return;
+    setActionError(null);
+    setRestoring(true);
+    const supabase = createClient();
+    const outcome = await createInitialAvailabilityBlocks(supabase, { clinicId, professionalProfileId });
+    setRestoring(false);
+    if (outcome.status === "error") {
+      setActionError(outcome.message);
+      return;
+    }
+    setBlocks(outcome.blocks);
+    showToast("Horario actualizado correctamente");
+  };
+
   const handleToggleActive = async (block: WeeklyAvailabilityBlock) => {
     if (pendingIds.has(block.id)) return;
     withPending(block.id, true);
@@ -140,22 +159,31 @@ export function HorarioEditor({
       {loadError && <p className="mb-2 text-xs text-danger">No pudimos cargar el horario. Intenta de nuevo más tarde.</p>}
       {actionError && <p className="mb-2 text-xs text-danger">{actionError}</p>}
 
-      {/* Effective schedule first, then — visually separate — the form to
-          add a block. With zero rows Agenda runs on agenda-hours.ts's Case A
-          default (usesDefaultSchedule), so that default is shown as the
-          current schedule instead of an empty state sitting right above an
-          add-block form that read like an already-configured Monday row. */}
-      <p className="text-xs font-medium text-label-foreground">Horario actual</p>
+      {/* Every professional starts with real, editable Lun–Vie 08:00–17:00
+          rows (seed_default_professional_availability()), so this list IS
+          the schedule — each row toggles/deletes on its own, and adding a
+          block never touches the others. Zero rows only happens if every
+          block was deleted by hand: Agenda then applies the same initial
+          schedule (agenda-hours.ts Case A), and this offers to restore it
+          as real rows. */}
       {blocks.length === 0 ? (
-        <div className="mt-1.5 rounded-xl border border-border bg-foreground/[0.02] px-4 py-3">
-          <p className="text-sm font-medium text-foreground">Usando horario predeterminado</p>
-          <p className="mt-0.5 text-sm text-foreground">{describeDefaultSchedule()}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Agenda funciona con este horario hasta que agregues tu primer bloque. Al hacerlo, solo quedarán disponibles los bloques que configures.
+        <div className="rounded-xl border border-dashed border-border px-4 py-4 text-sm">
+          <p className="text-muted-foreground">
+            No hay bloques guardados. Agenda aplica el horario inicial: <span className="font-medium text-foreground">{describeInitialSchedule()}</span>.
           </p>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={handleRestoreInitial}
+              disabled={restoring}
+              className="mt-3 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground/80 hover:bg-foreground/5 disabled:opacity-50"
+            >
+              {restoring ? "Restaurando…" : "Restaurar horario inicial"}
+            </button>
+          )}
         </div>
       ) : (
-        <ul className="mt-1.5 divide-y divide-border overflow-hidden rounded-xl border border-border">
+        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
           {WEEKDAY_LABELS.map((label, index) => {
             const dow = index + 1;
             const dayBlocks = blocks.filter((b) => b.dayOfWeek === dow);
@@ -197,7 +225,7 @@ export function HorarioEditor({
 
       {canEdit && (
         <div className="mt-5 rounded-xl border border-dashed border-border p-4">
-          <p className="text-xs font-medium text-label-foreground">{blocks.length === 0 ? "Personalizar horario" : "Agregar otro bloque"}</p>
+          <p className="text-xs font-medium text-label-foreground">Agregar bloque</p>
           <form onSubmit={handleAdd} className="mt-2 flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-label-foreground">Día</span>

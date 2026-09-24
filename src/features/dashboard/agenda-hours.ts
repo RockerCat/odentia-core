@@ -1,4 +1,4 @@
-import { CLINIC_HOURS, formatSlotMinutes, type ClinicHours } from "./schedule-config";
+import { CLINIC_HOURS, formatSlotMinutes, INITIAL_PROFESSIONAL_SCHEDULE } from "./schedule-config";
 import { isPastSlot } from "./real-format";
 
 // Bug: "disponibilidad guardada hasta 22:00 pero Agenda sólo genera slots
@@ -67,62 +67,77 @@ function blockSlotMinutes(startTime: string, endTime: string, intervalMinutes: n
   return minutes;
 }
 
-function fallbackSlotMinutes(fallback: ClinicHours): number[] {
-  const minutes: number[] = [];
-  for (let m = fallback.startHour * 60; m < fallback.endHour * 60; m += fallback.intervalMinutes) {
-    minutes.push(m);
-  }
-  return minutes;
-}
+const SLOT_INTERVAL_MINUTES = CLINIC_HOURS.intervalMinutes;
 
-// Case A below, as its own predicate — "this professional never
-// configured any schedule, so Agenda uses the default for her". Shared by
-// the slot resolver itself, Agenda's onboarding alert, and Configuración's
-// "Usando horario predeterminado" state, so all three agree on exactly
-// what "not configured" means (zero rows of any kind — an all-inactive
-// schedule is Case C, deliberately configured, never "default").
-export function usesDefaultSchedule(professionalProfileId: string, availability: { professionalProfileId: string }[]): boolean {
+// Case A below, as its own predicate: ZERO availability rows of any kind
+// (an all-inactive schedule is Case C, deliberately configured, never
+// this). Every professional_profiles row now gets the initial schedule
+// materialized as real rows at creation (and 20260924100000 backfilled
+// every pre-existing zero-row profile), so this only happens if someone
+// later deletes every block — Configuración then offers "Restaurar
+// horario inicial" (horario-editor.tsx).
+export function hasNoAvailabilityRows(professionalProfileId: string, availability: { professionalProfileId: string }[]): boolean {
   return !availability.some((b) => b.professionalProfileId === professionalProfileId);
 }
 
-// Human-readable form of the Case A default — CLINIC_HOURS, applied to
-// every day of the week (fallbackSlotMinutes ignores dayOfWeek). Derived
-// from the same constant the resolver uses, never a second hardcoded copy.
-export function describeDefaultSchedule(fallback: ClinicHours = CLINIC_HOURS): string {
-  return `Todos los días · ${formatSlotMinutes(fallback.startHour * 60)} – ${formatSlotMinutes(fallback.endHour * 60)}`;
+// "Is this professional's schedule still exactly the untouched initial
+// one?" — zero rows (Case A, same effective schedule), or exactly one
+// active block per INITIAL_PROFESSIONAL_SCHEDULE day at its exact hours
+// and nothing else. Drives Agenda's informative "Tu horario inicial está
+// listo" notice (schedule-setup-alert.tsx): any real edit makes it false.
+export function hasInitialSchedule(professionalProfileId: string, availability: AgendaAvailabilityBlock[]): boolean {
+  const rows = availability.filter((b) => b.professionalProfileId === professionalProfileId);
+  if (rows.length === 0) return true;
+  const { daysOfWeek, startTime, endTime } = INITIAL_PROFESSIONAL_SCHEDULE;
+  if (rows.length !== daysOfWeek.length) return false;
+  const hhmm = (t: string) => t.slice(0, 5);
+  return daysOfWeek.every((day) =>
+    rows.some((b) => b.dayOfWeek === day && b.active && hhmm(b.startTime) === startTime && hhmm(b.endTime) === endTime),
+  );
 }
 
-// FALLBACK SEMANTICS (see this task's own report for the full
-// explanation) — mirrors appointments-actions.ts's own
-// checkConfiguredAvailability three-way distinction exactly, applied PER
+const WEEKDAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+
+// Human-readable form of INITIAL_PROFESSIONAL_SCHEDULE, derived from the
+// constant itself, never a second hardcoded copy.
+export function describeInitialSchedule(): string {
+  const { daysOfWeek, startTime, endTime } = INITIAL_PROFESSIONAL_SCHEDULE;
+  const first = WEEKDAY_NAMES[daysOfWeek[0] - 1];
+  const last = WEEKDAY_NAMES[daysOfWeek[daysOfWeek.length - 1] - 1];
+  const start = formatSlotMinutes(parseHourMinuteToMinutes(startTime));
+  const end = formatSlotMinutes(parseHourMinuteToMinutes(endTime));
+  return `${first} a ${last.toLowerCase()} · ${start} – ${end}`;
+}
+
+// FALLBACK SEMANTICS — mirrors appointments-actions.ts's own
+// checkConfiguredAvailability three-way distinction, applied PER
 // PROFESSIONAL, never clinic-wide:
-//   - Case A: this professional has ZERO professional_availability rows
-//     AT ALL (any day) → never configured a schedule — legacy
-//     unrestricted, CLINIC_HOURS applies to EVERY day for them.
+//   - Case A: ZERO professional_availability rows AT ALL (any day) →
+//     INITIAL_PROFESSIONAL_SCHEDULE (Lun–Vie 08:00–17:00; Sábado/Domingo
+//     empty) — the same schedule a new profile gets as real rows, never
+//     the old every-day CLINIC_HOURS range. The DB trigger
+//     (validate_appointment_availability) stays permissive for zero rows;
+//     this only narrows what Agenda offers.
 //   - Case B: has at least one ACTIVE row for THIS exact day → real
 //     configured blocks, used as-is (gaps preserved, no rounding).
 //   - Case C: has rows configured (for this day, other days, or both) but
 //     NONE active for THIS exact day → deliberately not working this
-//     day (e.g. "only Mon–Fri") — EMPTY, never falls back to
-//     CLINIC_HOURS. A professional who configured Lun–Vie and left
-//     Sábado alone must show ZERO slots on Sábado, not the 08:00–18:00
-//     default — inventing availability they never configured would be
-//     worse than showing none.
+//     day — EMPTY, never falls back to the initial schedule.
 function resolveSlotMinutesForProfessionalDay(input: {
   dayOfWeek: number;
   professionalProfileId: string;
   availability: AgendaAvailabilityBlock[];
-  fallback: ClinicHours;
 }): number[] {
-  if (usesDefaultSchedule(input.professionalProfileId, input.availability)) {
-    return fallbackSlotMinutes(input.fallback); // Case A
+  if (hasNoAvailabilityRows(input.professionalProfileId, input.availability)) {
+    const { daysOfWeek, startTime, endTime } = INITIAL_PROFESSIONAL_SCHEDULE;
+    return (daysOfWeek as readonly number[]).includes(input.dayOfWeek) ? blockSlotMinutes(startTime, endTime, SLOT_INTERVAL_MINUTES) : []; // Case A
   }
   const professionalRows = input.availability.filter((b) => b.professionalProfileId === input.professionalProfileId);
 
   const activeToday = professionalRows.filter((b) => b.active && b.dayOfWeek === input.dayOfWeek);
   const minuteSet = new Set<number>();
   for (const block of activeToday) {
-    for (const m of blockSlotMinutes(block.startTime, block.endTime, input.fallback.intervalMinutes)) {
+    for (const m of blockSlotMinutes(block.startTime, block.endTime, SLOT_INTERVAL_MINUTES)) {
       minuteSet.add(m); // Set — a bookable minute contributed by more than one (accidentally overlapping) block is never duplicated.
     }
   }
@@ -141,12 +156,10 @@ export function resolveAgendaSlotMinutesForDay(input: {
   dayOfWeek: number;
   professionalProfileIds: string[];
   availability: AgendaAvailabilityBlock[];
-  fallback?: ClinicHours;
 }): number[] {
-  const fallback = input.fallback ?? CLINIC_HOURS;
   const minuteSet = new Set<number>();
   for (const professionalProfileId of input.professionalProfileIds) {
-    for (const m of resolveSlotMinutesForProfessionalDay({ dayOfWeek: input.dayOfWeek, professionalProfileId, availability: input.availability, fallback })) {
+    for (const m of resolveSlotMinutesForProfessionalDay({ dayOfWeek: input.dayOfWeek, professionalProfileId, availability: input.availability })) {
       minuteSet.add(m);
     }
   }
@@ -159,7 +172,6 @@ export function resolveAgendaSlotsForDay(input: {
   dayOfWeek: number;
   professionalProfileIds: string[];
   availability: AgendaAvailabilityBlock[];
-  fallback?: ClinicHours;
 }): string[] {
   return resolveAgendaSlotMinutesForDay(input).map(formatSlotMinutes);
 }
@@ -191,7 +203,6 @@ export function hasAvailableFutureSlotForDay(input: {
   dayOfWeek: number;
   professionalProfileIds: string[];
   availability: AgendaAvailabilityBlock[];
-  fallback?: ClinicHours;
 }): boolean {
   const slots = resolveAgendaSlotsForDay(input);
   return slots.some((slot) => !isPastSlot(input.dayKey, slot));
