@@ -19,6 +19,12 @@ export type MyAppointmentsView = {
   // (appointment_requests_one_pending_per_patient, kind 'new'). A pending
   // reschedule is per Cita instead — see pendingRescheduleFor.
   pendingRequest: PortalAppointmentRequest | null;
+  // No upcoming Cita and no pending NEW request → the approved "Agenda tu
+  // próxima cita con nosotros" state: the real scheduler shown directly
+  // (never an intermediate empty state). A pending new request keeps the
+  // scheduler hidden so a second one can't be started; reschedule
+  // requests (pending or not) never count here.
+  showDirectScheduler: boolean;
 };
 
 export function buildMyAppointmentsView(
@@ -27,12 +33,14 @@ export function buildMyAppointmentsView(
   now: Date = new Date(),
 ): MyAppointmentsView {
   const { upcoming, history } = splitPortalAppointments(appointments, now);
+  const pendingRequest = requests.find((r) => r.status === "pending" && r.kind === "new") ?? null;
   return {
     nextAppointment: upcoming[0] ?? null,
     otherUpcoming: upcoming.slice(1),
     heroHistory: history.slice(0, HERO_HISTORY_LIMIT),
     history,
-    pendingRequest: requests.find((r) => r.status === "pending" && r.kind === "new") ?? null,
+    pendingRequest,
+    showDirectScheduler: upcoming.length === 0 && pendingRequest === null,
   };
 }
 

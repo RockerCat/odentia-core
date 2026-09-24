@@ -163,7 +163,10 @@ export function MyAppointmentsScreen({
     );
   }
 
-  const { nextAppointment, otherUpcoming, heroHistory, history, pendingRequest } = buildMyAppointmentsView(items, requestItems);
+  const { nextAppointment, otherUpcoming, heroHistory, history, pendingRequest, showDirectScheduler } = buildMyAppointmentsView(
+    items,
+    requestItems,
+  );
   const clinicPhone = context.clinic.phone;
 
   const historyPanel = (
@@ -200,7 +203,9 @@ export function MyAppointmentsScreen({
           </div>
         ) : (
           <>
-            <h2 className="text-base font-semibold">Próxima cita</h2>
+            <h2 className="text-base font-semibold">
+              {showDirectScheduler ? "Agenda tu próxima cita con nosotros" : "Próxima cita"}
+            </h2>
             {nextAppointment ? (
               <div className="mt-4 grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,240px)_1fr_minmax(0,260px)]">
                 <ProfessionalCard appointment={nextAppointment} clinicPhone={clinicPhone} />
@@ -216,19 +221,28 @@ export function MyAppointmentsScreen({
                 />
                 {historyPanel}
               </div>
+            ) : showDirectScheduler ? (
+              // No upcoming Cita and nothing pending → straight into the
+              // real scheduler (same component/flow as "Agendar nueva
+              // cita"), history still alongside.
+              <div className="mt-2 grid grid-cols-1 gap-6 md:grid-cols-[1fr_minmax(0,260px)]">
+                <RequestAppointmentScheduler professionals={professionals} onSubmit={submitNewRequest} />
+                {historyPanel}
+              </div>
             ) : (
+              // No upcoming Cita but a NEW request is already pending: show
+              // it clearly and never offer a usable scheduler (the button is
+              // the disabled "Solicitud pendiente" — one pending at a time).
               <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-[1fr_minmax(0,260px)]">
                 <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border px-4 py-8 text-center">
                   <p className="text-sm font-medium text-foreground">No tienes una cita próxima.</p>
-                  {pendingRequest ? (
+                  {pendingRequest && (
                     // A pending Solicitud is NOT a Cita — never rendered as one.
                     <p className="rounded-lg border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-warning">
                       Tienes una solicitud de cita pendiente — {formatDateLabel(pendingRequest.preferredStartsAt)},{" "}
                       {formatTimeLabel(pendingRequest.preferredStartsAt)} con {pendingRequest.professionalName}. La clínica la
                       revisará y te confirmará la cita.
                     </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Solicita una cita y la clínica te confirmará la fecha.</p>
                   )}
                   <ScheduleButton pending={Boolean(pendingRequest)} onClick={() => setScheduling(true)} primary />
                 </div>

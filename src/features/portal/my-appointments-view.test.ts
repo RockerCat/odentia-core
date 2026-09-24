@@ -94,7 +94,14 @@ describe("buildMyAppointmentsView", () => {
     expect(view.heroHistory).toHaveLength(HERO_HISTORY_LIMIT);
     expect(view.history).toHaveLength(many.length);
     expect(view.heroHistory[0].id).toBe(`h${many.length - 1}`);
-    expect(buildMyAppointmentsView([], [], NOW)).toEqual({ nextAppointment: null, otherUpcoming: [], heroHistory: [], history: [], pendingRequest: null });
+    expect(buildMyAppointmentsView([], [], NOW)).toEqual({
+      nextAppointment: null,
+      otherUpcoming: [],
+      heroHistory: [],
+      history: [],
+      pendingRequest: null,
+      showDirectScheduler: true,
+    });
   });
 
   it("a pending RESCHEDULE never blocks 'Agendar nueva cita' and is found per Cita", async () => {
@@ -118,6 +125,43 @@ describe("buildMyAppointmentsView", () => {
     expect(professionalCardFields(bare)).toEqual({ name: "Admin Borcelle 2", initials: "A2", avatarUrl: undefined, specialty: null, licenseNumber: null });
     expect(appointmentReasonLabel(bare)).toBe(NO_REASON_LABEL);
     expect(NO_REASON_LABEL).not.toBe("Consulta");
+  });
+});
+
+describe("no upcoming Cita → scheduler directly (approved 'Agenda tu próxima cita con nosotros')", () => {
+  it("no upcoming Cita + no pending NEW request → scheduler shown directly; history still derived", () => {
+    const view = buildMyAppointmentsView([appt("past")], [], NOW);
+    expect(view.showDirectScheduler).toBe(true);
+    expect(view.heroHistory.map((a) => a.id)).toEqual(["past"]);
+  });
+
+  it("with an upcoming Cita the current layout is untouched (no direct scheduler)", () => {
+    const view = buildMyAppointmentsView([appt("next", { startsAt: "2026-09-29T15:00:00.000Z", status: "confirmed" })], [], NOW);
+    expect(view.nextAppointment?.id).toBe("next");
+    expect(view.showDirectScheduler).toBe(false);
+  });
+
+  it("a pending NEW request → no usable scheduler (can't start another)", () => {
+    const view = buildMyAppointmentsView([], [request()], NOW);
+    expect(view.showDirectScheduler).toBe(false);
+    expect(view.pendingRequest?.id).toBe("req-1");
+  });
+
+  it("reschedule requests — accepted, rejected or even pending — never block it", () => {
+    for (const status of ["accepted", "rejected", "pending"] as const) {
+      const view = buildMyAppointmentsView([], [request({ id: `rs-${status}`, kind: "reschedule", appointmentId: "old", status })], NOW);
+      expect(view.showDirectScheduler).toBe(true);
+    }
+    expect(buildMyAppointmentsView([], [request({ status: "accepted" }), request({ id: "r2", status: "rejected" })], NOW).showDirectScheduler).toBe(true);
+  });
+
+  it("the screen renders the SAME real scheduler + historyPanel in that state, and the pending state keeps the disabled button", () => {
+    const screen = fs.readFileSync(path.resolve(__dirname, "my-appointments-screen.tsx"), "utf8");
+    const direct = screen.slice(screen.indexOf(") : showDirectScheduler ? ("), screen.indexOf("// No upcoming Cita but a NEW request is already pending"));
+    expect(direct).toContain("<RequestAppointmentScheduler professionals={professionals} onSubmit={submitNewRequest} />");
+    expect(direct).toContain("{historyPanel}");
+    expect(screen).toContain('{showDirectScheduler ? "Agenda tu próxima cita con nosotros" : "Próxima cita"}');
+    expect(screen).toContain("<ScheduleButton pending={Boolean(pendingRequest)} onClick={() => setScheduling(true)} primary />");
   });
 });
 
