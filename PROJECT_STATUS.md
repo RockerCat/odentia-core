@@ -2179,7 +2179,19 @@ implementation.
   `patient_user_links` pattern as every other Portal policy) — `clinic_locations`
   was staff-only before. WhatsApp button only renders when a real phone exists;
   never a hardcoded/demo number. Missing address/phone renders "No registrado",
-  never invented data.
+  never invented data. Since 2026-09-24 (migration `20260924160000`) it's a
+  compact real clinic profile: logo; "Dónde estamos" (read-only Leaflet/OSM map
+  only with usable `clinic_locations.latitude/longitude`, "Cómo llegar" to
+  Google Maps by coordinates or address); "Conoce nuestra clínica" (Clinic
+  Admin gallery, max 5, `clinic_gallery_photos` + public `clinic-media`
+  bucket; hidden when empty); "Nuestro equipo" (active clinical professionals
+  via `get_my_clinic_professionals()`, photo/specialty/registro only when
+  real; hidden when none). Clinic Admin manages the gallery in Clínica →
+  "Fotos de la clínica" and each professional's photo in Clínica → Equipo
+  (`set_professional_photo()` → `profiles.avatar_url`). **Horario de atención
+  deferred:** only per-professional availability exists — no clinic-wide
+  hours to show honestly. SQL/RLS verified statically only (no local
+  Postgres); migration applied to the linked project.
 
 ## Navegación y feedback global (real, cross-cutting)
 

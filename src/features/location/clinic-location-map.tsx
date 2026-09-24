@@ -57,7 +57,9 @@ export function ClinicLocationMap({
 }: {
   latitude: number;
   longitude: number;
-  onMarkerMove: (next: { latitude: number; longitude: number }) => void;
+  // Omitted → a read-only map (e.g. the Patient Portal's "Dónde estamos");
+  // Clínica's own sede editor passes it to make the marker draggable.
+  onMarkerMove?: (next: { latitude: number; longitude: number }) => void;
 }) {
   const center: [number, number] = [latitude, longitude];
 
@@ -75,14 +77,18 @@ export function ClinicLocationMap({
       <Marker
         position={center}
         icon={pinIcon}
-        draggable
-        eventHandlers={{
-          dragend(event) {
-            const marker = event.target as L.Marker;
-            const position = marker.getLatLng();
-            onMarkerMove({ latitude: position.lat, longitude: position.lng });
-          },
-        }}
+        draggable={Boolean(onMarkerMove)}
+        eventHandlers={
+          onMarkerMove
+            ? {
+                dragend(event) {
+                  const marker = event.target as L.Marker;
+                  const position = marker.getLatLng();
+                  onMarkerMove({ latitude: position.lat, longitude: position.lng });
+                },
+              }
+            : {}
+        }
       />
       <RecenterOnChange center={center} />
     </MapContainer>

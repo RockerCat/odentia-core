@@ -1,6 +1,8 @@
 import { PortalShell } from "@/components/shell/portal-shell";
 import { fetchPrimaryLocation, type PrimaryLocation } from "@/features/clinic/data";
-import { MyClinicScreen } from "@/features/portal/my-clinic-screen";
+import { fetchClinicGalleryPhotos, type ClinicGalleryPhoto } from "@/features/clinic/clinic-media-data";
+import { MyClinicScreen, type Loaded } from "@/features/portal/my-clinic-screen";
+import { fetchMyClinicProfessionals, type PortalProfessional } from "@/features/portal/requests-data";
 import { resolvePatientContext } from "@/features/session/resolve-patient-context";
 import type { PatientClinic } from "@/features/session/types";
 import { createClient } from "@/lib/supabase/server";
@@ -35,11 +37,36 @@ export default async function PortalClinicPage() {
     }
   }
 
+  // Gallery: clinic_gallery_photos RLS returns only THIS patient's own
+  // clinic's rows. Team: get_my_clinic_professionals() — active clinical
+  // professionals of her own clinic only (no assistants/admin-only users).
+  let gallery: Loaded<ClinicGalleryPhoto[]> = { status: "ok", value: [] };
+  let professionals: Loaded<PortalProfessional[]> = { status: "ok", value: [] };
+  if (clinic) {
+    const clinicId = clinic.id;
+    [gallery, professionals] = await Promise.all([
+      fetchClinicGalleryPhotos(supabase, clinicId).then(
+        (value): Loaded<ClinicGalleryPhoto[]> => ({ status: "ok", value }),
+        (error): Loaded<ClinicGalleryPhoto[]> => {
+          console.error("[/portal/clinica] fetchClinicGalleryPhotos failed", error);
+          return { status: "error" };
+        },
+      ),
+      fetchMyClinicProfessionals(supabase).then(
+        (value): Loaded<PortalProfessional[]> => ({ status: "ok", value }),
+        (error): Loaded<PortalProfessional[]> => {
+          console.error("[/portal/clinica] fetchMyClinicProfessionals failed", error);
+          return { status: "error" };
+        },
+      ),
+    ]);
+  }
+
   const clinicName = clinic?.name ?? "Mi clínica";
 
   return (
     <PortalShell activeNavLabel={clinicName} heading={clinicName}>
-      <MyClinicScreen clinic={clinic} location={location} />
+      <MyClinicScreen clinic={clinic} location={location} gallery={gallery} professionals={professionals} />
     </PortalShell>
   );
 }

@@ -16,6 +16,7 @@ import { ClinicSettingsScreen } from "@/features/clinic/clinic-settings-screen";
 import { logStepFailed } from "@/features/clinic/debug";
 import type { ConfirmedSpecialtyRipsService } from "@/features/clinic/rips-specialty-service-config";
 import { fetchRooms, type Room } from "@/features/rooms/data";
+import { fetchClinicGalleryPhotos, type ClinicGalleryPhoto } from "@/features/clinic/clinic-media-data";
 import { getActiveReferenceValues, type ReferenceValue } from "@/features/rips/catalog-data";
 import { fetchClinicSpecialtyRipsServices } from "@/features/rips/clinical-concept-data";
 import { fetchSpecialtyRipsServiceDefaults, type SpecialtyRipsServiceDefault } from "@/features/rips/specialty-rips-service-defaults-data";
@@ -177,6 +178,17 @@ export default async function ClinicaPage() {
   // "Mi perfil profesional" is always about the authenticated user's own
   // row — matched by profile.id, the one real identity CurrentUserContext
   // already resolved, never RoleContext/useRole() (see task scope,
+  // "Fotos de la clínica" — same "optional section, empty list on failure"
+  // convention as the other secondary sections above.
+  let galleryPhotos: ClinicGalleryPhoto[] = [];
+  if (clinic) {
+    try {
+      galleryPhotos = await fetchClinicGalleryPhotos(supabase, clinic.id);
+    } catch (error) {
+      logStepFailed("fetchClinicGalleryPhotos", error);
+    }
+  }
+
   // sections 5/15). null is a legitimate, handled state (see
   // clinic-settings-screen.tsx), not an error.
   const selfMember =
@@ -203,6 +215,7 @@ export default async function ClinicaPage() {
           ripsSuggestions={ripsSuggestions}
           ripsGrupoServiciosOptions={ripsGrupoServiciosOptions}
           ripsServiciosOptions={ripsServiciosOptions}
+          galleryPhotos={galleryPhotos}
         />
       )}
     </AppShell>

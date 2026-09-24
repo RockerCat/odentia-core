@@ -11,6 +11,9 @@ import { CLINIC_LOGO_ACCEPTED_TYPES, CLINIC_LOGO_MAX_BYTES, removeClinicLogo, up
 import { InviteMemberModal } from "@/features/clinic/invite-member-modal";
 import { MyProfessionalProfileSection, StatusBadge } from "@/features/clinic/my-professional-profile-section";
 import { PrimaryLocationSection } from "@/features/clinic/primary-location-section";
+import { ClinicGallerySection } from "@/features/clinic/clinic-gallery-section";
+import type { ClinicGalleryPhoto } from "@/features/clinic/clinic-media-data";
+import { ProfessionalPhotoControls } from "@/features/clinic/professional-photo-controls";
 import { RipsConfigSection } from "@/features/clinic/rips-config-section";
 import { RipsSpecialtyServicesSection } from "@/features/clinic/rips-specialty-services-section";
 import type { ConfirmedSpecialtyRipsService, RelevantSpecialty, SuggestedSpecialtyRipsService } from "@/features/clinic/rips-specialty-service-config";
@@ -50,6 +53,7 @@ export function ClinicSettingsScreen({
   ripsSuggestions,
   ripsGrupoServiciosOptions,
   ripsServiciosOptions,
+  galleryPhotos,
 }: {
   clinic: ClinicDetail;
   location: PrimaryLocation | null;
@@ -64,6 +68,7 @@ export function ClinicSettingsScreen({
   ripsSuggestions: SuggestedSpecialtyRipsService[];
   ripsGrupoServiciosOptions: ReferenceValue[];
   ripsServiciosOptions: ReferenceValue[];
+  galleryPhotos: ClinicGalleryPhoto[];
 }) {
   // Lifted above Equipo/Mi perfil profesional (not local to either) so
   // both sections read the SAME real data — Equipo's own role/specialty
@@ -95,7 +100,12 @@ export function ClinicSettingsScreen({
         grupoServiciosOptions={ripsGrupoServiciosOptions}
         serviciosOptions={ripsServiciosOptions}
       />
-      <EquipoSection members={members} onMembersChange={setMembers} initialPendingInvitations={initialPendingInvitations} />
+      <EquipoSection
+        clinicId={clinic.id}
+        members={members}
+        onMembersChange={setMembers}
+        initialPendingInvitations={initialPendingInvitations}
+      />
       <MyProfessionalProfileSection
         selfMember={selfMember}
         specialties={specialties}
@@ -107,6 +117,7 @@ export function ClinicSettingsScreen({
         }
       />
       <ConsultoriosSection clinicId={clinic.id} initialRooms={rooms} />
+      <ClinicGallerySection clinicId={clinic.id} initialPhotos={galleryPhotos} />
     </div>
   );
 }
@@ -468,10 +479,12 @@ function InfoField({
 // disabled: editing a member's own details/role is a separate, larger
 // piece of scope this task deliberately didn't include.
 function EquipoSection({
+  clinicId,
   members,
   onMembersChange,
   initialPendingInvitations,
 }: {
+  clinicId: string;
   members: TeamMember[];
   onMembersChange: (updater: (prev: TeamMember[]) => TeamMember[]) => void;
   initialPendingInvitations: PendingInvitation[];
@@ -603,6 +616,18 @@ function EquipoSection({
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
+                  {/* Photo shown to patients in /portal/clinica ("Nuestro
+                      equipo") — clinical professionals only. */}
+                  {member.professionalProfile && (
+                    <ProfessionalPhotoControls
+                      clinicId={clinicId}
+                      professionalProfileId={member.professionalProfile.id}
+                      hasPhoto={Boolean(member.avatarUrl)}
+                      onChange={(avatarUrl) =>
+                        onMembersChange((prev) => prev.map((m) => (m.membershipId === member.membershipId ? { ...m, avatarUrl } : m)))
+                      }
+                    />
+                  )}
                   <StatusBadge active={isActive} />
                   <button
                     type="button"

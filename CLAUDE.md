@@ -762,7 +762,16 @@ patient_arrived/waiting_room/in_progress/completed. Both Portal pickers
 offer slots from the professional's REAL schedule
 (`get_my_professional_schedule()`: her blocks + absence dates only, no
 appointment/patient data) via `agenda-hours.ts` — still a preference;
-acceptance is where overlap/horario/ausencias are enforced. Mi salud dental (`/portal/salud`, a short summary separate from Mi
+acceptance is where overlap/horario/ausencias are enforced. Mi clínica
+(`/portal/clinica`) is a compact, real clinic profile — never a miniweb:
+map only with usable sede coordinates; gallery = `clinic_gallery_photos`
+(max 5, DB trigger) in the public `clinic-media` bucket (writes via the
+clinic-folder check `owns_clinic_logo_path()`); team = active clinical
+professionals from `get_my_clinic_professionals()`. A professional's photo
+is `profiles.avatar_url`, set by the clinic's admin only through
+`set_professional_photo()` (Clínica → Equipo). No clinic-wide "horario de
+atención" exists (availability is per professional) — never present one
+professional's schedule as the clinic's. Mi salud dental (`/portal/salud`, a short summary separate from Mi
 Historia Clínica) is real too: allergies, "Odontólogo habitual", recent
 services and finalized atenciones from the same patient-scoped fetchers
 `/portal/historia` uses (`dental-health-data.ts`), with per-section
