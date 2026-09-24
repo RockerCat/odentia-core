@@ -17,10 +17,8 @@ const ALLOWED: Record<string, { routes: RegExp; why: string }> = {
   "features/admin/mock-data.ts": { routes: /^app\/admin\//, why: "/admin is the old fully-mock Superadmin UI, unreachable by any real login (role guard)" },
   "features/dashboard/use-authenticated-identity.ts": { routes: /^app\/admin\//, why: "only /admin's own mock greeting" },
   "dev/role.ts": { routes: /.*/, why: "role enum, role labels and nav config every real route uses — no people/records" },
-  "features/portal/mock-data.ts": { routes: /^app\/portal\/salud\//, why: "Mi salud dental — known Phase 1 mock, Portal out of scope for this change" },
-  "features/dashboard/mock-data.ts": { routes: /^app\/(portal\/salud|admin)\//, why: "Mi salud dental / old mock /admin (see above)" },
-  "features/patients/mock-data.ts": { routes: /^app\/portal\/salud\//, why: "Mi salud dental (see above)" },
-  "lib/current-user.ts": { routes: /^app\/(portal\/salud|admin)\//, why: "Mi salud dental / old mock /admin (see above)" },
+  "features/dashboard/mock-data.ts": { routes: /^app\/admin\//, why: "old mock /admin (see above)" },
+  "lib/current-user.ts": { routes: /^app\/admin\//, why: "old mock /admin (see above)" },
   "features/settings/mock-data.ts": { routes: /^app\/configuracion\//, why: "option lists + non-persisted preference defaults (no people/records)" },
   "features/settings/dentist-mock-data.ts": { routes: /^app\/configuracion\//, why: "notification option labels/defaults (no people/records)" },
   "dev/role-context.tsx": { routes: /.*/, why: "session store fed the REAL role by role-bridge.ts; renders nothing" },
@@ -28,7 +26,16 @@ const ALLOWED: Record<string, { routes: RegExp; why: string }> = {
 };
 
 const MOCK_MODULE = /(mock|fixture)|^lib\/current-user\.ts$|use-authenticated-identity|^dev\//;
-const MOCK_IDENTITY_STRINGS = ["Laura Torres", "María Gómez", "Mateo Peña", "Valeria Muñoz", "Clínica Sonrisa Perfecta", "randomuser.me", "Andrés Bermúdez"];
+const MOCK_IDENTITY_STRINGS = [
+  "Laura Torres",
+  "María Gómez",
+  "Mateo Peña",
+  "Valeria Muñoz",
+  "Clínica Sonrisa Perfecta",
+  "randomuser.me",
+  "Andrés Bermúdez",
+  "sonrisa_perfecta",
+];
 
 function resolveImport(from: string, spec: string): string | null {
   let base: string;
@@ -115,6 +122,34 @@ describe("no mocks in product surfaces", () => {
         .filter((m) => MOCK_MODULE.test(m) && !["dev/role-context.tsx", "dev/role-switcher.tsx", "dev/role.ts"].includes(m));
       expect({ route, mocks }).toEqual({ route, mocks: [] });
     }
+  });
+
+  it("every real Patient Portal route is covered and reaches no mock module at all", () => {
+    const portalRoutes = entries.map(rel).filter((r) => r.startsWith("app/portal/"));
+    expect(portalRoutes).toEqual(
+      expect.arrayContaining([
+        "app/portal/citas/page.tsx",
+        "app/portal/salud/page.tsx",
+        "app/portal/salud/loading.tsx",
+        "app/portal/historia/page.tsx",
+        "app/portal/clinica/page.tsx",
+        "app/portal/perfil/page.tsx",
+      ]),
+    );
+    for (const route of portalRoutes) {
+      const mocks = [...reachableFrom(path.join(SRC, route))]
+        .map(rel)
+        .filter((m) => MOCK_MODULE.test(m) && !["dev/role-context.tsx", "dev/role-switcher.tsx", "dev/role.ts"].includes(m));
+      expect({ route, mocks }).toEqual({ route, mocks: [] });
+    }
+  });
+
+  it("/portal/salud scopes every read by the patient's OWN resolved context — never a URL/prop id", () => {
+    const page = fs.readFileSync(path.join(SRC, "app/portal/salud/page.tsx"), "utf8");
+    expect(page).toContain("resolvePatientContext(supabase)");
+    expect(page).toContain("const clinicId = context.patient.clinicId;");
+    expect(page).toContain("const patientId = context.patient.id;");
+    expect(page).not.toMatch(/\bparams\b|searchParams/);
   });
 
   it("no reachable product module (outside the allowlisted mocks) contains a mock identity", () => {

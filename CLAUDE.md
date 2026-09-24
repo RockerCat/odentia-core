@@ -749,8 +749,11 @@ dashboard (see Architecture above).
 has no backend yet (the old mock buttons for it were removed outright,
 never kept as fake non-persisting ones); requesting an appointment,
 confirming attendance, and viewing citas/historia/clínica/perfil are all
-real. Mi salud dental (a separate screen from "medical/dental record"
-above, which is Mi Historia Clínica) is still Phase 1 mock.
+real. Mi salud dental (`/portal/salud`, a short summary separate from Mi
+Historia Clínica) is real too: allergies, "Odontólogo habitual", recent
+services and finalized atenciones from the same patient-scoped fetchers
+`/portal/historia` uses (`dental-health-data.ts`), with per-section
+skeleton/empty/error states — never mock.
 
 ---
 
@@ -847,17 +850,10 @@ cancelled`) already matches this lifecycle — use it, and
 appointment/encounter work. A `Cita` created by accepting a `Solicitud`
 starts at `scheduled` (the Patient still confirms her own attendance
 afterwards), unlike the clinic's own "Nueva cita", which the front desk
-arranged directly and which therefore starts `confirmed`. The one screen still
-on Phase 1 mock data that reads appointments at all (the Portal's own Mi
-salud dental — Mis citas and Mi Historia Clínica are both real now) keeps
-its own separate, flattened 6-value
-`AppointmentStatus` (`confirmed | pending | in-progress | completed |
-cancelled | no-show`, hyphenated) — depending on context, `pending`/
-`confirmed` overload meanings from both lifecycles above there. Don't deepen
-that conflation in new mock-side work; prefer an additive field scoped to
-where it's actually needed (e.g. the Patient portal's own
-`attendanceConfirmed`, separate from `status`) until that screen's own real
-conversion lands.
+arranged directly and which therefore starts `confirmed`. No real screen
+reads the old mock 6-value `AppointmentStatus` (`dashboard/mock-data.ts`)
+anymore — Mi salud dental, the last one, became real on 2026-09-24 and
+shows finalized atenciones, never appointment statuses.
 
 ---
 

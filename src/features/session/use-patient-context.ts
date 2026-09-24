@@ -24,18 +24,22 @@ function resolveOnce(): Promise<PatientContext> {
   return inFlight;
 }
 
-export function usePatientContext(): PatientContext | null {
-  const [context, setContext] = useState<PatientContext | null>(null);
+// Distinguishes "still loading" from "failed" so the Portal chrome can
+// show a skeleton vs. a neutral state — never mock content in either case.
+export type PatientContextResult = { state: "loading" } | { state: "error" } | { state: "ready"; context: PatientContext };
+
+export function usePatientContextResult(): PatientContextResult {
+  const [result, setResult] = useState<PatientContextResult>({ state: "loading" });
 
   useEffect(() => {
     let cancelled = false;
 
     resolveOnce()
-      .then((result) => {
-        if (!cancelled) setContext(result);
+      .then((context) => {
+        if (!cancelled) setResult({ state: "ready", context });
       })
       .catch(() => {
-        if (!cancelled) setContext(null);
+        if (!cancelled) setResult({ state: "error" });
       });
 
     return () => {
@@ -43,5 +47,12 @@ export function usePatientContext(): PatientContext | null {
     };
   }, []);
 
-  return context;
+  return result;
+}
+
+// Same as before for its existing callers: the resolved context, or null
+// while loading or if resolution failed.
+export function usePatientContext(): PatientContext | null {
+  const result = usePatientContextResult();
+  return result.state === "ready" ? result.context : null;
 }

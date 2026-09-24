@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { UserAvatar } from "@/components/user-avatar";
 import { RoleProvider } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
 import { RoleSwitcher } from "@/dev/role-switcher"; // DEV TOOL — see src/dev/role.ts
-import { usePatientContext } from "@/features/session/use-patient-context";
+import { usePatientContextResult } from "@/features/session/use-patient-context";
 import { BuildingIcon, CalendarIcon, ChevronDownIcon, LogOutIcon, NoteIcon, ToothIcon, UserIcon } from "./icons";
 import { NavLinkContent } from "./nav-link-status";
 import { PageContainer } from "./page-container";
@@ -44,10 +44,10 @@ import { useShellLogout } from "./use-shell-logout";
 // Odentia's own logo never appears anywhere in the Patient portal (mobile
 // header or desktop sidebar) — the Patient is interacting with their
 // clinic, not the Odentia platform itself; Odentia stays the backoffice
-// behind the scenes (see CLAUDE.md). Falls back to the same neutral local
-// asset only when the clinic has no real logo_url of its own — never a
-// wrong/unrelated clinic's branding.
-const FALLBACK_CLINIC_LOGO_URL = "/branding/sonrisa_perfecta.png";
+// behind the scenes (see CLAUDE.md). A clinic with no real logo_url (or a
+// broken one) gets a neutral building icon — the same fallback staff's
+// ClinicIdentityCard uses — never another clinic's branding (it used to
+// fall back to the fictitious "Sonrisa Perfecta" logo).
 
 type PortalShellProps = {
   activeNavLabel: string;
@@ -73,18 +73,20 @@ export function PortalShell({ activeNavLabel, heading, children }: PortalShellPr
 }
 
 function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
-  const context = usePatientContext();
+  const contextResult = usePatientContextResult();
+  const context = contextResult.state === "ready" ? contextResult.context : null;
   const { signOut, signingOut } = useShellLogout();
   const [menuOpen, setMenuOpen] = useState(false);
 
   const clinicName = context?.status === "ok" ? context.clinic.name : "";
-  const clinicLogoUrl = (context?.status === "ok" ? context.clinic.logoUrl : null) ?? FALLBACK_CLINIC_LOGO_URL;
+  const clinicLogoUrl = context?.status === "ok" ? context.clinic.logoUrl : null;
+  const clinicLoading = contextResult.state === "loading";
   const patientName =
     context?.status === "ok" ? `${context.patient.firstName} ${context.patient.lastName}`.trim() : "";
   // Neutral, honest loading label — usePatientContext() is still resolving
   // for the brief window right after proxy.ts's own already-gated
   // navigation; never the old mock CURRENT_PATIENT name as a filler.
-  const displayName = patientName || "Cargando…";
+  const displayName = patientName || (contextResult.state === "loading" ? "Cargando…" : "—");
   const initials =
     context?.status === "ok"
       ? (`${context.patient.firstName[0] ?? ""}${context.patient.lastName[0] ?? ""}`.toUpperCase() || "?")
@@ -148,11 +150,12 @@ function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
     <div className="flex h-dvh overflow-hidden bg-surface text-foreground">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-background md:flex">
         <div className="flex items-center justify-center border-b border-border px-4 py-8">
-          {/* eslint-disable-next-line @next/next/no-img-element -- remote/local clinic asset, not worth Next/Image's optimization pipeline */}
-          <img
-            src={clinicLogoUrl}
-            alt={clinicName ? `Logo de ${clinicName}` : "Logo de la clínica"}
-            className="h-14 w-auto max-w-[180px] object-contain"
+          <PortalClinicLogo
+            loading={clinicLoading}
+            logoUrl={clinicLogoUrl}
+            clinicName={clinicName}
+            imgClassName="h-14 w-auto max-w-[180px] object-contain"
+            boxClassName="size-14"
           />
         </div>
 
@@ -205,14 +208,15 @@ function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
 
         {/* Mobile header — same user-menu pattern as shell/mobile-header.tsx,
             but with the clinic's own logo instead of Odentia's (see
-            FALLBACK_CLINIC_LOGO_URL above) — the Patient is interacting
+            PortalClinicLogo below) — the Patient is interacting
             with their clinic, not the Odentia platform itself. */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface px-4 md:hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element -- remote/local clinic asset, not worth Next/Image's optimization pipeline */}
-          <img
-            src={clinicLogoUrl}
-            alt={clinicName ? `Logo de ${clinicName}` : "Logo de la clínica"}
-            className="h-9 w-auto shrink-0 object-contain"
+          <PortalClinicLogo
+            loading={clinicLoading}
+            logoUrl={clinicLogoUrl}
+            clinicName={clinicName}
+            imgClassName="h-9 w-auto shrink-0 object-contain"
+            boxClassName="size-9"
           />
           <div className="relative">
             <button
@@ -269,5 +273,40 @@ function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
         </nav>
       </div>
     </div>
+  );
+}
+
+// The patient's clinic logo: skeleton while usePatientContext() resolves,
+// the real logo_url when there is one, otherwise (none, or it fails to
+// load) a neutral building icon — never another clinic's branding.
+function PortalClinicLogo({
+  loading,
+  logoUrl,
+  clinicName,
+  imgClassName,
+  boxClassName,
+}: {
+  loading: boolean;
+  logoUrl: string | null;
+  clinicName: string;
+  imgClassName: string;
+  boxClassName: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (loading) return <span aria-hidden="true" className={`${boxClassName} shrink-0 animate-pulse rounded-lg bg-foreground/10`} />;
+  if (!logoUrl || failed) {
+    return (
+      <span
+        role="img"
+        aria-label={clinicName ? `Clínica ${clinicName}` : "Clínica"}
+        className={`flex ${boxClassName} shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary`}
+      >
+        <BuildingIcon className="size-1/2" />
+      </span>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- clinic logo can be any external/Storage URL, not worth Next/Image's optimization pipeline
+    <img src={logoUrl} alt={clinicName ? `Logo de ${clinicName}` : "Logo de la clínica"} className={imgClassName} onError={() => setFailed(true)} />
   );
 }

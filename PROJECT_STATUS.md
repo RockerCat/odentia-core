@@ -19,8 +19,11 @@ Every feature vertical in the MVP scope (see "REAL / COMPLETO PARA MVP" below) r
 on real, tenant-isolated Supabase data — Auth, Postgres, RLS, Storage — with an
 honest empty state everywhere real data doesn't exist yet. The only screens still on
 Phase 1 mock data are the ones explicitly out of scope for this MVP (see "OUT OF
-SCOPE ACTUAL" below): Mi Suscripción, Superadmin/`/admin`, and the Patient Portal's
-own Mi salud dental.
+SCOPE ACTUAL" below): Superadmin/`/admin`. (Mi Suscripción and the Patient
+Portal's Mi salud dental are real since 2026-09-22 and 2026-09-24.) Zero
+tolerance for mocks in product is enforced by
+`src/lib/no-mocks-in-product.test.ts` across every staff, clinic and Portal
+route.
 
 **New checkpoint (this update): Real E2E Stabilization is done.** All 7 critical
 production journeys were exercised for real against `https://odentia.co` — real
@@ -523,9 +526,11 @@ built for this MVP:
   `membership.role` type only ever has `clinic_admin | dentist | assistant`), so
   `/admin` is unreachable through any real login flow in production — only through
   the DEV role switcher in development.
-- **`/portal/salud`** (Mi salud dental) — still Phase 1 mock (`CURRENT_PATIENT`,
-  `WEEK_APPOINTMENTS`), a separate screen from Mi Historia Clínica (real). Not
-  started.
+- **`/portal/salud`** (Mi salud dental) — **real since 2026-09-24**: allergies,
+  "Odontólogo habitual" (shared `usual-dentist.ts` rule), recent services and
+  her last finalized atenciones, from the same patient-scoped fetchers/RLS as
+  Mi Historia Clínica; skeleton/empty/error per section. The Portal header's
+  fictitious "Sonrisa Perfecta" logo fallback was replaced by a neutral icon.
 - **Patient-initiated reprogramación/cancelación** — deliberately not built (the
   old mock buttons were removed, not kept as fake non-persisting ones). Per
   CLAUDE.md, these are proposals the clinic approves; that approval lifecycle has
@@ -3341,9 +3346,9 @@ No longer mock — see "Suscripción / Billing — piloto (Checkpoint
 2026-09-22)" above and OUT OF SCOPE ACTUAL for what's still deferred
 (payments/checkout).
 
-## `/portal/salud` (Mi salud dental) — fully mock
+## `/portal/salud` (Mi salud dental) — real since 2026-09-24
 
-See OUT OF SCOPE ACTUAL.
+See OUT OF SCOPE ACTUAL (entry kept there for history).
 
 ## Public pages (real, but not backend-tied)
 
@@ -3703,7 +3708,6 @@ Full manual QA by role (Clinic Admin → Dentist → Assistant → Patient — s
 "Functional Freeze Policy" above) is the actual next phase — not more feature
 building. Only after that:
 
-- `/portal/salud` (Mi salud dental) real-data conversion.
 - Patient-initiated reprogramación/cancelación proposal lifecycle.
 - Configuración's remaining secondary sections (agenda defaults, notifications,
   regional preferences) real-data conversion.
