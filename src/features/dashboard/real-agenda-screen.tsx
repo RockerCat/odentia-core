@@ -11,6 +11,7 @@ import type { AgendaAvailabilityBlock } from "./agenda-hours";
 import { RealAppointmentRequestsCard } from "./real-appointment-requests-card";
 import { RealAppointmentsBoard } from "./real-appointments-board";
 import { RealSummaryCards } from "./real-summary-cards";
+import { resolveScheduleSetupAlert, ScheduleSetupAlert } from "./schedule-setup-alert";
 import { getWeekDaysForOffset, getWeekLabelForOffset, getWeekRangeIso, todayDateKey } from "./real-week";
 import { dateKeyOf, toBoardProfessional } from "./real-format";
 
@@ -148,62 +149,67 @@ export function RealAgendaScreen({
     setSelectedDay(days.find((d) => d.isToday)?.key ?? days[0]?.key ?? todayKey);
   };
 
-  return (
-    <div className="grid grid-cols-1 gap-7 lg:grid-cols-3">
-      <div className="lg:col-span-2">
-        <RealAppointmentsBoard
-          clinicId={clinicId}
-          role={role}
-          ownProfessionalProfileId={ownProfessionalProfileId}
-          professionals={initialProfessionals}
-          availability={initialAvailability}
-          weekDays={weekDays}
-          weekLabel={weekLabel}
-          weekOffset={weekOffset}
-          onChangeWeek={changeWeek}
-          onGoToday={goToToday}
-          selectedDay={selectedDay}
-          onSelectDay={setSelectedDay}
-          appointments={loadingWeek ? [] : weekAppointments}
-          onAppointmentUpdated={applyUpdate}
-          onAppointmentCreated={applyCreate}
-          initialPatients={initialPatients}
-          treatmentOptions={treatmentOptions}
-          roomOptions={roomOptions}
-          canEditPatientData={canEditPatientData}
-          canAttendPatients={canAttendPatients}
-          identityCatalogs={identityCatalogs}
-        />
-      </div>
+  const scheduleSetupAlert = resolveScheduleSetupAlert(role, initialProfessionals, initialAvailability);
 
-      <div className="flex flex-col gap-7">
-        {clinicIdentityCard}
-        <RealSummaryCards
-          role={role}
-          ownProfessionalProfileId={ownProfessionalProfileId}
-          todayAppointments={todayAppointments}
-          professionals={initialProfessionals}
-          treatmentOptions={treatmentOptions}
-          roomOptions={roomOptions}
-          canAttendPatients={canAttendPatients}
-          onAppointmentUpdated={applyUpdate}
-        />
-        {/* Solicitudes de Cita — a SEPARATE lifecycle from the board's
-            Citas (see CLAUDE.md's Appointment Lifecycle), so it gets its
-            own card rather than a row on the board. Accepting one creates
-            a real Cita, which lands in this screen's shared appointment
-            state through the same applyCreate the board's own "Nueva cita"
-            uses — so it shows up on the board immediately, no refetch. */}
-        <RealAppointmentRequestsCard
-          requests={initialAppointmentRequests}
-          professionals={initialProfessionals.map(toBoardProfessional)}
-          availability={initialAvailability}
-          treatmentOptions={treatmentOptions}
-          roomOptions={roomOptions}
-          onAppointmentCreated={applyCreate}
-        />
-        {marketplaceCard}
+  return (
+    <>
+      {scheduleSetupAlert && <ScheduleSetupAlert professionalNames={scheduleSetupAlert.professionalNames} />}
+      <div className="grid grid-cols-1 gap-7 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <RealAppointmentsBoard
+            clinicId={clinicId}
+            role={role}
+            ownProfessionalProfileId={ownProfessionalProfileId}
+            professionals={initialProfessionals}
+            availability={initialAvailability}
+            weekDays={weekDays}
+            weekLabel={weekLabel}
+            weekOffset={weekOffset}
+            onChangeWeek={changeWeek}
+            onGoToday={goToToday}
+            selectedDay={selectedDay}
+            onSelectDay={setSelectedDay}
+            appointments={loadingWeek ? [] : weekAppointments}
+            onAppointmentUpdated={applyUpdate}
+            onAppointmentCreated={applyCreate}
+            initialPatients={initialPatients}
+            treatmentOptions={treatmentOptions}
+            roomOptions={roomOptions}
+            canEditPatientData={canEditPatientData}
+            canAttendPatients={canAttendPatients}
+            identityCatalogs={identityCatalogs}
+          />
+        </div>
+
+        <div className="flex flex-col gap-7">
+          {clinicIdentityCard}
+          <RealSummaryCards
+            role={role}
+            ownProfessionalProfileId={ownProfessionalProfileId}
+            todayAppointments={todayAppointments}
+            professionals={initialProfessionals}
+            treatmentOptions={treatmentOptions}
+            roomOptions={roomOptions}
+            canAttendPatients={canAttendPatients}
+            onAppointmentUpdated={applyUpdate}
+          />
+          {/* Solicitudes de Cita — a SEPARATE lifecycle from the board's
+              Citas (see CLAUDE.md's Appointment Lifecycle), so it gets its
+              own card rather than a row on the board. Accepting one creates
+              a real Cita, which lands in this screen's shared appointment
+              state through the same applyCreate the board's own "Nueva cita"
+              uses — so it shows up on the board immediately, no refetch. */}
+          <RealAppointmentRequestsCard
+            requests={initialAppointmentRequests}
+            professionals={initialProfessionals.map(toBoardProfessional)}
+            availability={initialAvailability}
+            treatmentOptions={treatmentOptions}
+            roomOptions={roomOptions}
+            onAppointmentCreated={applyCreate}
+          />
+          {marketplaceCard}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

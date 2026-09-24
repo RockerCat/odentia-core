@@ -1575,6 +1575,20 @@ tiers, coupons, taxes, the LopaDent-benefit spend-tracking mechanism
 (marketing-only today, no real purchase data), and the RLS-retrofit noted
 above.
 
+**RESOLVED (Pilot E2E, 2026-09-24) — initial schedule guidance/default
+visibility.** A professional with zero `professional_availability` rows
+runs on `agenda-hours.ts`'s Case A default (`CLINIC_HOURS`, every day,
+8:00 AM – 6:00 PM, unchanged), but nothing said so: Agenda gave no
+guidance, and Configuración's "Horario aún no configurado" sat right above
+the add-block form, reading like a configured Monday. Now
+`usesDefaultSchedule()`/`describeDefaultSchedule()` (same module as the
+resolver, never a second hardcoded copy) drive both: a Clinic-Admin-only,
+non-blocking Agenda alert ("Configurar horario" → `/configuracion#horario`,
+derived from real rows, no dismiss) and Configuración's "Horario actual →
+Usando horario predeterminado", with the add-block form in its own
+separate box. Browser-verified on a real pilot clinic, including the alert
+disappearing after a first real block.
+
 **RESOLVED (Pilot Readiness Sweep follow-up, 2026-09-22) — Nueva clínica /
 zero clinical professionals → guided empty state.** Agenda's "Nueva cita"
 Profesional field used to fall back to a bare, generic "Sin resultados"

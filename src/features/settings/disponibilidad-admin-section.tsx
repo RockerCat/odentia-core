@@ -43,7 +43,7 @@ export function DisponibilidadAdminSection({ clinicId, professionals }: { clinic
   const soloClinic = professionals.length === 1;
 
   return (
-    <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
+    <div id="horario" className="scroll-mt-6 rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
       <div className="flex items-start gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
           <CalendarIcon className="size-4" />

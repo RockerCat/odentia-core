@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useToast } from "@/components/toast";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
+import { describeDefaultSchedule } from "@/features/dashboard/agenda-hours";
 import { createClient } from "@/lib/supabase/client";
 import {
   createAvailabilityBlock,
@@ -139,12 +140,22 @@ export function HorarioEditor({
       {loadError && <p className="mb-2 text-xs text-danger">No pudimos cargar el horario. Intenta de nuevo más tarde.</p>}
       {actionError && <p className="mb-2 text-xs text-danger">{actionError}</p>}
 
+      {/* Effective schedule first, then — visually separate — the form to
+          add a block. With zero rows Agenda runs on agenda-hours.ts's Case A
+          default (usesDefaultSchedule), so that default is shown as the
+          current schedule instead of an empty state sitting right above an
+          add-block form that read like an already-configured Monday row. */}
+      <p className="text-xs font-medium text-label-foreground">Horario actual</p>
       {blocks.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border px-4 py-4 text-center text-sm text-muted-foreground">
-          Horario aún no configurado.
-        </p>
+        <div className="mt-1.5 rounded-xl border border-border bg-foreground/[0.02] px-4 py-3">
+          <p className="text-sm font-medium text-foreground">Usando horario predeterminado</p>
+          <p className="mt-0.5 text-sm text-foreground">{describeDefaultSchedule()}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Agenda funciona con este horario hasta que agregues tu primer bloque. Al hacerlo, solo quedarán disponibles los bloques que configures.
+          </p>
+        </div>
       ) : (
-        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+        <ul className="mt-1.5 divide-y divide-border overflow-hidden rounded-xl border border-border">
           {WEEKDAY_LABELS.map((label, index) => {
             const dow = index + 1;
             const dayBlocks = blocks.filter((b) => b.dayOfWeek === dow);
@@ -185,33 +196,36 @@ export function HorarioEditor({
       )}
 
       {canEdit && (
-        <form onSubmit={handleAdd} className="mt-4 flex flex-wrap items-end gap-2">
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-label-foreground">Día</span>
-            <select value={dayOfWeek} onChange={(e) => setDayOfWeek(Number(e.target.value))} className={FIELD_CLASS} disabled={adding}>
-              {WEEKDAY_LABELS.map((label, index) => (
-                <option key={label} value={index + 1}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-label-foreground">Hora inicio</span>
-            <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className={FIELD_CLASS} disabled={adding} required />
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-label-foreground">Hora fin</span>
-            <input type="time" value={endTime} min={startTime} onChange={(e) => setEndTime(e.target.value)} className={FIELD_CLASS} disabled={adding} required />
-          </label>
-          <button
-            type="submit"
-            disabled={adding}
-            className="rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-          >
-            {adding ? "Agregando…" : "Agregar bloque"}
-          </button>
-        </form>
+        <div className="mt-5 rounded-xl border border-dashed border-border p-4">
+          <p className="text-xs font-medium text-label-foreground">{blocks.length === 0 ? "Personalizar horario" : "Agregar otro bloque"}</p>
+          <form onSubmit={handleAdd} className="mt-2 flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-label-foreground">Día</span>
+              <select value={dayOfWeek} onChange={(e) => setDayOfWeek(Number(e.target.value))} className={FIELD_CLASS} disabled={adding}>
+                {WEEKDAY_LABELS.map((label, index) => (
+                  <option key={label} value={index + 1}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-label-foreground">Hora inicio</span>
+              <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className={FIELD_CLASS} disabled={adding} required />
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-label-foreground">Hora fin</span>
+              <input type="time" value={endTime} min={startTime} onChange={(e) => setEndTime(e.target.value)} className={FIELD_CLASS} disabled={adding} required />
+            </label>
+            <button
+              type="submit"
+              disabled={adding}
+              className="rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            >
+              {adding ? "Agregando…" : "Agregar bloque"}
+            </button>
+          </form>
+        </div>
       )}
     </div>
   );

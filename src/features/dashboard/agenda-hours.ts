@@ -75,6 +75,23 @@ function fallbackSlotMinutes(fallback: ClinicHours): number[] {
   return minutes;
 }
 
+// Case A below, as its own predicate — "this professional never
+// configured any schedule, so Agenda uses the default for her". Shared by
+// the slot resolver itself, Agenda's onboarding alert, and Configuración's
+// "Usando horario predeterminado" state, so all three agree on exactly
+// what "not configured" means (zero rows of any kind — an all-inactive
+// schedule is Case C, deliberately configured, never "default").
+export function usesDefaultSchedule(professionalProfileId: string, availability: { professionalProfileId: string }[]): boolean {
+  return !availability.some((b) => b.professionalProfileId === professionalProfileId);
+}
+
+// Human-readable form of the Case A default — CLINIC_HOURS, applied to
+// every day of the week (fallbackSlotMinutes ignores dayOfWeek). Derived
+// from the same constant the resolver uses, never a second hardcoded copy.
+export function describeDefaultSchedule(fallback: ClinicHours = CLINIC_HOURS): string {
+  return `Todos los días · ${formatSlotMinutes(fallback.startHour * 60)} – ${formatSlotMinutes(fallback.endHour * 60)}`;
+}
+
 // FALLBACK SEMANTICS (see this task's own report for the full
 // explanation) — mirrors appointments-actions.ts's own
 // checkConfiguredAvailability three-way distinction exactly, applied PER
@@ -97,10 +114,10 @@ function resolveSlotMinutesForProfessionalDay(input: {
   availability: AgendaAvailabilityBlock[];
   fallback: ClinicHours;
 }): number[] {
-  const professionalRows = input.availability.filter((b) => b.professionalProfileId === input.professionalProfileId);
-  if (professionalRows.length === 0) {
+  if (usesDefaultSchedule(input.professionalProfileId, input.availability)) {
     return fallbackSlotMinutes(input.fallback); // Case A
   }
+  const professionalRows = input.availability.filter((b) => b.professionalProfileId === input.professionalProfileId);
 
   const activeToday = professionalRows.filter((b) => b.active && b.dayOfWeek === input.dayOfWeek);
   const minuteSet = new Set<number>();
