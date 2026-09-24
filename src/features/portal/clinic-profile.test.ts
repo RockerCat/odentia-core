@@ -83,6 +83,17 @@ describe("/portal/clinica sources", () => {
     expect(code(screen)).not.toMatch(/Odontología general|placeholder|demo/i);
   });
 
+  it("'Nuestro equipo' cards: responsive grid, one prominent avatar (photo or same-size initials), optional lines only when real", () => {
+    const team = screen.slice(screen.indexOf("{team.length > 0 && ("), screen.indexOf('{professionals.status === "error" && ('));
+    expect(team).toContain('className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"');
+    expect(team).toContain("max-w-[320px]");
+    // One UserAvatar for both cases → a real photo and the initials fallback share size/prominence.
+    expect(team.match(/<UserAvatar/g)?.length).toBe(1);
+    expect(team).toContain('sizeClassName="size-24 ring-4 ring-background shadow-sm"');
+    expect(team).toContain("{member.specialty && <p");
+    expect(team).toContain("{member.licenseNumber && (");
+  });
+
   // No local Postgres here (same caveat as every SQL test in this repo).
   it("the team comes from get_my_clinic_professionals(): active clinical professionals of her own clinic only", () => {
     const sql = fs.readFileSync(path.resolve(__dirname, "../../../supabase/migrations/20260908090000_create_appointment_requests.sql"), "utf8");

@@ -139,17 +139,29 @@ export function MyClinicScreen({
       {team.length > 0 && (
         <div className={CARD}>
           <h2 className="text-base font-semibold">Nuestro equipo</h2>
-          <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {/* Protagonist cards: photo/initials first, then name, specialty
+              and registro — each optional line only when it really exists,
+              so a missing field never leaves a gap. 1 → 2 → 3 per row. */}
+          <ul className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {team.map((member) => (
-              <li key={member.id} className="flex items-center gap-3 rounded-xl border border-border p-3">
-                <UserAvatar name={member.name} initials={initialsOf(member.name)} avatar_url={member.avatarUrl} sizeClassName="size-14" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">{member.name}</p>
-                  {member.specialty && <p className="truncate text-xs text-muted-foreground">{member.specialty}</p>}
-                  {member.licenseNumber && (
-                    <p className="mt-0.5 truncate text-[11px] text-label-foreground">Registro profesional {member.licenseNumber}</p>
-                  )}
-                </div>
+              <li
+                key={member.id}
+                className="mx-auto flex w-full max-w-[320px] flex-col items-center rounded-2xl border border-border bg-surface px-5 py-6 text-center"
+              >
+                <UserAvatar
+                  name={member.name}
+                  initials={initialsOf(member.name)}
+                  avatar_url={member.avatarUrl}
+                  sizeClassName="size-24 ring-4 ring-background shadow-sm"
+                  textClassName="text-2xl"
+                />
+                <p className="mt-4 text-base leading-snug font-semibold text-foreground">{member.name}</p>
+                {member.specialty && <p className="mt-1 text-sm font-medium text-primary">{member.specialty}</p>}
+                {member.licenseNumber && (
+                  <p className="mt-3 border-t border-border pt-3 text-[11px] text-label-foreground">
+                    Registro profesional <span className="font-medium text-foreground/70">{member.licenseNumber}</span>
+                  </p>
+                )}
               </li>
             ))}
           </ul>
