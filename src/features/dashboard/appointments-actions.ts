@@ -407,6 +407,9 @@ export async function updateAppointment(appointmentId: string, patch: Appointmen
   const { error } = await supabase.from("appointments").update(dbPatch).eq("id", appointmentId);
   if (error) {
     if (isCompletedCancelError(error)) return { status: "error", message: COMPLETED_CANCEL_ERROR };
+    if (error.message?.includes("cancelled appointment can only be reactivated")) {
+      return { status: "error", message: "Una cita cancelada solo puede reactivarse como Confirmada o Pendiente." };
+    }
     if (isOverlapConstraintError(error)) return { status: "error", message: OVERLAP_ERROR };
     if (isAvailabilityConstraintError(error)) return { status: "error", message: AVAILABILITY_CONSTRAINT_ERROR };
     return { status: "error", message: GENERIC_ERROR };

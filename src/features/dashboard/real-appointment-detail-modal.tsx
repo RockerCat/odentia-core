@@ -344,8 +344,17 @@ export function RealAppointmentDetailModal({
       setReactivating(true);
       try {
         const result = await reactivateAppointment(appointment.id);
-        if (result.status === "ok") onUpdated(applyStatusLocally(appointment, "confirmed"));
-        else setActionError(result.message);
+        if (result.status === "ok") {
+          onUpdated(applyStatusLocally(appointment, "confirmed"));
+          showToast("Cita reactivada — Confirmada");
+          // Close on success: this same primary button would otherwise
+          // instantly turn into "Paciente llegó" (front desk, Cita outside
+          // the start window), so a repeated/double click silently marked
+          // a just-reactivated FUTURE Cita as arrived (Pilot E2E).
+          onClose();
+        } else {
+          setActionError(result.message);
+        }
       } finally {
         setReactivating(false);
       }
