@@ -1,16 +1,16 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useToast } from "@/components/toast";
 import { CloseIcon, PhoneIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
-import { formatDateLabel, formatTimeLabel, initialsOf } from "@/features/dashboard/real-format";
+import { formatDateLabel, formatTimeLabel } from "@/features/dashboard/real-format";
 import { getDisplayStatus, getHistoryStatusBadgeClass, getStatusLabel, getStatusStyle } from "@/features/dashboard/real-status";
 import type { PatientContext } from "@/features/session/types";
 import { canPatientConfirmAppointment } from "./appointment-eligibility";
 import { confirmMyAppointment } from "./appointments-actions";
 import type { PortalAppointment } from "./appointments-data";
-import { splitPortalAppointments } from "./appointments-split";
+import { appointmentReasonLabel, buildMyAppointmentsView, professionalCardFields } from "./my-appointments-view";
 import { RequestAppointmentScheduler } from "./request-appointment-scheduler";
 import {
   REQUEST_STATUS_LABELS,
@@ -18,8 +18,6 @@ import {
   type PortalAppointmentRequest,
   type PortalProfessional,
 } from "./requests-data";
-
-const HERO_HISTORY_LIMIT = 10;
 
 function waLink(phone: string): string {
   return `https://wa.me/${phone.replace(/[^\d]/g, "")}`;
@@ -58,7 +56,10 @@ export function MyAppointmentsScreen({
   const [requestItems, setRequestItems] = useState<PortalAppointmentRequest[]>(requests);
   const [selectedAppointment, setSelectedAppointment] = useState<PortalAppointment | null>(null);
   const [showFullHistory, setShowFullHistory] = useState(false);
-  const [showRequestModal, setShowRequestModal] = useState(false);
+  // "Agendar nueva cita" swaps the Próxima cita card's content for the real
+  // scheduler (request_my_appointment — a Solicitud, never a Cita), with a
+  // way back; it never REPLACES Mis citas as the screen's default view.
+  const [scheduling, setScheduling] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
@@ -80,7 +81,7 @@ export function MyAppointmentsScreen({
       },
       ...prev,
     ]);
-    setShowRequestModal(false);
+    setScheduling(false);
     showToast("Solicitud enviada. La clínica la revisará y te confirmará la cita.");
   };
 
@@ -119,78 +120,84 @@ export function MyAppointmentsScreen({
     );
   }
 
-  const { upcoming, history } = splitPortalAppointments(items);
-
-  const nextAppointment = upcoming[0] ?? null;
-  const otherUpcoming = upcoming.slice(1);
-  const heroHistory = history.slice(0, HERO_HISTORY_LIMIT);
+  const { nextAppointment, otherUpcoming, heroHistory, history, pendingRequest } = buildMyAppointmentsView(items, requestItems);
   const clinicPhone = context.clinic.phone;
-  // At most one open Solicitud at a time — the same rule
-  // appointment_requests_one_pending_per_patient enforces in Postgres, and
-  // the same "Solicitud pendiente" affordance the approved design already
-  // used for a pending reschedule request.
-  const pendingRequest = requestItems.find((r) => r.status === "pending") ?? null;
+
+  const historyPanel = (
+    <HistoryPanel
+      heroHistory={heroHistory}
+      hasHistory={history.length > 0}
+      onSelect={setSelectedAppointment}
+      onShowAll={() => setShowFullHistory(true)}
+    />
+  );
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Próxima cita — same protagonist framing as before: Profesional
-          (read-only, no edit affordances for a Patient) and Datos de la
-          cita side by side on wide screens. No Historial nested here
-          anymore (see below) — that panel needs its own honest empty
-          state independent of whether a next appointment exists. */}
-      <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6 md:mx-auto md:max-w-4xl">
-        <h2 className="text-base font-semibold">
-          {nextAppointment ? "Próxima cita" : pendingRequest ? "Citas" : "Agenda tu próxima cita con nosotros"}
-        </h2>
-
-        {nextAppointment ? (
-          <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,240px)_1fr]">
-            <ProfessionalCard appointment={nextAppointment} clinicPhone={clinicPhone} />
-            <AppointmentDetails
-              appointment={nextAppointment}
-              clinicName={context.clinic.name}
-              onConfirm={() => handleConfirmAttendance(nextAppointment)}
-              confirming={confirming}
-              confirmError={confirmError}
-            />
-          </div>
-        ) : pendingRequest ? (
-          // A pending Solicitud is NOT a Cita — never rendered as one. Same
-          // warning-toned "solicitud pendiente" panel language the approved
-          // design already used for a pending reschedule request.
-          <div className="mt-3 flex flex-col gap-3">
-            <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
-              No tienes citas próximas programadas.
-            </p>
-            <p className="rounded-lg border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-warning">
-              Tienes una solicitud de cita pendiente — {formatDateLabel(pendingRequest.preferredStartsAt)},{" "}
-              {formatTimeLabel(pendingRequest.preferredStartsAt)} con {pendingRequest.professionalName}. La clínica la
-              revisará y te confirmará la cita.
-            </p>
+      {/* Próxima cita — the approved layout (git dd85c80): ONE protagonist
+          card with Profesional | Datos de la cita | Historial de citas side
+          by side on wide screens, "Agendar nueva cita" below. Real data only
+          (my-appointments-view.ts); with no upcoming Cita it shows an honest
+          empty state inside the same structure — never a fictitious cita,
+          and never the scheduler as the default view. */}
+      <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6 md:mx-auto md:w-full md:max-w-4xl">
+        {scheduling ? (
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">Agendar nueva cita</h2>
+              <button
+                type="button"
+                onClick={() => setScheduling(false)}
+                className="text-xs font-medium text-primary hover:text-primary/80"
+              >
+                ← Volver a Mis citas
+              </button>
+            </div>
+            <RequestAppointmentScheduler professionals={professionals} onRequested={handleRequested} />
           </div>
         ) : (
-          // No upcoming appointment and no open request — go straight into
-          // requesting one instead of a dead-end empty state, exactly as
-          // the approved design does (its NewAppointmentScheduler, now
-          // real: see request-appointment-scheduler.tsx).
-          <RequestAppointmentScheduler professionals={professionals} onRequested={handleRequested} />
+          <>
+            <h2 className="text-base font-semibold">Próxima cita</h2>
+            {nextAppointment ? (
+              <div className="mt-4 grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,240px)_1fr_minmax(0,260px)]">
+                <ProfessionalCard appointment={nextAppointment} clinicPhone={clinicPhone} />
+                <AppointmentDetails
+                  appointment={nextAppointment}
+                  clinicName={context.clinic.name}
+                  onConfirm={() => handleConfirmAttendance(nextAppointment)}
+                  confirming={confirming}
+                  confirmError={confirmError}
+                />
+                {historyPanel}
+              </div>
+            ) : (
+              <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-[1fr_minmax(0,260px)]">
+                <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border px-4 py-8 text-center">
+                  <p className="text-sm font-medium text-foreground">No tienes una cita próxima.</p>
+                  {pendingRequest ? (
+                    // A pending Solicitud is NOT a Cita — never rendered as one.
+                    <p className="rounded-lg border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-warning">
+                      Tienes una solicitud de cita pendiente — {formatDateLabel(pendingRequest.preferredStartsAt)},{" "}
+                      {formatTimeLabel(pendingRequest.preferredStartsAt)} con {pendingRequest.professionalName}. La clínica la
+                      revisará y te confirmará la cita.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Solicita una cita y la clínica te confirmará la fecha.</p>
+                  )}
+                  <ScheduleButton pending={Boolean(pendingRequest)} onClick={() => setScheduling(true)} primary />
+                </div>
+                {historyPanel}
+              </div>
+            )}
+          </>
         )}
       </div>
 
       {/* Secondary once Próxima cita already has the spotlight — same
-          placement/treatment as the approved design's own "Agendar nueva
-          cita", and the same "Solicitud pendiente" disabled state it used
-          while one is already open. */}
-      {nextAppointment && (
+          placement as the approved design's own "Agendar nueva cita". */}
+      {nextAppointment && !scheduling && (
         <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={() => setShowRequestModal(true)}
-            disabled={Boolean(pendingRequest)}
-            className="rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-foreground/5 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {pendingRequest ? "Solicitud pendiente" : "Solicitar nueva cita"}
-          </button>
+          <ScheduleButton pending={Boolean(pendingRequest)} onClick={() => setScheduling(true)} />
         </div>
       )}
 
@@ -211,9 +218,7 @@ export function MyAppointmentsScreen({
           different entity with a different lifecycle
           (Pendiente/Aceptada/Rechazada), and conflating the two is exactly
           what CLAUDE.md forbids. Only rendered when the patient actually
-          has requests — a patient who has never asked for one shouldn't
-          see an empty section explaining a feature she just used the hero
-          card for. */}
+          has requests. */}
       {requestItems.length > 0 && (
         <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
           <h2 className="text-base font-semibold">Solicitudes de cita</h2>
@@ -236,48 +241,12 @@ export function MyAppointmentsScreen({
         </div>
       )}
 
-      {/* Historial — its own card now, always rendered, with its own
-          honest empty state (see task scope: "no historial" is a
-          separate empty state from "no próximas", not implied by it). */}
-      <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
-        <h2 className="text-base font-semibold">Historial de citas</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">Últimas atenciones</p>
-
-        {heroHistory.length === 0 ? (
-          <p className="mt-3 rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
-            Aún no tienes citas pasadas.
-          </p>
-        ) : (
-          <ol className="mt-3 flex flex-col gap-2 border-l border-border/70 pl-4">
-            {heroHistory.map((item) => (
-              <HistoryRow key={item.id} item={item} onSelect={() => setSelectedAppointment(item)} />
-            ))}
-          </ol>
-        )}
-
-        {history.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowFullHistory(true)}
-            className="mt-3 w-full rounded-lg border border-border px-3 py-1.5 text-center text-xs font-medium text-foreground/80 transition-colors hover:bg-foreground/5"
-          >
-            Ver historial completo
-          </button>
-        )}
-      </div>
-
       {showFullHistory && (
         <HistoryModal
           history={history}
           onClose={() => setShowFullHistory(false)}
           onSelectItem={(item) => setSelectedAppointment(item)}
         />
-      )}
-
-      {showRequestModal && (
-        <RequestAppointmentModal onClose={() => setShowRequestModal(false)}>
-          <RequestAppointmentScheduler professionals={professionals} onRequested={handleRequested} />
-        </RequestAppointmentModal>
       )}
 
       {selectedAppointment && (
@@ -345,33 +314,63 @@ function RequestRow({
   );
 }
 
-// Same modal chrome as every other sheet in this screen — used only for
-// the "Solicitar nueva cita" path (when the patient already has an
-// upcoming Cita, so the hero card is showing that instead of the picker).
-function RequestAppointmentModal({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+// "Agendar nueva cita" — opens the real scheduler in place. Disabled while a
+// Solicitud is already pending (at most one at a time, enforced in Postgres).
+function ScheduleButton({ pending, onClick, primary = false }: { pending: boolean; onClick: () => void; primary?: boolean }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Solicitar cita"
-        onClick={(e) => e.stopPropagation()}
-        className="relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-background shadow-xl sm:max-h-[85vh] sm:w-full sm:max-w-md sm:rounded-xl"
-      >
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3">
-          <p className="text-sm font-semibold">Solicitar cita</p>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Cerrar"
-            className="flex size-8 items-center justify-center rounded-lg text-foreground/60 hover:bg-foreground/5"
-          >
-            <CloseIcon className="size-4" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-5 pb-5">{children}</div>
-      </div>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={pending}
+      className={`rounded-lg px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+        primary
+          ? "bg-primary text-primary-foreground hover:opacity-90"
+          : "border border-border bg-background text-foreground/80 hover:bg-foreground/5"
+      }`}
+    >
+      {pending ? "Solicitud pendiente" : "Agendar nueva cita"}
+    </button>
+  );
+}
+
+// "Historial de citas" — the approved right-hand panel of the Próxima cita
+// card (bg-surface timeline), shown with or without an upcoming Cita, with
+// its own honest empty state. "Ver historial completo" opens the full list.
+function HistoryPanel({
+  heroHistory,
+  hasHistory,
+  onSelect,
+  onShowAll,
+}: {
+  heroHistory: PortalAppointment[];
+  hasHistory: boolean;
+  onSelect: (item: PortalAppointment) => void;
+  onShowAll: () => void;
+}) {
+  return (
+    <div className="rounded-xl bg-surface p-4">
+      <h3 className="text-sm font-semibold">Historial de citas</h3>
+      <p className="mt-0.5 text-xs text-muted-foreground">Últimas atenciones</p>
+      {heroHistory.length === 0 ? (
+        <p className="mt-3 rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+          Aún no tienes citas pasadas.
+        </p>
+      ) : (
+        <ol className="mt-3 flex flex-col gap-2 border-l border-border/70 pl-4">
+          {heroHistory.map((item) => (
+            <HistoryRow key={item.id} item={item} onSelect={() => onSelect(item)} />
+          ))}
+        </ol>
+      )}
+      {hasHistory && (
+        <button
+          type="button"
+          onClick={onShowAll}
+          className="mt-3 w-full rounded-lg border border-border px-3 py-1.5 text-center text-xs font-medium text-foreground/80 transition-colors hover:bg-foreground/5"
+        >
+          Ver historial completo
+        </button>
+      )}
     </div>
   );
 }
@@ -383,29 +382,28 @@ function RequestAppointmentModal({ onClose, children }: { onClose: () => void; c
 // mock number, and is omitted entirely if the clinic has none on file
 // (never invented).
 function ProfessionalCard({ appointment, clinicPhone }: { appointment: PortalAppointment; clinicPhone: string | null }) {
+  const professional = professionalCardFields(appointment);
   return (
     <div className="rounded-xl border border-border bg-[color-mix(in_oklab,var(--primary)_10%,transparent)] p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3 md:hidden">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <UserAvatar
-            name={appointment.professionalName}
-            initials={initialsOf(appointment.professionalName)}
-            avatar_url={appointment.professionalAvatarUrl ?? undefined}
+            name={professional.name}
+            initials={professional.initials}
+            avatar_url={professional.avatarUrl}
             sizeClassName="size-14"
           />
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{appointment.professionalName}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {appointment.professionalSpecialty ?? "Odontología general"}
-            </p>
+            <p className="truncate text-sm font-semibold">{professional.name}</p>
+            {professional.specialty && <p className="truncate text-xs text-muted-foreground">{professional.specialty}</p>}
           </div>
         </div>
 
         <div className="flex shrink-0 flex-col items-start gap-1.5">
-          {appointment.professionalLicenseNumber && (
+          {professional.licenseNumber && (
             <div>
               <dt className="text-[10px] text-label-foreground">Registro profesional</dt>
-              <dd className="text-xs font-medium">{appointment.professionalLicenseNumber}</dd>
+              <dd className="text-xs font-medium">{professional.licenseNumber}</dd>
             </div>
           )}
           {clinicPhone && (
@@ -425,22 +423,22 @@ function ProfessionalCard({ appointment, clinicPhone }: { appointment: PortalApp
       <div className="hidden md:block">
         <div className="flex flex-col items-center gap-1 text-center">
           <UserAvatar
-            name={appointment.professionalName}
-            initials={initialsOf(appointment.professionalName)}
-            avatar_url={appointment.professionalAvatarUrl ?? undefined}
+            name={professional.name}
+            initials={professional.initials}
+            avatar_url={professional.avatarUrl}
             sizeClassName="size-20"
           />
-          <p className="mt-2 text-base font-semibold">{appointment.professionalName}</p>
-          <p className="text-sm text-muted-foreground">{appointment.professionalSpecialty ?? "Odontología general"}</p>
+          <p className="mt-2 text-base font-semibold">{professional.name}</p>
+          {professional.specialty && <p className="text-sm text-muted-foreground">{professional.specialty}</p>}
         </div>
 
-        {appointment.professionalLicenseNumber && (
+        {professional.licenseNumber && (
           <>
             <div className="mt-5 border-t border-border" />
             <dl className="mt-5 flex flex-col gap-4 text-sm">
               <div>
                 <dt className="text-label-foreground">Registro profesional</dt>
-                <dd className="mt-0.5 font-medium">{appointment.professionalLicenseNumber}</dd>
+                <dd className="mt-0.5 font-medium">{professional.licenseNumber}</dd>
               </div>
             </dl>
           </>
@@ -501,7 +499,7 @@ function AppointmentDetails({
         <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
           <div>
             <dt className="text-xs text-label-foreground">Tratamiento</dt>
-            <dd className="font-medium">{appointment.reason ?? "Consulta"}</dd>
+            <dd className="font-medium">{appointmentReasonLabel(appointment)}</dd>
           </div>
           <div>
             <dt className="text-xs text-label-foreground">Clínica</dt>
@@ -548,7 +546,7 @@ function UpcomingRow({ item, onSelect }: { item: PortalAppointment; onSelect: ()
       >
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">
-            {formatDateLabel(item.startsAt)}, {formatTimeLabel(item.startsAt)} · {item.reason ?? "Consulta"}
+            {formatDateLabel(item.startsAt)}, {formatTimeLabel(item.startsAt)} · {appointmentReasonLabel(item)}
           </p>
           <p className="truncate text-xs text-muted-foreground">{item.professionalName}</p>
         </div>
@@ -639,7 +637,7 @@ function HistoryRow({ item, onSelect }: { item: PortalAppointment; onSelect: () 
             {getStatusLabel(displayStatus)}
           </span>
         </div>
-        <p className="mt-0.5 text-xs font-medium text-foreground">{item.reason ?? "Consulta"}</p>
+        <p className="mt-0.5 text-xs font-medium text-foreground">{appointmentReasonLabel(item)}</p>
         <p className="mt-0.5 text-[10px] text-label-foreground">{item.professionalName}</p>
       </button>
     </li>
@@ -699,7 +697,7 @@ function AppointmentDetailModal({
           <dl className="mt-4 flex flex-col gap-2.5 text-sm">
             <div className="flex items-center justify-between gap-2">
               <dt className="text-label-foreground">Tratamiento</dt>
-              <dd className="font-medium">{appointment.reason ?? "Consulta"}</dd>
+              <dd className="font-medium">{appointmentReasonLabel(appointment)}</dd>
             </div>
             <div className="flex items-center justify-between gap-2">
               <dt className="text-label-foreground">Profesional</dt>

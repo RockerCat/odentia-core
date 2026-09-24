@@ -129,6 +129,7 @@ describe("no mocks in product surfaces", () => {
     expect(portalRoutes).toEqual(
       expect.arrayContaining([
         "app/portal/citas/page.tsx",
+        "app/portal/citas/loading.tsx",
         "app/portal/salud/page.tsx",
         "app/portal/salud/loading.tsx",
         "app/portal/historia/page.tsx",
