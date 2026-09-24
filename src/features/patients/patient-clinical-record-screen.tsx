@@ -78,6 +78,7 @@ export function PatientClinicalRecordScreen({
   medicalHistory: initialMedicalHistory,
   toothFindings: initialToothFindings,
   clinicalEncounters,
+  usualDentistName = null,
   encounterClinicalData,
   clinicalDocuments: initialClinicalDocuments,
   clinicalNotes: initialClinicalNotes,
@@ -96,6 +97,9 @@ export function PatientClinicalRecordScreen({
   medicalHistory: PatientMedicalHistory | null;
   toothFindings: ToothFindingRecord[];
   clinicalEncounters: ClinicalEncounterRecord[];
+  // "Odontólogo habitual", resolved server-side by the page with the same
+  // rule as the Paciente modal (usual-dentist.ts); null → empty state.
+  usualDentistName?: string | null;
   encounterClinicalData: Map<string, EncounterClinicalData>;
   clinicalDocuments: ClinicalDocumentRecord[];
   clinicalNotes: ClinicalNoteRecord[];
@@ -281,18 +285,14 @@ export function PatientClinicalRecordScreen({
               </dd>
             </div>
             <div>
-              {/* No existe todavía una relación real paciente↔odontólogo
-                  en el schema (patients no tiene columna de asignación, ni
-                  hay tabla de vínculo — ver CLAUDE.md Domain Model:
-                  pacientes pertenecen a la Clínica, no a un Odontólogo) —
-                  por eso siempre cae en el estado "Aún sin odontólogo",
-                  nunca un valor inventado. Mismo dt/dd/spacing que el
-                  diseño aprobado (clinical-record-screen.tsx), listo para
-                  mostrar el profesional real en cuanto exista esa
-                  relación. */}
+              {/* No hay asignación persistida paciente↔odontólogo (los
+                  pacientes pertenecen a la Clínica) — el valor es la regla
+                  derivada de usual-dentist.ts, la misma del modal de
+                  Paciente: quien atendió la última atención finalizada.
+                  "Aún sin odontólogo" solo si todavía no hay ninguna. */}
               <dt className="text-xs text-label-foreground">Odontólogo habitual</dt>
               <dd className="mt-1 flex items-center gap-2">
-                <span className="font-medium text-foreground">Aún sin odontólogo</span>
+                <span className="font-medium text-foreground">{usualDentistName ?? "Aún sin odontólogo"}</span>
               </dd>
             </div>
             <div>

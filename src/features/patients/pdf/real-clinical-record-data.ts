@@ -7,6 +7,7 @@ import type { Patient } from "../data";
 import type { PatientMedicalHistory } from "../medical-history-data";
 import { ACTIVE_TREATMENT_STATUSES, type TreatmentPlanItem } from "../treatment-plan-data";
 import { toOdontogramData, type ToothFindingRecord } from "../tooth-findings-data";
+import { usualDentistProfileIdFrom } from "../usual-dentist";
 
 // Pure data-shaping for the real Historia Clínica PDF — takes the same raw
 // real rows the screen already holds (patient/medicalHistory/toothFindings/
@@ -124,6 +125,9 @@ export type RealClinicalRecordPdfData = {
   phone: string;
   email: string;
   patientSinceLabel: string;
+  // "Odontólogo habitual" — same rule as the Paciente modal/Historia
+  // Clínica (usual-dentist.ts); null → the document's empty-state copy.
+  usualDentistName: string | null;
   allergies: string | null;
   medicalConditions: string | null;
   currentMedications: string | null;
@@ -294,6 +298,10 @@ export function buildRealClinicalRecordPdfData({
     phone: patient.phone || "Sin teléfono",
     email: patient.email || "Sin correo",
     patientSinceLabel: PATIENT_SINCE_FORMATTER.format(new Date(patient.createdAt)),
+    usualDentistName: (() => {
+      const profileId = usualDentistProfileIdFrom(clinicalEncounters);
+      return (profileId && professionals.get(profileId)?.name) || null;
+    })(),
     allergies: medicalHistory?.allergies ?? null,
     medicalConditions: medicalHistory?.medicalConditions ?? null,
     currentMedications: medicalHistory?.currentMedications ?? null,

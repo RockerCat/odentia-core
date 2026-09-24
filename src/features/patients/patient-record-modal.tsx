@@ -9,8 +9,8 @@ import { ClinicalAlerts } from "./clinical-alerts";
 import { fetchPatientClinicalEncounters, type ClinicalEncounterRecord } from "./clinical-encounters-data";
 import type { Patient } from "./data";
 import type { PatientIdentityCatalogs } from "./patients-screen";
-import { resolveUpdatedByProfessional } from "./resolve-updated-by";
 import { lastVisitLabelFrom, nextAppointmentLabelFrom } from "./resumen-tab";
+import { resolveUsualDentistName } from "./usual-dentist";
 import { fetchAppointmentsForPatient, type Appointment } from "@/features/dashboard/appointments-data";
 import { FIELD_CLASS } from "@/features/dashboard/appointment-detail-modal";
 import { formatDateLabel, formatTimeLabel } from "@/features/dashboard/real-format";
@@ -159,7 +159,8 @@ export function PatientRecordModal({
   //   - lastVisitLabelFrom/nextAppointmentLabelFrom (resumen-tab.tsx) —
   //     the exact same label logic Historia Clínica already shows, so
   //     this modal can never disagree with it;
-  //   - resolveUpdatedByProfessional (resolve-updated-by.ts) — resolves
+  //   - resolveUsualDentistName (usual-dentist.ts, the ONE "Odontólogo
+  //     habitual" rule Historia Clínica and its PDF also use) — resolves
   //     the last finalized encounter's own attended_by (a profiles.id,
   //     captured server-side as auth.uid() at save time — see that
   //     column's migration) to a display name; "Sin asignar" if there is
@@ -187,12 +188,9 @@ export function PatientRecordModal({
           fetchAppointmentsForPatient(supabase, clinicId, patient.id),
           fetchPatientClinicalEncounters(supabase, clinicId, patient.id),
         ]);
-        const lastEncounterAttendedBy = encounters[0]?.attendedBy ?? null;
-        const usualDentist = lastEncounterAttendedBy
-          ? await resolveUpdatedByProfessional(supabase, clinicId, lastEncounterAttendedBy)
-          : null;
+        const usualDentistName = await resolveUsualDentistName(supabase, clinicId, encounters);
         if (!cancelled) {
-          setAppointmentsSummary({ appointments, encounters, usualDentistName: usualDentist?.name ?? null });
+          setAppointmentsSummary({ appointments, encounters, usualDentistName });
         }
       } catch {
         if (!cancelled) setAppointmentsSummary(null);

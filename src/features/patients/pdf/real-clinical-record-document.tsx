@@ -626,7 +626,7 @@ export function RealClinicalRecordDocument({
             </View>
             <View style={styles.panel}>
               <Text style={styles.panelLabel}>Clínico</Text>
-              <PanelLine label="Odontólogo habitual" value="Aún sin odontólogo" />
+              <PanelLine label="Odontólogo habitual" value={data.usualDentistName ?? "Aún sin odontólogo"} />
               <PanelLine label="Paciente desde" value={data.patientSinceLabel} />
             </View>
           </View>

@@ -3,6 +3,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { fetchAppointmentsForPatient } from "@/features/dashboard/appointments-data";
 import { fetchPatientClinicalDocuments } from "@/features/patients/clinical-documents-data";
 import { fetchEncounterClinicalDataForEncounters, fetchPatientClinicalEncounters } from "@/features/patients/clinical-encounters-data";
+import { resolveUsualDentistName } from "@/features/patients/usual-dentist";
 import { fetchPatientClinicalNotes } from "@/features/patients/clinical-notes-data";
 import { canEditClinicalData } from "@/features/patients/clinical-permissions";
 import { fetchPatientById } from "@/features/patients/data";
@@ -69,6 +70,16 @@ export default async function PatientClinicalRecordPage({ params }: { params: Pr
     clinicalEncounters = await fetchPatientClinicalEncounters(supabase, context.clinic.id, patient.id);
   } catch (error) {
     console.error("[/pacientes/[id]/historia-clinica] fetchPatientClinicalEncounters failed", error);
+  }
+
+  // "Odontólogo habitual" — same derived rule as the Paciente modal
+  // (usual-dentist.ts), never a hardcoded placeholder; optional for the
+  // page like everything above (null → the screen's own empty state).
+  let usualDentistName: string | null = null;
+  try {
+    usualDentistName = await resolveUsualDentistName(supabase, context.clinic.id, clinicalEncounters);
+  } catch (error) {
+    console.error("[/pacientes/[id]/historia-clinica] resolveUsualDentistName failed", error);
   }
 
   // RIPS #4 — Atenciones' own diagnósticos/servicios realizados, one
@@ -157,6 +168,7 @@ export default async function PatientClinicalRecordPage({ params }: { params: Pr
         medicalHistory={medicalHistory}
         toothFindings={toothFindings}
         clinicalEncounters={clinicalEncounters}
+        usualDentistName={usualDentistName}
         encounterClinicalData={encounterClinicalData}
         clinicalDocuments={clinicalDocuments}
         clinicalNotes={clinicalNotes}
