@@ -2,13 +2,18 @@
 
 # Odentia Core
 
-**Last Updated:** 2026-09-18
+**Last Updated:** 2026-09-24
 
 ---
 
 # Estado actual
 
 **MVP FEATURE COMPLETE + REAL E2E STABILIZED — FUNCTIONAL FREEZE / MANUAL QA.**
+
+**Latest: CORE PILOT E2E: PASS (2026-09-24)** — the full clinical flow,
+Superadmin provisioning through the Patient Portal, validated manually on a
+real pilot clinic. RIPS: READY FOR FIRST OFFICIAL MUV/SISPRO VALIDATION.
+See "Checkpoint 2026-09-24" below.
 
 Every feature vertical in the MVP scope (see "REAL / COMPLETO PARA MVP" below) runs
 on real, tenant-isolated Supabase data — Auth, Postgres, RLS, Storage — with an
@@ -183,8 +188,10 @@ one coherent, QA-gated commit.
 - "Servicios realizados" (`encounter_services`) is now the sole write path
   for what happened in an atención; the legacy "Procedimientos realizados"
   UI (add/edit/remove) is removed, its historical data preserved read-only.
-  Modalidad auto-resolved, Causa/Motivo defaulted for new consultations,
-  Finalidad required at finalize-time only (export readiness stays
+  Modalidad auto-resolved, Causa/Motivo defaulted for new consultations
+  (later removed — no default; required at "Finalizar atención", see
+  "Finalidad → Causa/Motivo" under RIPS), Finalidad required at
+  finalize-time only (export readiness stays
   unaffected — historical encounters are never retroactively blocked).
 - Patient Portal (`/portal/historia`) reads her own finalized structured
   services/diagnoses via new additive RLS (see below).
@@ -209,14 +216,18 @@ local == remote):**
 - `20260918100000_patient_select_own_encounter_services_diagnoses.sql`
 
 **RIPS current state:** Odentia internal RIPS pipeline validated; first
-official MUV/SISPRO validation remains the next external milestone.
+official MUV/SISPRO validation remains the next external milestone
+(status as of 2026-09-24: **READY FOR FIRST OFFICIAL MUV/SISPRO
+VALIDATION** — see the 2026-09-24 checkpoint below).
 
 **Próximo hito (next validation flow, not a pending implementation task):**
 a real pilot run — SUPERADMIN crea una clínica real → se asigna un
 Admin-Odontólogo → configura identidad/especialidad RIPS → se registra un
 paciente real → cita → atención → finalizar → `/rips` → generar JSON →
 subir a MUV/SISPRO — is the next end-to-end validation, distinct from and
-beyond this checkpoint's own scope.
+beyond this checkpoint's own scope. (2026-09-24: the clinical part of this
+run, through the Patient Portal, is done — see "CORE PILOT E2E: PASS"
+below; `/rips` generation + MUV upload is what remains.)
 
 **Known issue (non-blocking):** an intermittent localhost login freeze was
 observed during QA in an earlier session; not consistently reproducible;
@@ -224,6 +235,76 @@ root cause unconfirmed; no speculative fix retained. All diagnostic
 instrumentation added while investigating it was fully reverted
 (`src/app/login/page.tsx` carries zero diff from its pre-investigation
 state).
+
+**Checkpoint 2026-09-24 — CORE PILOT E2E: PASS.** The pilot's core
+clinical flow was exercised **manually, for real, end to end** on a real
+provisioned pilot clinic (Clínica Borcelle 2, first Clinic Admin
+"Admin Borcelle 2", patient "Alex Paciente Borcelle2") — a human driving
+the real app, not an inference from code or unit tests:
+
+| Step | Result |
+|---|---|
+| SUPERADMIN crea/provisiona clínica | ✅ |
+| Primer Clinic Admin activa acceso | ✅ |
+| Configura perfil profesional (self-service) | ✅ |
+| Revisa/acepta horario inicial | ✅ |
+| Crea paciente | ✅ |
+| Crea cita | ✅ |
+| Paciente llega | ✅ |
+| Inicia atención | ✅ |
+| Registra odontograma, servicio (Consulta de ortodoncia, CUPS 890222) y diagnóstico (Z012) | ✅ |
+| Finaliza atención | ✅ |
+| Revisa Historia Clínica | ✅ |
+| Genera acceso del paciente → paciente activa acceso → entra al Portal | ✅ |
+| Portal muestra su atención | ✅ |
+
+**Findings resolved during this E2E** (each fixed surgically, with
+regression tests, on `main`):
+- **Horario inicial** (`a3f3b04`) — every new professional starts with a
+  REAL Lun–Vie 08:00–17:00 schedule (persisted, editable rows); a Clinic
+  Admin's self-created profile now seeds too (the live
+  `create_my_professional_profile()` overload never did). See "Availability
+  / Absences" below.
+- **Causa o motivo de la consulta required** (`b3136b4`) — the RIPS
+  capture/validation pipeline was already correct; the field was labeled
+  with the catalog's table name ("Causa externa") and had no inline
+  required hint. Now labeled and hinted like Finalidad.
+- **Odontólogo habitual** (`97ffadc`) — canonical meaning: the
+  professional of the patient's most recent FINALIZED atención, as long as
+  they're still on the team (`usual-dentist.ts`). Paciente modal, Historia
+  Clínica and its PDF all use this one rule (Historia/PDF used to hardcode
+  "Aún sin odontólogo").
+- **Detalle de atención** (`01472c8`) — a completed Cita in the Cita
+  modal's patient history links to its real atención in Historia Clínica →
+  Atenciones; the "estará disponible próximamente" placeholder is gone.
+- **Selector causa/motivo** (`2a5d822`) — searchable (description, accent-
+  free, or code), frequent dental causes listed first; the full official
+  `RIPSCausaExternaVersion2` catalog stays available, no defaults, no
+  inference.
+- **Edición de horarios** (`011b6ef`) — an existing block's start/end can
+  be edited in place (same row, same day, same active state; Cancelar
+  never persists; start < end enforced).
+
+Pilot clinic's final schedule: Lun–Vie 08:00–17:00, five active blocks.
+
+**Evidence:** manual E2E PASS (above); last full suite `730 passed, 6
+skipped`; `tsc --noEmit` PASS; ESLint PASS; `git diff --check` PASS.
+Browser automation during the fixes covered only the individual checks
+each fix itself reports — never claimed for the whole flow.
+
+**Deferred (not blockers):**
+- **Overlapping availability blocks** are allowed both when adding and
+  when editing (no DB constraint either); Agenda dedupes their slots. If
+  overlaps are ever prohibited, it must be one cross-cutting rule for add
+  + edit + DB, never edit-only.
+- **RIPS / MUV:** Core clinical E2E PASS is **not** an official RIPS
+  validation. Status: **READY FOR FIRST OFFICIAL MUV/SISPRO VALIDATION**
+  — to be run with a real dentist/appropriate case (see
+  `docs/rips-pilot-validation.md`).
+- Unchanged, still tracked separately: cleanup of visible mock/dev
+  artifacts, Patient Portal reprogramación/cancelación, billing/payments,
+  the entitlement RLS retrofit, and every other item already recorded in
+  this file.
 
 ---
 
@@ -465,10 +546,6 @@ did **not** independently re-verify — genuine gaps for the upcoming systematic
 manual QA pass, not known bugs. None of these are P0/P1 feature gaps; treat a
 failure found here as a bug to fix, not evidence the feature doesn't exist.
 
-- [ ] Clinic Admin with no `professional_profile` → self-creates one via
-      `/mi-perfil-profesional` or `/clinica` in a real browser session (the
-      Real E2E admin deliberately chose the pure-admin onboarding path, never
-      exercising this).
 - [ ] Reportes with more than one real professional in the same clinic (filter by
       professional) — only one Dentist existed in the Real E2E clinic.
 - [ ] Patient/clinic isolation with a SECOND real patient account: a Patient
@@ -487,10 +564,17 @@ failure found here as a bug to fix, not evidence the feature doesn't exist.
       Iniciar atención → Finalizar atención, confirm the Cita and the resulting
       Atención end up correct. (Real E2E's Journey G smoke-tested Iniciar →
       Finalizar directly, skipping the optional arrival sub-steps — see
-      CLAUDE.md's own note that arrival is never a prerequisite.)
+      CLAUDE.md's own note that arrival is never a prerequisite. The
+      2026-09-24 CORE PILOT E2E covered Paciente llegó → Iniciar →
+      Finalizar; the Sala de espera sub-step was not reported, so it stays
+      open.)
 
 ## Already resolved (kept for history — do not re-open)
 
+- [x] Clinic Admin with no `professional_profile` self-creates one in a real
+      browser session — **PASS**, CORE PILOT E2E (2026-09-24); found and
+      fixed along the way that this path never seeded the initial schedule
+      (`a3f3b04`).
 - [x] Equipo/Patient invitation acceptance with a real second account —
       **PASS**, Real E2E Stabilization, Journeys C/D/E.
 - [x] Patient Portal with a real, independent Patient login — **PASS**,
@@ -1717,7 +1801,9 @@ created.
   this modal still said "Sin atenciones registradas"). Now real: Última
   atención/Odontólogo habitual read `fetchPatientClinicalEncounters`
   (`finalized_at IS NOT NULL` only, same criterion `/rips` itself uses)
-  + `resolveUpdatedByProfessional` on the last encounter's `attended_by`;
+  + `resolveUpdatedByProfessional` on the last encounter's `attended_by`
+  (since 2026-09-24 this is `usual-dentist.ts`, the one rule Historia
+  Clínica and its PDF share too);
   the two KPI counts and Próxima cita/Historial de citas reuse the SAME
   `fetchAppointmentsForPatient` array the modal already loads (no second
   fetch) plus `lastVisitLabelFrom`/`nextAppointmentLabelFrom`, the exact
@@ -1831,7 +1917,9 @@ created.
     has no `step` restricting it to :00/:30, so a real 08:30–17:30 block must
     yield slots anchored exactly at 08:30 through 17:00, never an invented
     08:00 or an extended 17:30. Also fixed, same pass: the fallback
-    ("zero rows → legacy-unrestricted 08:00–18:00") is now evaluated **per
+    ("zero rows → legacy-unrestricted 08:00–18:00"; superseded 2026-09-24 —
+    the zero-rows fallback is now the initial Lun–Vie 08:00–17:00 schedule,
+    see "Availability / Absences") is now evaluated **per
     professional**, never per clinic — a professional with real
     configuration who simply left one day unconfigured now shows zero slots
     that day, never the default; and `hasAvailableFutureSlot`'s own
@@ -1882,9 +1970,21 @@ professional, enforced by the `validate_appointment_availability` trigger on
 every `appointments` INSERT/UPDATE (not just an app-level pre-check). Exact
 semantics — regression-prone, do not simplify:
 
-- **Zero availability rows for a professional** → legacy-unrestricted: every day/
-  time is bookable (the original, pre-availability-feature behavior, preserved
-  so a professional who never configures a schedule isn't suddenly blocked).
+- **Initial schedule = real rows (2026-09-24).** Every new professional
+  profile gets Lun–Vie 08:00–17:00 as normal, editable rows
+  (`seed_default_professional_availability()`, called by every real
+  creation path); migration `20260924100000` also materialized it for
+  every pre-existing profile with zero rows. Each block toggles, deletes,
+  and (since `011b6ef`) edits its own start/end in place — changing one
+  day never touches another.
+- **Zero availability rows** (now only reachable by deleting every block)
+  → the DB trigger stays legacy-unrestricted (the original,
+  pre-availability-feature behavior, kept on purpose); Agenda offers the
+  initial Lun–Vie 08:00–17:00 schedule, and Configuración offers
+  "Restaurar horario inicial".
+- **Overlapping blocks** are allowed (add, edit, and DB alike); Agenda
+  dedupes their slots. Prohibiting them would have to be one rule across
+  add + edit + DB (deferred, not a blocker).
 - **At least one ACTIVE availability row** → a Cita must fall entirely within
   one of that professional's active blocks for that day of the week; anything
   outside is rejected.
@@ -1913,8 +2013,11 @@ semantics — regression-prone, do not simplify:
   change was made to any of them. The one real gap found:
   `seed_default_professional_availability()` (Lun–Vie 08:00–17:00,
   Sáb/Dom none — `20260914090000`) was correctly called by
-  `accept_clinic_invitation()` (dentist), `create_my_professional_profile()`,
-  and `bootstrap_clinic()`'s original 20-argument overload, but NOT by
+  `accept_clinic_invitation()` (dentist), `create_my_professional_profile()`
+  (**correction, 2026-09-24:** only a dead 4-argument overload of it; the
+  live 6-argument one the app calls never seeded — fixed by
+  `20260924100000`), and `bootstrap_clinic()`'s original 20-argument
+  overload, but NOT by
   `bootstrap_clinic()`'s 22-argument overload (the one with
   `location_latitude`/`location_longitude` — see `20260916090000`'s own
   comment on why two live overloads exist at all). Fixed by
@@ -1944,7 +2047,9 @@ semantics — regression-prone, do not simplify:
   configurado") stays a historical profile under the legacy-unrestricted
   fallback above, deliberately **not backfilled** — resolving it, if ever
   wanted, is a manual "configure her Horario in Configuración" action, not
-  a code change.
+  a code change. (**Superseded 2026-09-24:** `20260924100000` did
+  materialize Lun–Vie 08:00–17:00 for every profile that still had zero
+  rows — profiles with any row were never touched.)
 
 ## Reportes (real)
 
