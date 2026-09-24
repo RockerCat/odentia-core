@@ -89,6 +89,15 @@ export type FinalizeReadinessInput = {
   diagnoses: FinalizeReadinessDiagnosis[];
 };
 
+// The ONE definition of "this consultation still needs its Causa/Motivo"
+// (DT1 causaMotivoAtencion, catalog RIPSCausaExternaVersion2) — used by
+// the finalize blocker below AND by the service card's own inline
+// "obligatoria" hint (real-clinical-encounter-screen.tsx), so the field
+// can never look complete while Finalizar still blocks on it.
+export function isConsultationCausaMotivoMissing(s: Pick<FinalizeReadinessService, "ripsServiceType" | "causaMotivoCode">): boolean {
+  return s.ripsServiceType === "consultation" && s.causaMotivoCode.trim() === "";
+}
+
 // Never defaults incapacityCode to "No" ("02") — an explicit Sí/No choice
 // is required; "sin responder" (null) always blocks, it's never silently
 // resolved into a regulatory fact Odentia doesn't actually have (same
@@ -104,7 +113,7 @@ export function getEncounterFinalizeBlockers(input: FinalizeReadinessInput): str
     }
     // Causa/Motivo — consultation-only, same pattern as the valor-cobrado
     // check above (never a procedimiento, which has no such field).
-    if (s.ripsServiceType === "consultation" && s.causaMotivoCode.trim() === "") {
+    if (isConsultationCausaMotivoMissing(s)) {
       blockers.push(`Falta indicar la causa o motivo de la consulta ${s.cupsCode || "seleccionada"}.`);
     }
     // Finalidad — a real clinical decision, never defaulted (unlike

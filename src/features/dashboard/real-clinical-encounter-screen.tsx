@@ -55,7 +55,7 @@ import {
 import { FIELD_CLASS } from "./appointment-detail-modal";
 import { updateAppointment } from "./appointments-actions";
 import { fetchAppointmentsForPatient, type Appointment } from "./appointments-data";
-import { getEncounterFinalizeBlockers } from "./encounter-finalize-readiness";
+import { getEncounterFinalizeBlockers, isConsultationCausaMotivoMissing } from "./encounter-finalize-readiness";
 import { resolveCausaOnFinalidadChange } from "./finalidad-causa";
 import { OdontogramPreview } from "./odontogram-teeth";
 import type { BoardProfessional } from "./real-appointments-board";
@@ -1143,19 +1143,33 @@ export function RealClinicalEncounterScreen({
                             "Finalizar atención" si falta Finalidad. */}
                         {s.cupsCode && s.ripsServiceType !== "unknown" && (
                           <div className="mt-2 flex flex-wrap items-start gap-2">
+                            {/* Label says what DT1 actually asks for
+                                (causaMotivoAtencion) — "Causa externa" is
+                                only the SISPRO catalog's table name
+                                (RIPSCausaExternaVersion2) and read like an
+                                optional injury field, so a pilot user left
+                                it empty and only learned at Finalizar. */}
                             {s.ripsServiceType === "consultation" && (
-                              <select
-                                value={s.causaMotivoCode}
-                                onChange={(e) => updateService(s.id, { causaMotivoCode: e.target.value })}
-                                className={FIELD_CLASS}
-                              >
-                                <option value="">Causa externa</option>
-                                {causaMotivoOptions.map((o) => (
-                                  <option key={o.code} value={o.code}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                              </select>
+                              <div className="flex flex-col gap-1">
+                                <select
+                                  value={s.causaMotivoCode}
+                                  onChange={(e) => updateService(s.id, { causaMotivoCode: e.target.value })}
+                                  aria-label="Causa o motivo de la consulta"
+                                  className={FIELD_CLASS}
+                                >
+                                  <option value="">Causa o motivo de la consulta</option>
+                                  {causaMotivoOptions.map((o) => (
+                                    <option key={o.code} value={o.code}>
+                                      {o.label}
+                                    </option>
+                                  ))}
+                                </select>
+                                {isConsultationCausaMotivoMissing(s) && (
+                                  <span className="text-xs text-warning">
+                                    Selecciona la causa o motivo de la consulta — es obligatoria para poder finalizar la atención.
+                                  </span>
+                                )}
+                              </div>
                             )}
                             <div className="flex flex-col gap-1">
                               <select

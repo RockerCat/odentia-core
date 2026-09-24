@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { getEncounterFinalizeBlockers, type FinalizeReadinessDiagnosis, type FinalizeReadinessInput } from "./encounter-finalize-readiness";
+import {
+  getEncounterFinalizeBlockers,
+  isConsultationCausaMotivoMissing,
+  type FinalizeReadinessDiagnosis,
+  type FinalizeReadinessInput,
+} from "./encounter-finalize-readiness";
 
 // Regression for this task's own two pendientes ("falta indicar si hubo
 // incapacidad", "falta el valor cobrado por la consulta 890203") — this
@@ -285,6 +290,46 @@ describe("getEncounterFinalizeBlockers", () => {
         }),
       );
       expect(blockers).toEqual([]);
+    });
+  });
+
+  // Pilot E2E (2026-09-24): Consulta de ortodoncia 890222, Z012 confirmado
+  // nuevo, valor 60000, Finalidad chosen, Causa left empty because the
+  // card's only text for the field was the catalog name "Causa externa".
+  // The card's inline hint now uses isConsultationCausaMotivoMissing — the
+  // SAME predicate the blocker uses — so hint and gate can never disagree.
+  describe("pilot 890222 — causa o motivo de la consulta", () => {
+    const PILOT_SERVICE = {
+      id: "svc-890222",
+      cupsCode: "890222",
+      ripsServiceType: "consultation" as const,
+      serviceValue: "60000",
+      finalidadCode: "15",
+      causaMotivoCode: "",
+    };
+    const PILOT_DIAGNOSES: FinalizeReadinessDiagnosis[] = [
+      { cie10Code: "Z012", role: "principal", diagnosisTypeCode: "02", encounterServiceId: null, sequence: 0 },
+    ];
+
+    it("blocks with exactly the causa/motivo message, and the card hint predicate agrees", () => {
+      const blockers = getEncounterFinalizeBlockers(base({ services: [PILOT_SERVICE], diagnoses: PILOT_DIAGNOSES }));
+      expect(blockers).toEqual(["Falta indicar la causa o motivo de la consulta 890222."]);
+      expect(isConsultationCausaMotivoMissing(PILOT_SERVICE)).toBe(true);
+    });
+
+    it("an explicitly selected causa clears this blocker (and the hint) with nothing else changed", () => {
+      const withCausa = { ...PILOT_SERVICE, causaMotivoCode: "38" };
+      expect(getEncounterFinalizeBlockers(base({ services: [withCausa], diagnoses: PILOT_DIAGNOSES }))).toEqual([]);
+      expect(isConsultationCausaMotivoMissing(withCausa)).toBe(false);
+    });
+
+    it("the hint never appears for a procedure or an unclassified CUPS, and Finalidad keeps its own blocker", () => {
+      expect(isConsultationCausaMotivoMissing({ ripsServiceType: "procedure", causaMotivoCode: "" })).toBe(false);
+      expect(isConsultationCausaMotivoMissing({ ripsServiceType: "unknown", causaMotivoCode: "" })).toBe(false);
+      const blockers = getEncounterFinalizeBlockers(
+        base({ services: [{ ...PILOT_SERVICE, causaMotivoCode: "38", finalidadCode: "" }], diagnoses: PILOT_DIAGNOSES }),
+      );
+      expect(blockers).toEqual(["Falta indicar la finalidad de la consulta 890222."]);
     });
   });
 
