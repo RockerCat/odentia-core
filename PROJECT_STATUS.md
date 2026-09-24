@@ -251,6 +251,7 @@ the real app, not an inference from code or unit tests:
 | Crea paciente | ✅ |
 | Crea cita | ✅ |
 | Paciente llega | ✅ |
+| Sala de espera | N/A — the attending professional is the Clinic Admin herself; delegated front-desk flow tracked separately under "REMAINING MANUAL QA" |
 | Inicia atención | ✅ |
 | Registra odontograma, servicio (Consulta de ortodoncia, CUPS 890222) y diagnóstico (Z012) | ✅ |
 | Finaliza atención | ✅ |
@@ -560,14 +561,17 @@ failure found here as a bug to fix, not evidence the feature doesn't exist.
       document, and only her own (no test document existed in the Real E2E run).
 - [ ] Availability/absences with a second real Dentist configured differently from
       the first — confirm neither's rules leak into the other's slots.
-- [ ] Full arrival flow with a real session: Paciente llegó → Sala de espera →
-      Iniciar atención → Finalizar atención, confirm the Cita and the resulting
-      Atención end up correct. (Real E2E's Journey G smoke-tested Iniciar →
-      Finalizar directly, skipping the optional arrival sub-steps — see
-      CLAUDE.md's own note that arrival is never a prerequisite. The
-      2026-09-24 CORE PILOT E2E covered Paciente llegó → Iniciar →
-      Finalizar; the Sala de espera sub-step was not reported, so it stays
-      open.)
+- [ ] Delegated arrival flow (a separate scenario, not a gap in the CORE
+      PILOT E2E): Assistant or non-clinical Clinic Admin marks Paciente
+      llegó → Enviar a sala de espera → the professional takes the patient
+      → Iniciar atención → Finalizar atención, confirm the Cita and the
+      resulting Atención end up correct. (Real E2E's Journey G smoke-tested
+      Iniciar → Finalizar directly, skipping the optional arrival sub-steps
+      — see CLAUDE.md's own note that arrival is never a prerequisite. The
+      2026-09-24 CORE PILOT E2E ran the Clinic-Admin-who-is-also-the-
+      attending-professional scenario — Paciente llegó → the same
+      professional starts the atención — where Sala de espera is N/A by
+      design, not a missing step.)
 
 ## Already resolved (kept for history — do not re-open)
 
