@@ -10,7 +10,9 @@ import {
   createInitialAvailabilityBlocks,
   deleteAvailabilityBlock,
   fetchWeeklyAvailability,
+  replaceBlock,
   setAvailabilityBlockActive,
+  updateAvailabilityBlockHours,
   WEEKDAY_LABELS,
   type WeeklyAvailabilityBlock,
 } from "./availability-data";
@@ -55,6 +57,8 @@ export function HorarioEditor({
   const [endTime, setEndTime] = useState("17:00");
   const [adding, setAdding] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  // Inline "Editar" — one block at a time; hours only (never the day).
+  const [editing, setEditing] = useState<{ id: string; startTime: string; endTime: string } | null>(null);
 
   // professionalProfileId is stable for this component's whole lifetime in
   // both real callers (DentistSettingsScreen: always self; the Clinic
@@ -119,6 +123,23 @@ export function HorarioEditor({
       return;
     }
     setBlocks(outcome.blocks);
+    showToast("Horario actualizado correctamente");
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editing || pendingIds.has(editing.id)) return;
+    setActionError(null);
+    withPending(editing.id, true);
+    const supabase = createClient();
+    const outcome = await updateAvailabilityBlockHours(supabase, editing.id, { startTime: editing.startTime, endTime: editing.endTime });
+    withPending(editing.id, false);
+    if (outcome.status === "error") {
+      // Stay in edit mode with the typed values — nothing shown as saved.
+      setActionError(outcome.message);
+      return;
+    }
+    setBlocks((prev) => replaceBlock(prev ?? [], outcome.block));
+    setEditing(null);
     showToast("Horario actualizado correctamente");
   };
 
@@ -193,12 +214,72 @@ export function HorarioEditor({
                 <p className="w-24 shrink-0 text-sm font-medium text-foreground">{label}</p>
                 <div className="flex min-w-0 flex-1 flex-col gap-2">
                   {dayBlocks.map((block) => (
-                    <div key={block.id} className="flex items-center justify-between gap-3">
-                      <span className={`text-sm ${block.active ? "text-foreground" : "text-muted-foreground line-through"}`}>
-                        {block.startTime} – {block.endTime}
-                      </span>
-                      {canEdit && (
+                    <div key={block.id} className="flex flex-wrap items-center justify-between gap-3">
+                      {editing?.id === block.id ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="w-32">
+                            <input
+                              type="time"
+                              aria-label={`Hora inicio ${label}`}
+                              value={editing.startTime}
+                              onChange={(e) => setEditing({ ...editing, startTime: e.target.value })}
+                              className={FIELD_CLASS}
+                              disabled={pendingIds.has(block.id)}
+                              required
+                            />
+                          </span>
+                          <span className="text-sm text-muted-foreground">–</span>
+                          <span className="w-32">
+                            <input
+                              type="time"
+                              aria-label={`Hora fin ${label}`}
+                              value={editing.endTime}
+                              min={editing.startTime}
+                              onChange={(e) => setEditing({ ...editing, endTime: e.target.value })}
+                              className={FIELD_CLASS}
+                              disabled={pendingIds.has(block.id)}
+                              required
+                            />
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleSaveEdit}
+                            disabled={pendingIds.has(block.id)}
+                            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                          >
+                            {pendingIds.has(block.id) ? "Guardando…" : "Guardar"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditing(null);
+                              setActionError(null);
+                            }}
+                            disabled={pendingIds.has(block.id)}
+                            className="text-xs font-medium text-foreground/60 hover:text-foreground disabled:opacity-50"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <span className={`text-sm ${block.active ? "text-foreground" : "text-muted-foreground line-through"}`}>
+                          {block.startTime} – {block.endTime}
+                        </span>
+                      )}
+                      {canEdit && editing?.id !== block.id && (
                         <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActionError(null);
+                              setEditing({ id: block.id, startTime: block.startTime, endTime: block.endTime });
+                            }}
+                            disabled={pendingIds.has(block.id)}
+                            aria-label={`Editar horario ${label} ${block.startTime}-${block.endTime}`}
+                            className="text-xs font-medium text-primary hover:text-primary/80 disabled:opacity-50"
+                          >
+                            Editar
+                          </button>
                           <ToggleSwitch
                             label={`Bloque activo ${label} ${block.startTime}-${block.endTime}`}
                             checked={block.active}

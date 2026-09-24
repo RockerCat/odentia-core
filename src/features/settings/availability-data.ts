@@ -83,13 +83,21 @@ export type CreateBlockOutcome = { status: "ok"; block: WeeklyAvailabilityBlock 
 
 const GENERIC_ERROR = "No pudimos guardar el horario. Intenta de nuevo.";
 
+// The one range rule a block has (same as the table's own
+// professional_availability_time_range_check): "Agregar bloque" and
+// "Editar" both use it. Overlapping blocks are NOT rejected — neither the
+// add flow nor the DB ever did (agenda-hours.ts dedupes overlapping slots).
+export function validateBlockRange(startTime: string, endTime: string): string | null {
+  if (!startTime || !endTime || startTime >= endTime) return "La hora de fin debe ser posterior a la hora de inicio.";
+  return null;
+}
+
 export async function createAvailabilityBlock(
   supabase: SupabaseClient,
   input: { clinicId: string; professionalProfileId: string; dayOfWeek: number; startTime: string; endTime: string },
 ): Promise<CreateBlockOutcome> {
-  if (input.startTime >= input.endTime) {
-    return { status: "error", message: "La hora de fin debe ser posterior a la hora de inicio." };
-  }
+  const rangeError = validateBlockRange(input.startTime, input.endTime);
+  if (rangeError) return { status: "error", message: rangeError };
   const { data, error } = await supabase
     .from("professional_availability")
     .insert({
@@ -130,6 +138,35 @@ export async function createInitialAvailabilityBlocks(
     .select(AVAILABILITY_COLUMNS);
   if (error || !data) return { status: "error", message: GENERIC_ERROR };
   return { status: "ok", blocks: data.map(mapRow) };
+}
+
+// "Editar" — changes ONLY start_time/end_time of this one existing row (same
+// id, day, active flag, clinic/professional), never delete+insert. Same
+// RLS gate as toggle/delete (professional_availability_update_scoped →
+// can_manage_professional_schedule). `.select().single()` makes a row RLS
+// silently filtered out (0 rows, no error) an honest failure instead of a
+// fake "guardado".
+export async function updateAvailabilityBlockHours(
+  supabase: SupabaseClient,
+  blockId: string,
+  input: { startTime: string; endTime: string },
+): Promise<CreateBlockOutcome> {
+  const rangeError = validateBlockRange(input.startTime, input.endTime);
+  if (rangeError) return { status: "error", message: rangeError };
+  const { data, error } = await supabase
+    .from("professional_availability")
+    .update({ start_time: input.startTime, end_time: input.endTime })
+    .eq("id", blockId)
+    .select(AVAILABILITY_COLUMNS)
+    .single();
+  if (error || !data) return { status: "error", message: GENERIC_ERROR };
+  return { status: "ok", block: mapRow(data) };
+}
+
+// Replaces exactly the edited block in local state — every other block
+// (other days, other blocks the same day) is returned untouched.
+export function replaceBlock(blocks: WeeklyAvailabilityBlock[], updated: WeeklyAvailabilityBlock): WeeklyAvailabilityBlock[] {
+  return blocks.map((b) => (b.id === updated.id ? updated : b));
 }
 
 export async function setAvailabilityBlockActive(
