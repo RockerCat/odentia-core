@@ -30,6 +30,13 @@ const GENERIC_ERROR = "No pudimos guardar el cambio. Intenta de nuevo.";
 // duplicating this Spanish string.
 export const PAST_DATE_ERROR = "No se pueden agendar citas en una fecha u hora que ya pasó.";
 export const OVERLAP_ERROR = "Este profesional ya tiene otra cita en ese horario.";
+// validate_appointment_status_transition (20260924110000) rejects
+// completed → cancelled for every role — the real guard behind
+// canCancelAppointment (real-status.ts), which only hides the button.
+export const COMPLETED_CANCEL_ERROR = "Una cita completada no se puede cancelar.";
+export function isCompletedCancelError(error: { message?: string } | null): boolean {
+  return Boolean(error?.message?.includes("cannot cancel a completed appointment"));
+}
 export const OUTSIDE_AVAILABILITY_ERROR = "Este horario está fuera de la disponibilidad configurada del profesional.";
 export const NO_ACTIVE_SCHEDULE_ERROR = "Este profesional no tiene disponibilidad activa configurada.";
 export const WITHIN_ABSENCE_ERROR = "El profesional tiene una ausencia programada en este rango de fechas.";
@@ -349,6 +356,12 @@ export async function updateAppointment(appointmentId: string, patch: Appointmen
       .eq("id", appointmentId)
       .single();
     if (fetchError || !current) return { status: "error", message: GENERIC_ERROR };
+    // Same rule as the DB trigger (and canCancelAppointment in the UI),
+    // checked against the row's REAL current status — never a caller-
+    // supplied one.
+    if (patch.status === "cancelled" && current.status === "completed") {
+      return { status: "error", message: COMPLETED_CANCEL_ERROR };
+    }
 
     const wasTerminal = TERMINAL_STATUSES.includes(current.status);
     const nextStatus = patch.status ?? current.status;
@@ -393,6 +406,7 @@ export async function updateAppointment(appointmentId: string, patch: Appointmen
 
   const { error } = await supabase.from("appointments").update(dbPatch).eq("id", appointmentId);
   if (error) {
+    if (isCompletedCancelError(error)) return { status: "error", message: COMPLETED_CANCEL_ERROR };
     if (isOverlapConstraintError(error)) return { status: "error", message: OVERLAP_ERROR };
     if (isAvailabilityConstraintError(error)) return { status: "error", message: AVAILABILITY_CONSTRAINT_ERROR };
     return { status: "error", message: GENERIC_ERROR };

@@ -37,6 +37,7 @@ import { completedEncounterDetailHref } from "@/features/patients/encounter-deta
 import { dateKeyOf, endTimeIso, formatDateLabel, formatTimeLabel, isPastSlot } from "./real-format";
 import { hasAvailableFutureSlotForDay, isoWeekdayOfDayKey, resolveAgendaSlotsForDay, type AgendaAvailabilityBlock } from "./agenda-hours";
 import {
+  canCancelAppointment,
   canStartClinicalEncounter,
   CHANGEABLE_STATUSES,
   getDisplayStatus,
@@ -304,7 +305,7 @@ export function RealAppointmentDetailModal({
   // Assistant still can't touch).
   const showMarkNoShow = !isTerminal && !isInProgress && isUnresolved;
   const showPrimaryCta = showReactivate || showMarkArrived || showSendToWaitingRoom || showStartEncounter;
-  const showCancelCta = !(isAssistant && isInProgress);
+  const showCancelCta = canCancelAppointment(appointment.status, role);
   const footerButtonCount = (showCancelCta ? 1 : 0) + (showMarkNoShow ? 1 : 0) + 1 + (showPrimaryCta ? 1 : 0);
   const footerGridClass =
     footerButtonCount === 4
