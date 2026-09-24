@@ -36,7 +36,7 @@ describe("canPatientChangeAppointment (Reprogramar / Cancelar visibility)", () =
 
 describe("cancellation reasons", () => {
   it("are exactly the approved modal's options, as stable codes", () => {
-    expect(CANCELLATION_REASONS.map((r) => r.label)).toEqual(["No puedo asistir", "Necesito reprogramar", "Problema personal", "Otro"]);
+    expect(CANCELLATION_REASONS.map((r) => r.label)).toEqual(["No puedo asistir", "Problema personal", "Otro"]);
   });
 
   it("require a known code, and text for 'Otro'", () => {

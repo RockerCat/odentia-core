@@ -1,4 +1,4 @@
-import { CANCELLATION_REASONS } from "@/features/portal/cancellation-reasons";
+import { CANCELLATION_REASON_LABELS } from "@/features/portal/cancellation-reasons";
 import type { Appointment, AppointmentStatus } from "./appointments-data";
 
 // What staff sees about WHY/BY WHOM a Cita was cancelled — only real
@@ -22,7 +22,8 @@ export function getCancellationInfo(
   // was the clinic's.
   const cancelledByLabel = appointment.cancelledBy === "patient" ? "Paciente" : "Clínica";
   const code = appointment.cancellationReasonCode ?? null;
-  const reasonLabel = code ? (CANCELLATION_REASONS.find((r) => r.code === code)?.label ?? null) : null;
+  // Includes retired codes (e.g. need_reschedule) so history still reads right.
+  const reasonLabel = code ? (CANCELLATION_REASON_LABELS[code] ?? null) : null;
   const detail = code === "other" ? appointment.cancellationReasonDetail?.trim() || null : null;
   return { cancelledByLabel, reasonLabel, detail };
 }
