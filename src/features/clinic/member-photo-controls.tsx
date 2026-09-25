@@ -2,21 +2,21 @@
 
 import { useRef, useState } from "react";
 import { useToast } from "@/components/toast";
-import { removeProfessionalPhoto, uploadProfessionalPhoto } from "./clinic-media-actions";
+import { removeMemberPhoto, uploadMemberPhoto, type MemberPhotoTarget } from "./clinic-media-actions";
 import { CLINIC_IMAGE_ACCEPTED_TYPES } from "./clinic-media-data";
 
-// Equipo row action (clinical professionals only): the photo patients see
-// under "Nuestro equipo" and everywhere else the professional's avatar
-// shows. Written via set_professional_photo() — clinic_admin of the
-// professional's own clinic only.
-export function ProfessionalPhotoControls({
+// Equipo row action (every member): the photo patients see under "Nuestro
+// equipo" and everywhere else the person's avatar shows. Written via
+// set_professional_photo() / set_clinic_member_photo() — clinic_admin of
+// that member's own clinic only (see uploadMemberPhoto).
+export function MemberPhotoControls({
   clinicId,
-  professionalProfileId,
+  target,
   hasPhoto,
   onChange,
 }: {
   clinicId: string;
-  professionalProfileId: string;
+  target: MemberPhotoTarget;
   hasPhoto: boolean;
   onChange: (avatarUrl: string | null) => void;
 }) {
@@ -29,7 +29,7 @@ export function ProfessionalPhotoControls({
     if (!file || busy) return;
     setError(null);
     setBusy("upload");
-    const outcome = await uploadProfessionalPhoto(clinicId, professionalProfileId, file);
+    const outcome = await uploadMemberPhoto(clinicId, target, file);
     setBusy(null);
     if (inputRef.current) inputRef.current.value = "";
     if (outcome.status === "error") {
@@ -44,7 +44,7 @@ export function ProfessionalPhotoControls({
     if (busy) return;
     setError(null);
     setBusy("remove");
-    const outcome = await removeProfessionalPhoto(clinicId, professionalProfileId);
+    const outcome = await removeMemberPhoto(clinicId, target);
     setBusy(null);
     if (outcome.status === "error") {
       setError(outcome.message);

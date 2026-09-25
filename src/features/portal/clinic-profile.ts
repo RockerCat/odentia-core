@@ -1,5 +1,4 @@
 import type { PrimaryLocation } from "@/features/clinic/data";
-import type { PortalProfessional } from "./requests-data";
 
 // /portal/clinica — pure rules for what the clinic profile may show. Only
 // real configured data; every missing piece is omitted, never invented.
@@ -38,18 +37,62 @@ export function directionsUrl(location: PrimaryLocation | null): string | null {
   return address ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}` : null;
 }
 
-// "Nuestro equipo" card — photo (or UserAvatar's initials), name, and only
-// the optional fields that really exist.
-export type TeamCard = { id: string; name: string; avatarUrl: string | undefined; specialty: string | null; licenseNumber: string | null };
+// "Nuestro equipo" — the clinic's whole ACTIVE team (get_my_clinic_team():
+// clinic_admin/dentist/assistant memberships of the patient's own clinic).
+// A member with an active professional profile is shown by her clinical
+// identity (specialty/registro, even when she's also the clinic's admin);
+// anyone else by her human role — never an invented specialty/registro.
+export type ClinicTeamRole = "clinic_admin" | "dentist" | "assistant";
 
-export function teamCards(professionals: PortalProfessional[]): TeamCard[] {
-  return professionals.map((p) => ({
-    id: p.professionalProfileId,
-    name: p.name,
-    avatarUrl: p.avatarUrl ?? undefined,
-    specialty: p.specialty?.trim() || null,
-    licenseNumber: p.licenseNumber?.trim() || null,
-  }));
+export type ClinicTeamMemberRow = {
+  clinicId: string;
+  profileId: string;
+  firstName: string | null;
+  lastName: string | null;
+  avatarUrl: string | null;
+  role: ClinicTeamRole;
+  professionalProfileId: string | null;
+  licenseNumber: string | null;
+  specialtyName: string | null;
+};
+
+export type TeamCard = {
+  id: string;
+  name: string;
+  avatarUrl: string | undefined;
+  specialty: string | null;
+  licenseNumber: string | null;
+  // Non-clinical members only ("Administrador", "Asistente", …).
+  roleLabel: string | null;
+  isUsualDentist: boolean;
+};
+
+const NON_CLINICAL_ROLE_LABELS: Record<ClinicTeamRole, string> = {
+  clinic_admin: "Administrador",
+  dentist: "Odontólogo",
+  assistant: "Asistente",
+};
+
+// `usualDentistProfileId` is usualDentistProfileIdFrom() (usual-dentist.ts —
+// the same rule Historia Clínica / Mi salud dental use), never re-derived
+// here. When that person is in THIS clinic's active team she goes first,
+// once, with the badge; otherwise the team keeps its own order, no badge.
+export function teamCards(rows: ClinicTeamMemberRow[], clinicId: string, usualDentistProfileId: string | null): TeamCard[] {
+  const cards = rows
+    .filter((r) => r.clinicId === clinicId)
+    .map((r): TeamCard => {
+      const clinical = r.professionalProfileId !== null;
+      return {
+        id: r.profileId,
+        name: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || NON_CLINICAL_ROLE_LABELS[r.role],
+        avatarUrl: r.avatarUrl?.trim() || undefined,
+        specialty: clinical ? r.specialtyName?.trim() || null : null,
+        licenseNumber: clinical ? r.licenseNumber?.trim() || null : null,
+        roleLabel: clinical ? null : NON_CLINICAL_ROLE_LABELS[r.role],
+        isUsualDentist: usualDentistProfileId !== null && r.profileId === usualDentistProfileId,
+      };
+    });
+  return [...cards.filter((c) => c.isUsualDentist), ...cards.filter((c) => !c.isUsualDentist)];
 }
 
 // "Conoce nuestra clínica" — composition by photo count (order as stored,

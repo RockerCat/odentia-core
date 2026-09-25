@@ -30,6 +30,12 @@ export function professionalPhotoPath(clinicId: string, professionalProfileId: s
   return `${clinicId}/professionals/${professionalProfileId}`;
 }
 
+// A member WITHOUT a professional profile (assistant, non-clinical admin):
+// <clinicId>/members/<membershipId>, re-verified by set_clinic_member_photo().
+export function memberPhotoPath(clinicId: string, membershipId: string): string {
+  return `${clinicId}/members/${membershipId}`;
+}
+
 // ONE fixed object per clinic, overwritten on replace — a replaced cover
 // never leaves an orphan. clinics.cover_url's CHECK only accepts this
 // clinic's own <clinicId>/cover public URL (migration 20260925100000).

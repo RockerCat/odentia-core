@@ -6,8 +6,7 @@ import { normalizeClinicDescription } from "@/features/clinic/description";
 import { initialsOf } from "@/features/dashboard/real-format";
 import type { PatientClinic } from "@/features/session/types";
 import { ClinicLocationView } from "./clinic-location-view";
-import { directionsUrl, formatClinicAddress, galleryGridClass, galleryLayout, galleryTileClass, hasUsableCoordinates, teamCards, TEAM_GRID_CLASS } from "./clinic-profile";
-import type { PortalProfessional } from "./requests-data";
+import { directionsUrl, formatClinicAddress, galleryGridClass, galleryLayout, galleryTileClass, hasUsableCoordinates, TEAM_GRID_CLASS, type TeamCard } from "./clinic-profile";
 
 // Same wa.me deep-link convention as the rest of the Portal — a manual
 // deep-link only, never an automated send.
@@ -28,19 +27,19 @@ export type Loaded<T> = { status: "ok"; value: T } | { status: "error" };
 // in /portal/clinica/page.tsx is scoped to it server-side; no clinic_id
 // ever comes from here). Read-only. Sections degrade with the data: no
 // usable coordinates → no map (address/contact kept); no photos → no
-// gallery; no active professionals → no team. "Horario de atención" is
+// gallery; no active team members → no team. "Horario de atención" is
 // deliberately absent: Odentia only has per-professional availability, no
 // clinic-wide hours to show honestly.
 export function MyClinicScreen({
   clinic,
   location,
   gallery,
-  professionals,
+  team: teamResult,
 }: {
   clinic: PatientClinic | null;
   location: PrimaryLocation | null;
   gallery: Loaded<ClinicGalleryPhoto[]>;
-  professionals: Loaded<PortalProfessional[]>;
+  team: Loaded<TeamCard[]>;
 }) {
   const name = clinic?.name ?? "Mi clínica";
   const phone = clinic?.phone;
@@ -51,7 +50,7 @@ export function MyClinicScreen({
   const layout = galleryLayout(galleryPhotos.length);
   const showMap = location !== null && hasUsableCoordinates(location);
   const directions = directionsUrl(location);
-  const team = professionals.status === "ok" ? teamCards(professionals.value) : [];
+  const team = teamResult.status === "ok" ? teamResult.value : [];
 
   return (
     <div className="flex flex-col gap-8 sm:gap-10">
@@ -174,17 +173,28 @@ export function MyClinicScreen({
         </section>
       )}
 
-      {/* Nuestro equipo — active clinical professionals only (from
-          get_my_clinic_professionals); hidden when there are none. The
-          portrait (real photo, or the same-size initials via UserAvatar —
-          never a stock/mock photo) leads; then name, specialty, registro,
-          each optional line only when it really exists. */}
+      {/* Nuestro equipo — the clinic's whole active team (teamCards over
+          get_my_clinic_team), her "odontólogo habitual" first with a badge
+          when there is one; hidden when there's nobody. The portrait (real
+          photo, or the same-size initials via UserAvatar — never a
+          stock/mock photo) leads; then name and either the clinical
+          specialty/registro or the human role, each only when real. */}
       {team.length > 0 && (
         <section className={SECTION}>
           <h2 className={SECTION_TITLE}>Nuestro equipo</h2>
           <ul className={TEAM_GRID_CLASS}>
             {team.map((member) => (
-              <li key={member.id} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-sm">
+              <li
+                key={member.id}
+                className={`relative flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-background shadow-sm ${
+                  member.isUsualDentist ? "border-primary/40 ring-1 ring-primary/20" : "border-border"
+                }`}
+              >
+                {member.isUsualDentist && (
+                  <span className="absolute top-2 left-2 z-10 max-w-[calc(100%-1rem)] rounded-full bg-primary px-2 py-0.5 text-[10px] leading-tight font-semibold text-white shadow-sm sm:text-[11px]">
+                    Tu odontólogo habitual
+                  </span>
+                )}
                 <UserAvatar
                   name={member.name}
                   initials={initialsOf(member.name)}
@@ -196,6 +206,7 @@ export function MyClinicScreen({
                 <div className="flex min-w-0 flex-col gap-0.5 p-3 sm:p-4">
                   <p className="line-clamp-2 text-sm leading-snug font-semibold break-words text-foreground sm:text-base">{member.name}</p>
                   {member.specialty && <p className="line-clamp-2 text-xs font-medium break-words text-primary sm:text-sm">{member.specialty}</p>}
+                  {member.roleLabel && <p className="text-xs font-medium text-muted-foreground sm:text-sm">{member.roleLabel}</p>}
                   {member.licenseNumber && (
                     <p className="mt-1.5 text-[11px] leading-snug break-words text-label-foreground">
                       Registro profesional <span className="font-medium text-foreground/70">{member.licenseNumber}</span>
@@ -207,7 +218,7 @@ export function MyClinicScreen({
           </ul>
         </section>
       )}
-      {professionals.status === "error" && (
+      {teamResult.status === "error" && (
         <section className={SECTION}>
           <h2 className={SECTION_TITLE}>Nuestro equipo</h2>
           <p className="text-sm text-muted-foreground">No pudimos cargar el equipo de la clínica. Intenta de nuevo más tarde.</p>

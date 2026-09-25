@@ -15,7 +15,7 @@ import { PrimaryLocationSection } from "@/features/clinic/primary-location-secti
 import { ClinicCoverSection } from "@/features/clinic/clinic-cover-section";
 import { ClinicGallerySection } from "@/features/clinic/clinic-gallery-section";
 import type { ClinicGalleryPhoto } from "@/features/clinic/clinic-media-data";
-import { ProfessionalPhotoControls } from "@/features/clinic/professional-photo-controls";
+import { MemberPhotoControls } from "@/features/clinic/member-photo-controls";
 import { RipsConfigSection } from "@/features/clinic/rips-config-section";
 import { RipsSpecialtyServicesSection } from "@/features/clinic/rips-specialty-services-section";
 import type { ConfirmedSpecialtyRipsService, RelevantSpecialty, SuggestedSpecialtyRipsService } from "@/features/clinic/rips-specialty-service-config";
@@ -743,17 +743,20 @@ function EquipoSection({
                 </div>
                 <div className="flex items-center gap-3">
                   {/* Photo shown to patients in /portal/clinica ("Nuestro
-                      equipo") — clinical professionals only. */}
-                  {member.professionalProfile && (
-                    <ProfessionalPhotoControls
-                      clinicId={clinicId}
-                      professionalProfileId={member.professionalProfile.id}
-                      hasPhoto={Boolean(member.avatarUrl)}
-                      onChange={(avatarUrl) =>
-                        onMembersChange((prev) => prev.map((m) => (m.membershipId === member.membershipId ? { ...m, avatarUrl } : m)))
-                      }
-                    />
-                  )}
+                      equipo") — every member; a professional keeps her
+                      existing professional-photo object. */}
+                  <MemberPhotoControls
+                    clinicId={clinicId}
+                    target={
+                      member.professionalProfile
+                        ? { kind: "professional", professionalProfileId: member.professionalProfile.id }
+                        : { kind: "member", membershipId: member.membershipId }
+                    }
+                    hasPhoto={Boolean(member.avatarUrl)}
+                    onChange={(avatarUrl) =>
+                      onMembersChange((prev) => prev.map((m) => (m.membershipId === member.membershipId ? { ...m, avatarUrl } : m)))
+                    }
+                  />
                   <StatusBadge active={isActive} />
                   <button
                     type="button"

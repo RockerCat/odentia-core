@@ -2,7 +2,10 @@ import { PortalShell } from "@/components/shell/portal-shell";
 import { fetchPrimaryLocation, type PrimaryLocation } from "@/features/clinic/data";
 import { fetchClinicGalleryPhotos, type ClinicGalleryPhoto } from "@/features/clinic/clinic-media-data";
 import { MyClinicScreen, type Loaded } from "@/features/portal/my-clinic-screen";
-import { fetchMyClinicProfessionals, type PortalProfessional } from "@/features/portal/requests-data";
+import { fetchPatientClinicalEncounters } from "@/features/patients/clinical-encounters-data";
+import { usualDentistProfileIdFrom } from "@/features/patients/usual-dentist";
+import { teamCards, type TeamCard } from "@/features/portal/clinic-profile";
+import { fetchMyClinicTeam } from "@/features/portal/clinic-team-data";
 import { resolvePatientContext } from "@/features/session/resolve-patient-context";
 import type { PatientClinic } from "@/features/session/types";
 import { createClient } from "@/lib/supabase/server";
@@ -21,9 +24,13 @@ export default async function PortalClinicPage() {
   const supabase = await createClient();
 
   let clinic: PatientClinic | null = null;
+  let patientId: string | null = null;
   try {
     const context = await resolvePatientContext(supabase);
-    if (context.status === "ok") clinic = context.clinic;
+    if (context.status === "ok") {
+      clinic = context.clinic;
+      patientId = context.patient.id;
+    }
   } catch (error) {
     console.error("[/portal/clinica] failed to load real clinic", error);
   }
@@ -38,13 +45,16 @@ export default async function PortalClinicPage() {
   }
 
   // Gallery: clinic_gallery_photos RLS returns only THIS patient's own
-  // clinic's rows. Team: get_my_clinic_professionals() — active clinical
-  // professionals of her own clinic only (no assistants/admin-only users).
+  // clinic's rows. Team: get_my_clinic_team() — the active team of her own
+  // clinic only. "Odontólogo habitual": the SAME rule Historia Clínica and
+  // Mi salud dental use (usual-dentist.ts) over her own finalized
+  // atenciones (patient-scoped RLS); if that read fails the team still
+  // shows, just without the badge — never a guessed one.
   let gallery: Loaded<ClinicGalleryPhoto[]> = { status: "ok", value: [] };
-  let professionals: Loaded<PortalProfessional[]> = { status: "ok", value: [] };
-  if (clinic) {
+  let team: Loaded<TeamCard[]> = { status: "ok", value: [] };
+  if (clinic && patientId) {
     const clinicId = clinic.id;
-    [gallery, professionals] = await Promise.all([
+    const [galleryResult, teamRows, usualDentistProfileId] = await Promise.all([
       fetchClinicGalleryPhotos(supabase, clinicId).then(
         (value): Loaded<ClinicGalleryPhoto[]> => ({ status: "ok", value }),
         (error): Loaded<ClinicGalleryPhoto[]> => {
@@ -52,14 +62,17 @@ export default async function PortalClinicPage() {
           return { status: "error" };
         },
       ),
-      fetchMyClinicProfessionals(supabase).then(
-        (value): Loaded<PortalProfessional[]> => ({ status: "ok", value }),
-        (error): Loaded<PortalProfessional[]> => {
-          console.error("[/portal/clinica] fetchMyClinicProfessionals failed", error);
-          return { status: "error" };
-        },
-      ),
+      fetchMyClinicTeam(supabase).catch((error) => {
+        console.error("[/portal/clinica] fetchMyClinicTeam failed", error);
+        return null;
+      }),
+      fetchPatientClinicalEncounters(supabase, clinicId, patientId).then(usualDentistProfileIdFrom, (error) => {
+        console.error("[/portal/clinica] fetchPatientClinicalEncounters failed", error);
+        return null;
+      }),
     ]);
+    gallery = galleryResult;
+    team = teamRows ? { status: "ok", value: teamCards(teamRows, clinicId, usualDentistProfileId) } : { status: "error" };
   }
 
   const clinicName = clinic?.name ?? "Mi clínica";
@@ -67,7 +80,7 @@ export default async function PortalClinicPage() {
   return (
     // No shell heading: the portada's own <h1> already carries the name.
     <PortalShell activeNavLabel={clinicName}>
-      <MyClinicScreen clinic={clinic} location={location} gallery={gallery} professionals={professionals} />
+      <MyClinicScreen clinic={clinic} location={location} gallery={gallery} team={team} />
     </PortalShell>
   );
 }

@@ -14,6 +14,8 @@ import {
   galleryTileClass,
   hasUsableCoordinates,
   teamCards,
+  type ClinicTeamMemberRow,
+  type TeamCard,
   TEAM_GRID_CLASS,
 } from "./clinic-profile";
 import { MyClinicScreen } from "./my-clinic-screen";
@@ -63,18 +65,57 @@ describe("Dónde estamos", () => {
   });
 });
 
-describe("Nuestro equipo", () => {
-  it("real fields only; missing photo/specialty/registro are omitted, never invented", () => {
-    expect(
-      teamCards([
-        { professionalProfileId: "p1", name: "Admin Borcelle 2", avatarUrl: "https://x/avatar.png", specialty: "Ortodoncia", licenseNumber: "RM-1" },
-        { professionalProfileId: "p2", name: "Ana Ruiz", avatarUrl: null, specialty: null, licenseNumber: "  " },
-      ]),
-    ).toEqual([
-      { id: "p1", name: "Admin Borcelle 2", avatarUrl: "https://x/avatar.png", specialty: "Ortodoncia", licenseNumber: "RM-1" },
-      { id: "p2", name: "Ana Ruiz", avatarUrl: undefined, specialty: null, licenseNumber: null },
-    ]);
-    expect(teamCards([])).toEqual([]);
+describe("Nuestro equipo — who is shown, and how", () => {
+  const C = "clinic-1";
+  const row = (profileId: string, overrides: Partial<ClinicTeamMemberRow> = {}): ClinicTeamMemberRow => ({
+    clinicId: C,
+    profileId,
+    firstName: `Nombre ${profileId}`,
+    lastName: "Apellido",
+    avatarUrl: null,
+    role: "dentist",
+    professionalProfileId: `pp-${profileId}`,
+    licenseNumber: null,
+    specialtyName: null,
+    ...overrides,
+  });
+
+  it("the usual dentist goes first, once, with the badge; the rest keep their order", () => {
+    const cards = teamCards([row("a"), row("b"), row("c")], C, "b");
+    expect(cards.map((c) => c.id)).toEqual(["b", "a", "c"]);
+    expect(cards.map((c) => c.isUsualDentist)).toEqual([true, false, false]);
+  });
+
+  it("no usual dentist (or one not in this active team) → the team as-is, no badge, nothing invented", () => {
+    expect(teamCards([row("a"), row("b")], C, null).map((c) => [c.id, c.isUsualDentist])).toEqual([["a", false], ["b", false]]);
+    expect(teamCards([row("a"), row("b")], C, "gone").every((c) => !c.isUsualDentist)).toBe(true);
+  });
+
+  it("non-clinical members show their human role; never a specialty/registro", () => {
+    const [assistant, admin] = teamCards(
+      [
+        row("as", { role: "assistant", professionalProfileId: null, specialtyName: "X", licenseNumber: "Y" }),
+        row("ad", { role: "clinic_admin", professionalProfileId: null }),
+      ],
+      C,
+      null,
+    );
+    expect(assistant).toMatchObject({ roleLabel: "Asistente", specialty: null, licenseNumber: null });
+    expect(admin).toMatchObject({ roleLabel: "Administrador", specialty: null, licenseNumber: null });
+  });
+
+  it("an admin who is also a professional is shown by her clinical identity", () => {
+    const [card] = teamCards([row("ad", { role: "clinic_admin", specialtyName: "Ortodoncia", licenseNumber: "RM-1" })], C, null);
+    expect(card).toMatchObject({ roleLabel: null, specialty: "Ortodoncia", licenseNumber: "RM-1" });
+  });
+
+  it("real fields only: blank specialty/registro/photo are omitted", () => {
+    const [card] = teamCards([row("a", { specialtyName: " ", licenseNumber: "  ", avatarUrl: " " })], C, null);
+    expect(card).toMatchObject({ specialty: null, licenseNumber: null, avatarUrl: undefined });
+  });
+
+  it("tenant isolation: rows of any other clinic are never shown", () => {
+    expect(teamCards([row("a"), row("x", { clinicId: "other-clinic" })], C, "x").map((c) => c.id)).toEqual(["a"]);
   });
 });
 
@@ -86,7 +127,11 @@ describe("/portal/clinica sources", () => {
   it("every read is scoped to the patient's own resolved clinic (never a URL/prop id)", () => {
     expect(page).toContain("const context = await resolvePatientContext(supabase);");
     expect(page).toContain("fetchClinicGalleryPhotos(supabase, clinicId)");
-    expect(page).toContain("fetchMyClinicProfessionals(supabase)");
+    expect(page).toContain("fetchMyClinicTeam(supabase)");
+    // The usual dentist: the patient's OWN finalized atenciones (resolved ids only) + the shared rule.
+    expect(page).toContain("fetchPatientClinicalEncounters(supabase, clinicId, patientId).then(usualDentistProfileIdFrom");
+    expect(page).toContain("patientId = context.patient.id;");
+    expect(page).toContain("teamCards(teamRows, clinicId, usualDentistProfileId)");
     expect(page).not.toMatch(/\bparams\b|searchParams/);
   });
 
@@ -116,7 +161,7 @@ describe("/portal/clinica sources", () => {
     expect(resolver).toContain("clinic:clinics(id, name, slug, logo_url, phone, status, description, cover_url))");
     expect(resolver).toContain('.eq("profile_id", user.id)');
     expect(resolver).toContain("description: clinicRow.description,");
-    expect(page).toContain("if (context.status === \"ok\") clinic = context.clinic;");
+    expect(page).toContain("clinic = context.clinic;");
     expect(page).not.toMatch(/from\("clinics"\)/);
   });
 
@@ -146,7 +191,7 @@ describe("Portada (hero)", () => {
   });
   const render = (c: PatientClinic, loc: PrimaryLocation | null = null, photos: ClinicGalleryPhoto[] = []) =>
     renderToStaticMarkup(
-      createElement(MyClinicScreen, { clinic: c, location: loc, gallery: { status: "ok", value: photos }, professionals: { status: "ok", value: [] } }),
+      createElement(MyClinicScreen, { clinic: c, location: loc, gallery: { status: "ok", value: photos }, team: { status: "ok", value: [] } }),
     );
   const COVER = "https://proj.supabase.co/storage/v1/object/public/clinic-media/c1/cover?v=1";
 
@@ -225,7 +270,7 @@ describe("Conoce nuestra clínica — editorial gallery", () => {
   it("renders every photo in stored order with object-cover (never distorted), and nothing without photos", () => {
     const clinicRow: PatientClinic = { id: "c1", name: "C", slug: "c", logoUrl: null, phone: null, status: "active", description: null, coverUrl: null };
     const html = renderToStaticMarkup(
-      createElement(MyClinicScreen, { clinic: clinicRow, location: null, gallery: { status: "ok", value: photos(4) }, professionals: { status: "ok", value: [] } }),
+      createElement(MyClinicScreen, { clinic: clinicRow, location: null, gallery: { status: "ok", value: photos(4) }, team: { status: "ok", value: [] } }),
     );
     const order = [0, 1, 2, 3].map((i) => html.indexOf(`https://x/g${i}.jpg`));
     expect(order).toEqual([...order].sort((a, b) => a - b));
@@ -236,17 +281,21 @@ describe("Conoce nuestra clínica — editorial gallery", () => {
 
 describe("Nuestro equipo — protagonist portraits", () => {
   const clinicRow: PatientClinic = { id: "c1", name: "C", slug: "c", logoUrl: null, phone: null, status: "active", description: null, coverUrl: null };
-  const pro = (id: string, overrides: Partial<{ avatarUrl: string | null; specialty: string | null; licenseNumber: string | null }> = {}) => ({
-    professionalProfileId: id,
+  const pro = (
+    id: string,
+    overrides: Partial<{ avatarUrl: string | null; specialty: string | null; licenseNumber: string | null; roleLabel: string | null; isUsualDentist: boolean }> = {},
+  ): TeamCard => ({
+    id,
     name: `Ana ${id}`,
-    avatarUrl: null,
-    specialty: null,
-    licenseNumber: null,
-    ...overrides,
+    avatarUrl: overrides.avatarUrl ?? undefined,
+    specialty: overrides.specialty ?? null,
+    licenseNumber: overrides.licenseNumber ?? null,
+    roleLabel: overrides.roleLabel ?? null,
+    isUsualDentist: overrides.isUsualDentist ?? false,
   });
-  const render = (pros: ReturnType<typeof pro>[]) =>
+  const render = (pros: TeamCard[]) =>
     renderToStaticMarkup(
-      createElement(MyClinicScreen, { clinic: clinicRow, location: null, gallery: { status: "ok", value: [] }, professionals: { status: "ok", value: pros } }),
+      createElement(MyClinicScreen, { clinic: clinicRow, location: null, gallery: { status: "ok", value: [] }, team: { status: "ok", value: pros } }),
     );
 
   it("2 columns on mobile (never a carousel); 1 professional stays one column-wide card", () => {
@@ -265,6 +314,21 @@ describe("Nuestro equipo — protagonist portraits", () => {
     expect(html).toMatch(new RegExp(`<img[^>]*src="https://x/ana.jpg"[^>]*class="${box.replace(/[[\]/]/g, "\\$&")} shrink-0 rounded-none object-cover"`));
     expect(html).toMatch(new RegExp(`<span class="flex ${box.replace(/[[\]/]/g, "\\$&")} [^"]*rounded-none[^"]*">A2</span>`));
     expect(html.match(/<img/g)?.length).toBe(2); // the cover + Ana 1 — no invented photo for Ana 2
+  });
+
+  it("badge 'Tu odontólogo habitual' only on the usual dentist's card, inside the 2-column grid", () => {
+    const html = render([pro("1", { isUsualDentist: true }), pro("2")]);
+    expect(html.match(/Tu odontólogo habitual/g)?.length).toBe(1);
+    expect(html.indexOf("Tu odontólogo habitual")).toBeLessThan(html.indexOf("Ana 1"));
+    expect(html).toContain("max-w-[calc(100%-1rem)]");
+    expect(render([pro("1"), pro("2")])).not.toContain("Tu odontólogo habitual");
+  });
+
+  it("a non-clinical member with a real photo shows it, with her role and no specialty/registro", () => {
+    const html = render([pro("as", { avatarUrl: "https://x/asistente.jpg", roleLabel: "Asistente" })]);
+    expect(html).toContain('src="https://x/asistente.jpg"');
+    expect(html).toContain(">Asistente</p>");
+    expect(html).not.toContain("Registro profesional");
   });
 
   it("optional specialty/registro are omitted when missing, shown when real", () => {

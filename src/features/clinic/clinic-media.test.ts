@@ -58,7 +58,7 @@ vi.mock("@/lib/supabase/client", () => ({
   }),
 }));
 
-const { deleteClinicGalleryPhoto, removeClinicCover, removeProfessionalPhoto, uploadClinicCover, uploadClinicGalleryPhoto, uploadProfessionalPhoto } =
+const { deleteClinicGalleryPhoto, removeClinicCover, removeMemberPhoto, uploadClinicCover, uploadClinicGalleryPhoto, uploadMemberPhoto } =
   await import("./clinic-media-actions");
 
 const CLINIC = "11111111-1111-1111-1111-111111111111";
@@ -123,7 +123,7 @@ describe("gallery writes", () => {
 
 describe("professional photo", () => {
   it("overwrites ONE fixed object per professional (no orphans on replace) and sets it via set_professional_photo", async () => {
-    const outcome = await uploadProfessionalPhoto(CLINIC, "pp-1", photoFile("image/png"));
+    const outcome = await uploadMemberPhoto(CLINIC, { kind: "professional", professionalProfileId: "pp-1" }, photoFile("image/png"));
     expect(calls).toEqual([`upload:${CLINIC}/professionals/pp-1:upsert`]);
     expect(outcome.status).toBe("ok");
     expect(rpc).toHaveBeenCalledWith("set_professional_photo", {
@@ -133,15 +133,81 @@ describe("professional photo", () => {
   });
 
   it("remove clears it via the RPC, then deletes the object", async () => {
-    expect((await removeProfessionalPhoto(CLINIC, "pp-1")).status).toBe("ok");
+    expect((await removeMemberPhoto(CLINIC, { kind: "professional", professionalProfileId: "pp-1" })).status).toBe("ok");
     expect(rpc).toHaveBeenCalledWith("set_professional_photo", { p_professional_profile_id: "pp-1", p_avatar_url: null });
     expect(calls).toEqual([`remove:${CLINIC}/professionals/pp-1`]);
   });
 
   it("an unauthorized RPC (another clinic) surfaces as an error and deletes nothing", async () => {
     rpcResult = { error: { message: "not authorized to manage this professional" } };
-    expect((await removeProfessionalPhoto(CLINIC, "pp-x")).status).toBe("error");
+    expect((await removeMemberPhoto(CLINIC, { kind: "professional", professionalProfileId: "pp-x" })).status).toBe("error");
     expect(calls).toEqual([]);
+  });
+});
+
+describe("non-clinical member photo (assistant / non-clinical admin)", () => {
+  const target = { kind: "member", membershipId: "m-1" } as const;
+
+  it("same field and format as professionals: one fixed members/<membershipId> object, set via set_clinic_member_photo", async () => {
+    const outcome = await uploadMemberPhoto(CLINIC, target, photoFile("image/webp"));
+    expect(outcome.status).toBe("ok");
+    expect(calls).toEqual([`upload:${CLINIC}/members/m-1:upsert`]);
+    expect(rpc).toHaveBeenCalledWith("set_clinic_member_photo", {
+      p_membership_id: "m-1",
+      p_avatar_url: expect.stringMatching(new RegExp(`/clinic-media/${CLINIC}/members/m-1\\?v=\\d+$`)),
+    });
+  });
+
+  it("same validation: invalid type/size never reaches Storage", async () => {
+    expect((await uploadMemberPhoto(CLINIC, target, photoFile("image/gif"))).status).toBe("error");
+    expect((await uploadMemberPhoto(CLINIC, target, photoFile("image/png", 5 * 1024 * 1024 + 1))).status).toBe("error");
+    expect(calls).toEqual([]);
+  });
+
+  it("remove clears it via the RPC, then deletes the object; an unauthorized RPC deletes nothing", async () => {
+    expect((await removeMemberPhoto(CLINIC, target)).status).toBe("ok");
+    expect(rpc).toHaveBeenCalledWith("set_clinic_member_photo", { p_membership_id: "m-1", p_avatar_url: null });
+    expect(calls).toEqual([`remove:${CLINIC}/members/m-1`]);
+    calls.length = 0;
+    rpcResult = { error: { message: "not authorized to manage this member" } };
+    expect((await removeMemberPhoto(CLINIC, target)).status).toBe("error");
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("migration 20260925120000 — Portal team + member photo (static)", () => {
+  const sql = fs.readFileSync(path.resolve(__dirname, "../../../supabase/migrations/20260925120000_portal_clinic_team_and_member_photo.sql"), "utf8");
+  const code = sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
+
+  it("is additive: only new functions, no table/policy/data changes, booking RPC untouched", () => {
+    expect(code).not.toMatch(/\b(drop|alter table|create policy|alter policy|insert into|delete from|truncate)\b/i);
+    expect(code).not.toContain("get_my_clinic_professionals");
+  });
+
+  it("get_my_clinic_team: active real clinic roles of the CALLER's own linked clinic only (no param to spoof)", () => {
+    const fn = code.slice(code.indexOf("create function public.get_my_clinic_team()"), code.indexOf("revoke execute on function public.get_my_clinic_team()"));
+    expect(fn).toContain("security definer");
+    expect(fn).toContain("where m.status = 'active'");
+    expect(fn).toContain("and m.role in ('clinic_admin', 'dentist', 'assistant')");
+    expect(fn).toContain("where l.profile_id = auth.uid()");
+    expect(fn).toContain("and pt.clinic_id = m.clinic_id");
+    // Professional fields only for an ACTIVE professional profile.
+    expect(fn).toContain("left join public.professional_profiles pp on pp.clinic_membership_id = m.id and pp.active");
+    // Never a Superadmin by virtue of platform_roles, never contact data.
+    expect(fn).not.toMatch(/platform_roles|is_platform_superadmin|email|phone/);
+    expect(fn.slice(0, fn.indexOf(")"))).toBe("create function public.get_my_clinic_team(");
+  });
+
+  it("set_clinic_member_photo: clinic derived from the membership, its admin (or Superadmin), own members/<id> object only", () => {
+    const fn = code.slice(code.indexOf("create function public.set_clinic_member_photo"));
+    expect(fn).toContain("security definer");
+    expect(fn).toContain("where m.id = p_membership_id;");
+    expect(fn).toContain("public.has_clinic_role(v_clinic_id, array['clinic_admin']::public.membership_role[])");
+    expect(fn).toContain("'/members/' || p_membership_id::text || '(\\?v=[0-9]+)?$'");
+    expect(fn).toContain("where id = v_profile_id;");
+    const re = new RegExp(`^https?://[^/?#]+/storage/v1/object/public/clinic-media/${CLINIC}/members/m-1(\\?v=[0-9]+)?$`);
+    expect(re.test(`https://p.supabase.co/storage/v1/object/public/clinic-media/${CLINIC}/members/m-1?v=2`)).toBe(true);
+    expect(re.test(`https://p.supabase.co/storage/v1/object/public/clinic-media/other/members/m-1?v=2`)).toBe(false);
   });
 });
 

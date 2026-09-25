@@ -4,6 +4,7 @@ import {
   clinicCoverPath,
   clinicMediaPublicUrl,
   galleryPhotoPath,
+  memberPhotoPath,
   professionalPhotoPath,
   validateClinicImage,
   type ClinicGalleryPhoto,
@@ -60,35 +61,53 @@ export async function deleteClinicGalleryPhoto(photo: Pick<ClinicGalleryPhoto, "
   return { status: "ok", value: undefined };
 }
 
-// One fixed object per professional (<clinic>/professionals/<ppId>),
-// overwritten on replace — so a replaced photo never leaves an orphan. A
-// version query busts caches; set_professional_photo() writes it to the
-// professional's profiles.avatar_url after re-checking authorization.
-export async function uploadProfessionalPhoto(clinicId: string, professionalProfileId: string, file: File): Promise<MediaOutcome<string>> {
+// Team member photo = profiles.avatar_url (what every surface shows). One
+// fixed object per person, overwritten on replace — so a replaced photo
+// never leaves an orphan. A version query busts caches; the RPC writes the
+// URL after re-checking authorization (clinic_admin of that member's own
+// clinic, or Superadmin) and that it's this clinic's own object:
+// - professionals: <clinic>/professionals/<ppId> via set_professional_photo();
+// - everyone else: <clinic>/members/<membershipId> via set_clinic_member_photo().
+export type MemberPhotoTarget = { kind: "professional"; professionalProfileId: string } | { kind: "member"; membershipId: string };
+
+function photoTargetWrite(clinicId: string, target: MemberPhotoTarget) {
+  return target.kind === "professional"
+    ? {
+        path: professionalPhotoPath(clinicId, target.professionalProfileId),
+        rpc: "set_professional_photo",
+        args: (url: string | null) => ({ p_professional_profile_id: target.professionalProfileId, p_avatar_url: url }),
+      }
+    : {
+        path: memberPhotoPath(clinicId, target.membershipId),
+        rpc: "set_clinic_member_photo",
+        args: (url: string | null) => ({ p_membership_id: target.membershipId, p_avatar_url: url }),
+      };
+}
+
+export async function uploadMemberPhoto(clinicId: string, target: MemberPhotoTarget, file: File): Promise<MediaOutcome<string>> {
   const invalid = validateClinicImage(file);
   if (invalid) return { status: "error", message: invalid };
   const supabase = createClient();
-  const path = professionalPhotoPath(clinicId, professionalProfileId);
+  const write = photoTargetWrite(clinicId, target);
 
   const { error: uploadError } = await supabase.storage
     .from(CLINIC_MEDIA_BUCKET)
-    .upload(path, file, { contentType: file.type, upsert: true, cacheControl: "3600" });
+    .upload(write.path, file, { contentType: file.type, upsert: true, cacheControl: "3600" });
   if (uploadError) return { status: "error", message: GENERIC_ERROR };
 
-  const url = `${clinicMediaPublicUrl(supabase, path)}?v=${Date.now()}`;
-  const { error } = await supabase.rpc("set_professional_photo", { p_professional_profile_id: professionalProfileId, p_avatar_url: url });
+  const url = `${clinicMediaPublicUrl(supabase, write.path)}?v=${Date.now()}`;
+  const { error } = await supabase.rpc(write.rpc, write.args(url));
   if (error) return { status: "error", message: GENERIC_ERROR };
   return { status: "ok", value: url };
 }
 
-export async function removeProfessionalPhoto(clinicId: string, professionalProfileId: string): Promise<MediaOutcome> {
+export async function removeMemberPhoto(clinicId: string, target: MemberPhotoTarget): Promise<MediaOutcome> {
   const supabase = createClient();
-  const { error } = await supabase.rpc("set_professional_photo", { p_professional_profile_id: professionalProfileId, p_avatar_url: null });
+  const write = photoTargetWrite(clinicId, target);
+  const { error } = await supabase.rpc(write.rpc, write.args(null));
   if (error) return { status: "error", message: "No pudimos quitar la foto. Intenta de nuevo." };
-  const { error: removeError } = await supabase.storage
-    .from(CLINIC_MEDIA_BUCKET)
-    .remove([professionalPhotoPath(clinicId, professionalProfileId)]);
-  if (removeError) console.error("[clinic-media] professional photo object not removed", removeError);
+  const { error: removeError } = await supabase.storage.from(CLINIC_MEDIA_BUCKET).remove([write.path]);
+  if (removeError) console.error("[clinic-media] member photo object not removed", removeError);
   return { status: "ok", value: undefined };
 }
 
