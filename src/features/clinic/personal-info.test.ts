@@ -12,6 +12,7 @@ vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({ rpc }) }));
 
 const { updateMyPersonalInfo, validatePersonalInfo } = await import("./personal-info-actions");
 const { MyProfessionalProfileSection } = await import("./my-professional-profile-section");
+const { PersonalInfoForm } = await import("./personal-info-form");
 
 // "Editar información personal" (Mi perfil profesional): the signed-in
 // user's OWN name/phone in profiles — the single source every surface reads.
@@ -137,5 +138,59 @@ describe("/mi-perfil-profesional page layout", () => {
     expect(html).not.toContain("Editar información personal");
     expect(html).toContain("Editar perfil profesional");
     expect(html).toContain("size-16");
+  });
+});
+
+describe("inline editing (no modal)", () => {
+  const section = fs.readFileSync(path.resolve(__dirname, "my-professional-profile-section.tsx"), "utf8");
+
+  it("the personal edit form renders inline with current values, read-only email + note, and Cancelar/Guardar", () => {
+    const html = renderToStaticMarkup(
+      createElement(PersonalInfoForm, {
+        initial: { firstName: "Ana", lastName: "Ruiz", phone: "+57 300 123 4567" },
+        email: "ana@clinica.co",
+        onCancel: () => {},
+        onSaved: () => {},
+      }),
+    );
+    expect(html).not.toContain('role="dialog"');
+    expect(html).toContain('value="Ana"');
+    expect(html).toContain('value="Ruiz"');
+    expect(html).toContain('value="+57 300 123 4567"');
+    const emailInput = html.match(/<input[^>]*value="ana@clinica\.co"[^>]*>/)?.[0] ?? "";
+    expect(emailInput).toMatch(/readonly=""/i);
+    expect(emailInput).toContain('disabled=""');
+    expect(html).toContain("Es tu correo de inicio de sesión; no se cambia desde aquí.");
+    expect(html.indexOf("Cancelar")).toBeLessThan(html.indexOf("Guardar"));
+  });
+
+  it("no phone → an empty phone input, nothing invented", () => {
+    const html = renderToStaticMarkup(
+      createElement(PersonalInfoForm, { initial: { firstName: "Ana", lastName: "Ruiz", phone: null }, email: "a@x.co", onCancel: () => {}, onSaved: () => {} }),
+    );
+    expect(html).toMatch(/<input type="tel"[^>]*value=""/);
+  });
+
+  it("the personal column swaps read lines for the form in place (photo stays); the old modal is gone", () => {
+    expect(section).not.toMatch(/PersonalInfoModal|role="dialog"/);
+    expect(fs.existsSync(path.resolve(__dirname, "personal-info-modal.tsx"))).toBe(false);
+    expect(section).toContain("{!editingPersonal && (");
+    expect(section).toContain("{editingPersonal ? (\n              <PersonalInfoForm");
+    // Cancel = back to read mode, no backend call; success = back to read + header refresh + toast.
+    expect(section).toContain("onCancel={() => setEditingPersonal(false)}");
+    expect(section).toContain("notifyIdentityChanged();");
+  });
+
+  it("only one section edits at a time", () => {
+    expect(section).toContain("if (!professionalProfile || editingPersonal) return;");
+    expect(section).toMatch(/const startCreate = \(\) => \{\n    if \(editingPersonal\) return;/);
+    // "Editar información personal" is disabled while the professional form is open, and vice versa.
+    expect(section).toContain("disabled={mode !== \"view\"}");
+    expect(section.match(/disabled=\{editingPersonal\}/g)?.length).toBe(2);
+  });
+
+  it("the professional edit stays inline in the same section, reusing the existing form/actions", () => {
+    expect(section).toContain("{mode === \"editing\" || mode === \"creating\" ? (\n        <ProfileForm");
+    expect(section).toContain("await updateMyProfessionalProfile(input, specialtyNameById)");
   });
 });

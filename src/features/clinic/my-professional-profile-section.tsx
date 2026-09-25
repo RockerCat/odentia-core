@@ -11,7 +11,7 @@ import { createMyProfessionalProfile, updateMyProfessionalProfile } from "./prof
 import { ProfilePhotoField } from "./profile-photo-field";
 import { notifyIdentityChanged } from "@/features/session/identity-events";
 import type { PersonalInfo } from "./personal-info-actions";
-import { PersonalInfoModal } from "./personal-info-modal";
+import { PersonalInfoForm } from "./personal-info-form";
 
 // Mi perfil profesional — Administrador + Odontólogo, never a role swap
 // (see task scope). selfMember comes from the real team list, matched
@@ -148,8 +148,9 @@ export function MyProfessionalProfileSection({
     };
   }, [professionalProfileId]);
 
+  // Only one section edits at a time (see the personal column below).
   const startEdit = () => {
-    if (!professionalProfile) return;
+    if (!professionalProfile || editingPersonal) return;
     setSpecialtyId(professionalProfile.specialtyId ?? "");
     setLicenseNumber(professionalProfile.licenseNumber ?? "");
     setDuration(professionalProfile.defaultAppointmentDurationMinutes?.toString() ?? "");
@@ -163,6 +164,7 @@ export function MyProfessionalProfileSection({
   // Never a previous draft to prefill — this only ever shows while
   // professionalProfile is still null.
   const startCreate = () => {
+    if (editingPersonal) return;
     setSpecialtyId("");
     setLicenseNumber("");
     setDuration("");
@@ -306,7 +308,8 @@ export function MyProfessionalProfileSection({
           <button
             type="button"
             onClick={startCreate}
-            className="mt-3 text-xs font-medium text-primary hover:underline"
+            disabled={editingPersonal}
+            className="mt-3 text-xs font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50"
           >
             Configurar perfil profesional
           </button>
@@ -376,19 +379,40 @@ export function MyProfessionalProfileSection({
               textClassName="text-5xl font-semibold"
               onChange={onAvatarChange}
             >
-              <div className="mb-1 flex min-w-0 max-w-full flex-col items-center gap-1">
-                <p className="max-w-full text-xl leading-tight font-semibold break-words">{selfName}</p>
-                <p className="max-w-full truncate text-sm text-muted-foreground">{selfMember.email}</p>
-                {selfMember.phone && <p className="text-sm text-muted-foreground">{selfMember.phone}</p>}
-              </div>
+              {/* Read mode: who she is. Edit mode keeps the photo exactly
+                  where it is and swaps these lines for the inline form. */}
+              {!editingPersonal && (
+                <div className="mb-1 flex min-w-0 max-w-full flex-col items-center gap-1">
+                  <p className="max-w-full text-xl leading-tight font-semibold break-words">{selfName}</p>
+                  <p className="max-w-full truncate text-sm text-muted-foreground">{selfMember.email}</p>
+                  {selfMember.phone && <p className="text-sm text-muted-foreground">{selfMember.phone}</p>}
+                </div>
+              )}
             </ProfilePhotoField>
-            <button
-              type="button"
-              onClick={() => setEditingPersonal(true)}
-              className="min-h-10 w-full rounded-lg border border-border bg-background px-4 text-sm font-medium text-foreground/80 hover:bg-foreground/5 sm:w-auto"
-            >
-              Editar información personal
-            </button>
+            {editingPersonal ? (
+              <PersonalInfoForm
+                initial={personal}
+                email={selfMember.email}
+                onCancel={() => setEditingPersonal(false)}
+                onSaved={(value) => {
+                  setEditingPersonal(false);
+                  onPersonalInfoChange?.(value);
+                  // Header/team surfaces re-resolve the same profiles row.
+                  notifyIdentityChanged();
+                  showToast("Información personal actualizada");
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditingPersonal(true)}
+                // Only one section edits at a time.
+                disabled={mode !== "view"}
+                className="min-h-10 w-full rounded-lg border border-border bg-background px-4 text-sm font-medium text-foreground/80 hover:bg-foreground/5 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              >
+                Editar información personal
+              </button>
+            )}
           </section>
         )}
 
@@ -399,7 +423,9 @@ export function MyProfessionalProfileSection({
               <button
                 type="button"
                 onClick={startEdit}
-                className="min-h-10 rounded-lg border border-primary/30 bg-primary/5 px-4 text-sm font-medium text-primary hover:bg-primary/10"
+                // Only one section edits at a time.
+                disabled={editingPersonal}
+                className="min-h-10 rounded-lg border border-primary/30 bg-primary/5 px-4 text-sm font-medium text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Editar perfil profesional
               </button>
@@ -409,20 +435,6 @@ export function MyProfessionalProfileSection({
         </section>
       </div>
 
-      {editingPersonal && selfMember && personal && (
-        <PersonalInfoModal
-          initial={personal}
-          email={selfMember.email}
-          onClose={() => setEditingPersonal(false)}
-          onSaved={(value) => {
-            setEditingPersonal(false);
-            onPersonalInfoChange?.(value);
-            // Header/team surfaces re-resolve the same profiles row.
-            notifyIdentityChanged();
-            showToast("Información personal actualizada");
-          }}
-        />
-      )}
     </div>
   );
 }
