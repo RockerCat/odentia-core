@@ -9,6 +9,9 @@ import { createClient } from "@/lib/supabase/client";
 import type { Specialty, TeamMember } from "./data";
 import { createMyProfessionalProfile, updateMyProfessionalProfile } from "./professional-profile-actions";
 import { ProfilePhotoField } from "./profile-photo-field";
+import { notifyIdentityChanged } from "@/features/session/identity-events";
+import type { PersonalInfo } from "./personal-info-actions";
+import { PersonalInfoModal } from "./personal-info-modal";
 
 // Mi perfil profesional — Administrador + Odontólogo, never a role swap
 // (see task scope). selfMember comes from the real team list, matched
@@ -74,12 +77,20 @@ export function MyProfessionalProfileSection({
   documentTypes,
   onSaved,
   onAvatarChange,
+  onPersonalInfoChange,
+  variant = "card",
 }: {
   selfMember: TeamMember | null;
   specialties: Specialty[];
   documentTypes: ReferenceValue[];
   onSaved: (updated: NonNullable<TeamMember["professionalProfile"]>) => void;
   onAvatarChange?: (avatarUrl: string | null) => void;
+  // Only the /mi-perfil-profesional page offers "Editar información personal".
+  onPersonalInfoChange?: (value: PersonalInfo) => void;
+  // "card": the compact block inside /clinica (unchanged). "page": the full
+  // /mi-perfil-profesional profile — identity column (large photo, name,
+  // contact, personal edit) + professional column.
+  variant?: "card" | "page";
 }) {
   const { showToast } = useToast();
   const professionalProfile = selfMember?.professionalProfile ?? null;
@@ -104,6 +115,7 @@ export function MyProfessionalProfileSection({
   const [documentNumber, setDocumentNumber] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingPersonal, setEditingPersonal] = useState(false);
 
   // Real Horario summary — read-only here (editing lives in Configuración,
   // see horario-editor.tsx: Dentist's own screen, or the Clinic Admin's
@@ -201,43 +213,8 @@ export function MyProfessionalProfileSection({
     setMode("view");
   };
 
-  return (
-    <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
-      {isAdminWithProfile ? (
-        <>
-          <h2 className="text-base font-semibold">Mi información profesional</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Tu especialidad, registro y horario como odontóloga de la clínica.
-          </p>
-        </>
-      ) : (
-        <>
-          <h2 className="text-base font-semibold">Mi perfil profesional</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Tu especialidad y registro como profesional, si atiendes pacientes en esta clínica.
-          </p>
-        </>
-      )}
-
-      {selfMember && (
-        <div className="mt-4">
-          {/* Her own ONE profile photo — the same one Equipo/headers/Portal show. */}
-          <ProfilePhotoField
-            layout="row"
-            name={selfName}
-            initials={selfInitials || "?"}
-            initialAvatarUrl={selfMember.avatarUrl}
-            sizeClassName="size-16"
-            onChange={onAvatarChange}
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{selfName}</p>
-              <p className="truncate text-xs text-muted-foreground">{selfMember.email}</p>
-            </div>
-          </ProfilePhotoField>
-        </div>
-      )}
-
+  const professionalBody = (
+    <>
       {mode === "editing" || mode === "creating" ? (
         <ProfileForm
           specialtyId={specialtyId}
@@ -262,7 +239,7 @@ export function MyProfessionalProfileSection({
           savingLabel={mode === "creating" ? "Creando…" : "Guardando…"}
         />
       ) : professionalProfile ? (
-        <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+        <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4 sm:p-5">
           <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-xs text-label-foreground">Especialidad</dt>
@@ -317,9 +294,11 @@ export function MyProfessionalProfileSection({
               </dd>
             </div>
           </dl>
-          <button type="button" onClick={startEdit} className="mt-3 text-xs font-medium text-primary hover:underline">
-            Editar perfil profesional
-          </button>
+          {variant === "card" && (
+            <button type="button" onClick={startEdit} className="mt-3 text-xs font-medium text-primary hover:underline">
+              Editar perfil profesional
+            </button>
+          )}
         </div>
       ) : (
         <div className="mt-4 rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
@@ -332,6 +311,117 @@ export function MyProfessionalProfileSection({
             Configurar perfil profesional
           </button>
         </div>
+      )}
+    </>
+  );
+
+  // Same copy in both variants; only the title size differs.
+  const heading = (titleClassName: string) => (
+    <>
+      <h2 className={titleClassName}>{isAdminWithProfile ? "Mi información profesional" : "Mi perfil profesional"}</h2>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        {isAdminWithProfile
+          ? "Tu especialidad, registro y horario como odontóloga de la clínica."
+          : "Tu especialidad y registro como profesional, si atiendes pacientes en esta clínica."}
+      </p>
+    </>
+  );
+
+  if (variant === "card") {
+    return (
+      <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
+        {heading("text-base font-semibold")}
+
+        {selfMember && (
+          <div className="mt-4">
+            {/* Her own ONE profile photo — the same one Equipo/headers/Portal show. */}
+            <ProfilePhotoField
+              layout="row"
+              name={selfName}
+              initials={selfInitials || "?"}
+              initialAvatarUrl={selfMember.avatarUrl}
+              sizeClassName="size-16"
+              onChange={onAvatarChange}
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{selfName}</p>
+                <p className="truncate text-xs text-muted-foreground">{selfMember.email}</p>
+              </div>
+            </ProfilePhotoField>
+          </div>
+        )}
+
+        {professionalBody}
+      </div>
+    );
+  }
+
+  // /mi-perfil-profesional — "Mi identidad" + "Mi perfil profesional".
+  // One column (identity first) until lg, where the shell's sidebar still
+  // leaves enough room for ~30 / 70.
+  const personal: PersonalInfo | null = selfMember
+    ? { firstName: selfMember.firstName, lastName: selfMember.lastName, phone: selfMember.phone }
+    : null;
+  return (
+    <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6 lg:p-8">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,7fr)] lg:gap-10">
+        {selfMember && personal && (
+          <section aria-label="Mi identidad" className="flex min-w-0 flex-col items-center gap-4 text-center lg:border-r lg:border-border lg:pr-10">
+            {/* Her own ONE profile photo (set_my_avatar) — same one Equipo/headers/Portal show. */}
+            <ProfilePhotoField
+              name={selfName}
+              initials={selfInitials || "?"}
+              initialAvatarUrl={selfMember.avatarUrl}
+              sizeClassName="size-52"
+              textClassName="text-5xl font-semibold"
+              onChange={onAvatarChange}
+            >
+              <div className="mb-1 flex min-w-0 max-w-full flex-col items-center gap-1">
+                <p className="max-w-full text-xl leading-tight font-semibold break-words">{selfName}</p>
+                <p className="max-w-full truncate text-sm text-muted-foreground">{selfMember.email}</p>
+                {selfMember.phone && <p className="text-sm text-muted-foreground">{selfMember.phone}</p>}
+              </div>
+            </ProfilePhotoField>
+            <button
+              type="button"
+              onClick={() => setEditingPersonal(true)}
+              className="min-h-10 w-full rounded-lg border border-border bg-background px-4 text-sm font-medium text-foreground/80 hover:bg-foreground/5 sm:w-auto"
+            >
+              Editar información personal
+            </button>
+          </section>
+        )}
+
+        <section aria-label="Mi perfil profesional" className="min-w-0">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">{heading("text-lg font-semibold")}</div>
+            {professionalProfile && mode === "view" && (
+              <button
+                type="button"
+                onClick={startEdit}
+                className="min-h-10 rounded-lg border border-primary/30 bg-primary/5 px-4 text-sm font-medium text-primary hover:bg-primary/10"
+              >
+                Editar perfil profesional
+              </button>
+            )}
+          </div>
+          {professionalBody}
+        </section>
+      </div>
+
+      {editingPersonal && selfMember && personal && (
+        <PersonalInfoModal
+          initial={personal}
+          email={selfMember.email}
+          onClose={() => setEditingPersonal(false)}
+          onSaved={(value) => {
+            setEditingPersonal(false);
+            onPersonalInfoChange?.(value);
+            // Header/team surfaces re-resolve the same profiles row.
+            notifyIdentityChanged();
+            showToast("Información personal actualizada");
+          }}
+        />
       )}
     </div>
   );

@@ -115,6 +115,9 @@ export type TeamMember = {
   firstName: string;
   lastName: string;
   email: string;
+  // profiles.phone — the person's own phone (edited only by herself via
+  // update_my_personal_info); null when not set.
+  phone: string | null;
   avatarUrl: string | null;
   role: TeamMemberRole;
   status: TeamMemberStatus;
@@ -174,8 +177,8 @@ export async function fetchTeamMembers(supabase: SupabaseClient, clinicId: strin
 
   const profileIds = memberships.map((m) => m.profile_id);
   const profilesResult = profileIds.length
-    ? await supabase.from("profiles").select("id, first_name, last_name, email, avatar_url").in("id", profileIds)
-    : { data: [] as { id: string; first_name: string; last_name: string; email: string; avatar_url: string | null }[], error: null };
+    ? await supabase.from("profiles").select("id, first_name, last_name, email, phone, avatar_url").in("id", profileIds)
+    : { data: [] as { id: string; first_name: string; last_name: string; email: string; phone: string | null; avatar_url: string | null }[], error: null };
   if (profilesResult.error) {
     logStepFailed("fetchTeamMembers (profiles)", profilesResult.error);
     throw profilesResult.error;
@@ -229,6 +232,7 @@ export async function fetchTeamMembers(supabase: SupabaseClient, clinicId: strin
       firstName: profile?.first_name ?? "",
       lastName: profile?.last_name ?? "",
       email: profile?.email ?? "",
+      phone: profile?.phone ?? null,
       avatarUrl: profile?.avatar_url ?? null,
       role: row.role,
       status: row.status,

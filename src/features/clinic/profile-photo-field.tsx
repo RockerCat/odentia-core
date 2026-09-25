@@ -19,6 +19,7 @@ export function ProfilePhotoField({
   initials,
   initialAvatarUrl,
   sizeClassName = "size-20",
+  textClassName = "text-lg",
   layout = "stack",
   onChange,
   children,
@@ -27,6 +28,7 @@ export function ProfilePhotoField({
   initials: string;
   initialAvatarUrl: string | null;
   sizeClassName?: string;
+  textClassName?: string;
   layout?: "stack" | "row";
   onChange?: (avatarUrl: string | null) => void;
   // Optional identity lines shown above the actions (e.g. name/email).
@@ -86,7 +88,7 @@ export function ProfilePhotoField({
     >
       {(open) => (
         <>
-          <UserAvatar name={name} initials={initials} avatar_url={avatarUrl ?? undefined} sizeClassName={sizeClassName} textClassName="text-lg" />
+          <UserAvatar name={name} initials={initials} avatar_url={avatarUrl ?? undefined} sizeClassName={sizeClassName} textClassName={textClassName} />
           <div className={`flex min-w-0 flex-col gap-1.5 ${stack ? "items-center" : ""}`}>
             {children}
             <div className="flex flex-wrap items-center gap-2">
