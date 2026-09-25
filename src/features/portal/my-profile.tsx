@@ -1,10 +1,11 @@
 import { ProfilePhotoField } from "@/features/clinic/profile-photo-field";
+import { MyContactDetails } from "./my-contact-details";
 import type { PatientContext } from "@/features/session/types";
 
 // Real identity — patients.first_name/last_name/phone/email/document_id/
 // birth_date and the linked clinic's name (see resolve-patient-context.ts),
-// never the old mock CURRENT_PATIENT/MY_PATIENT_RECORD. Read-only for this
-// iteration — no edit flow requested yet.
+// never the old mock CURRENT_PATIENT/MY_PATIENT_RECORD. The patient may
+// edit only her own phone (MyContactDetails); the rest is read-only.
 export function MyProfile({ context }: { context: PatientContext }) {
   if (context.status !== "ok") {
     // src/lib/supabase/proxy.ts already gates this route — reaching here
@@ -27,27 +28,21 @@ export function MyProfile({ context }: { context: PatientContext }) {
     <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
       <div className="flex flex-col items-center gap-2 text-center">
         {/* Her own profile photo (set_my_avatar) — also shown in the Portal header. */}
-        <ProfilePhotoField name={name} initials={initials} initialAvatarUrl={context.profile.avatarUrl} sizeClassName="size-20" />
+        <ProfilePhotoField
+          name={name}
+          initials={initials}
+          initialAvatarUrl={context.profile.avatarUrl}
+          // 160px: prominent like Mi perfil profesional, sized to the ~303px
+          // mobile card. UserAvatar derives next/image `sizes` from it.
+          sizeClassName="size-40"
+          textClassName="text-4xl font-semibold"
+        />
         <p className="text-base font-semibold">{name}</p>
         {age !== null && <p className="text-sm text-muted-foreground">{age} años</p>}
       </div>
 
-      <div className="mt-5 border-t border-border" />
-
-      <dl className="mt-5 flex flex-col gap-3 text-sm">
-        <div className="flex items-center justify-between gap-2">
-          <dt className="text-label-foreground">Teléfono</dt>
-          <dd className="font-medium">{patient.phone || "No registrado"}</dd>
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <dt className="text-label-foreground">Correo</dt>
-          <dd className="font-medium">{patient.email || "No registrado"}</dd>
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <dt className="text-label-foreground">Documento</dt>
-          <dd className="font-medium">{patient.documentId || "No registrado"}</dd>
-        </div>
-      </dl>
+      {/* Read ↔ inline edit (phone only; see MyContactDetails). */}
+      <MyContactDetails phone={patient.phone} email={patient.email} documentId={patient.documentId} />
 
       <div className="mt-5 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
         <p className="text-xs font-semibold text-primary uppercase">Clínica vinculada</p>
