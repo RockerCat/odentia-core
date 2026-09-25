@@ -92,7 +92,7 @@ describe("/portal/perfil card", () => {
   });
 
   it("identity column first (photo, name, age, inline edit) → Mi información → Mi clínica; lg 30/70", () => {
-    const html = render(buildMyProfileCardData(context(), "Cédula ciudadanía", { name: "Admin Borcelle 2", specialty: "Ortodoncia" }));
+    const html = render(buildMyProfileCardData(context(), "Cédula ciudadanía", { name: "Admin Borcelle 2", specialty: "Ortodoncia", avatarUrl: null }));
     expect(html).toContain("lg:grid-cols-[minmax(0,3fr)_minmax(0,7fr)]");
     const at = (label: string) => html.indexOf(`aria-label="${label}"`);
     expect(at("Mi identidad")).toBeGreaterThan(-1);
@@ -117,6 +117,24 @@ describe("/portal/perfil card", () => {
     expect(clinic).toContain("Tu odontólogo habitual");
     expect(clinic).toContain("Admin Borcelle 2");
     expect(clinic).toContain("Ortodoncia");
+  });
+
+  it("usual dentist shows her own avatar (object-cover), or her real initials without a photo", () => {
+    const clinicOf = (html: string) => html.slice(html.indexOf('aria-label="Mi clínica"'));
+    const withPhoto = clinicOf(
+      render(buildMyProfileCardData(context(), null, { name: "Admin Borcelle 2", specialty: "Ortodoncia", avatarUrl: "https://x/admin.jpg" })),
+    );
+    expect(withPhoto).toMatch(/<img[^>]*src="https:\/\/x\/admin\.jpg"[^>]*class="size-11 shrink-0 rounded-full object-cover"/);
+    expect(withPhoto.indexOf("admin.jpg")).toBeLessThan(withPhoto.indexOf("Admin Borcelle 2</span>"));
+    const initials = clinicOf(render(buildMyProfileCardData(context(), null, { name: "Admin Borcelle 2", specialty: null, avatarUrl: null })));
+    expect(initials).toMatch(/<span class="flex size-11 [^"]*rounded-full[^"]*">A2<\/span>/);
+    expect(initials).not.toContain("<img");
+    expect(initials).not.toContain("text-xs font-medium text-primary");
+  });
+
+  it("the page passes the usual dentist's profiles.avatar_url from the same team card (no extra query)", () => {
+    const page = fs.readFileSync(path.resolve(__dirname, "../../app/portal/perfil/page.tsx"), "utf8");
+    expect(page).toContain("usualDentist = { name: card.name, specialty: card.specialty, avatarUrl: card.avatarUrl ?? null }");
   });
 
   it("no usual dentist → the row is simply omitted; missing values read 'No registrado'", () => {

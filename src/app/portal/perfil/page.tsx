@@ -39,7 +39,7 @@ export default async function PortalProfilePage() {
     ]);
     documentTypeLabel = label;
     const card = teamRows ? teamCards(teamRows, clinic.id, usualDentistProfileId).find((c) => c.isUsualDentist) : undefined;
-    if (card) usualDentist = { name: card.name, specialty: card.specialty };
+    if (card) usualDentist = { name: card.name, specialty: card.specialty, avatarUrl: card.avatarUrl ?? null };
   }
 
   return (

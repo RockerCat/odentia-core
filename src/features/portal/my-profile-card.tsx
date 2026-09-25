@@ -2,8 +2,10 @@
 
 import { useState, type FormEvent } from "react";
 import { useToast } from "@/components/toast";
+import { UserAvatar } from "@/components/user-avatar";
 import { ProfilePhotoField } from "@/features/clinic/profile-photo-field";
 import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
+import { initialsOf } from "@/features/dashboard/real-format";
 import { notifyIdentityChanged } from "@/features/session/identity-events";
 import { updateMyPatientPhone } from "./my-contact-actions";
 
@@ -23,7 +25,8 @@ export type MyProfileCardData = {
   clinicName: string;
   // Same "odontólogo habitual" rule as Historia Clínica / /portal/clinica;
   // null → the row is simply omitted.
-  usualDentist: { name: string; specialty: string | null } | null;
+  // avatarUrl: that professional's profiles.avatar_url (via get_my_clinic_team).
+  usualDentist: { name: string; specialty: string | null; avatarUrl: string | null } | null;
 };
 
 // /portal/perfil — same family as Mi perfil profesional: identity column
@@ -165,8 +168,19 @@ export function MyProfileCard({ data }: { data: MyProfileCardData }) {
               {data.usualDentist && (
                 <div className="min-w-0">
                   <dt className="text-xs text-label-foreground">Tu odontólogo habitual</dt>
-                  <dd className="mt-0.5 font-medium break-words">{data.usualDentist.name}</dd>
-                  {data.usualDentist.specialty && <dd className="text-xs font-medium text-primary">{data.usualDentist.specialty}</dd>}
+                  <dd className="mt-1.5 flex items-center gap-3">
+                    <UserAvatar
+                      name={data.usualDentist.name}
+                      initials={initialsOf(data.usualDentist.name)}
+                      avatar_url={data.usualDentist.avatarUrl ?? undefined}
+                      sizeClassName="size-11"
+                      textClassName="text-sm"
+                    />
+                    <span className="flex min-w-0 flex-col">
+                      <span className="font-medium break-words">{data.usualDentist.name}</span>
+                      {data.usualDentist.specialty && <span className="text-xs font-medium text-primary">{data.usualDentist.specialty}</span>}
+                    </span>
+                  </dd>
                 </div>
               )}
             </dl>
