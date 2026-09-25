@@ -10,6 +10,7 @@ const calls: string[] = [];
 let insertResult: { data: unknown; error: { message: string } | null } = { data: null, error: null };
 let deleteResult: { data: unknown; error: unknown } = { data: [{ id: "g1" }], error: null };
 let rpcResult: { error: unknown } = { error: null };
+let uploadResult: { error: unknown } = { error: null };
 let sessionUserId: string | null = "33333333-3333-3333-3333-333333333333";
 let updateResult: { data: unknown; error: unknown } = { data: [{ id: "c1" }], error: null };
 const updates: unknown[] = [];
@@ -21,7 +22,7 @@ vi.mock("@/lib/supabase/client", () => ({
       from: () => ({
         upload: async (p: string, _f: unknown, opts: { upsert?: boolean }) => {
           calls.push(`upload:${p}:${opts?.upsert ? "upsert" : "new"}`);
-          return { error: null };
+          return uploadResult;
         },
         remove: async (paths: string[]) => {
           calls.push(`remove:${paths.join(",")}`);
@@ -71,6 +72,7 @@ beforeEach(() => {
   insertResult = { data: null, error: null };
   deleteResult = { data: [{ id: "g1" }], error: null };
   rpcResult = { error: null };
+  uploadResult = { error: null };
   sessionUserId = "33333333-3333-3333-3333-333333333333";
   updateResult = { data: [{ id: "c1" }], error: null };
   updates.length = 0;
@@ -295,6 +297,16 @@ describe("gallery multi-add plan (drop / multi-select)", () => {
 });
 
 describe("clinic cover (Foto de portada)", () => {
+  it("a rejected Storage write (e.g. RLS) is a visible error, logged with its real cause, and never touches clinics.cover_url", async () => {
+    uploadResult = { error: { statusCode: "403", message: "new row violates row-level security policy" } };
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await uploadClinicCover(CLINIC, photoFile("image/png"))).toEqual({ status: "error", message: "No pudimos guardar la imagen. Intenta de nuevo." });
+    expect(calls).toEqual([`upload:${CLINIC}/cover:upsert`]);
+    expect(updates).toEqual([]);
+    expect(log).toHaveBeenCalledWith("[clinic-media] cover upload failed", uploadResult.error);
+    log.mockRestore();
+  });
+
   it("overwrites ONE fixed object per clinic (replace never leaves an orphan), then sets clinics.cover_url", async () => {
     expect(clinicCoverPath(CLINIC)).toBe(`${CLINIC}/cover`);
     const outcome = await uploadClinicCover(CLINIC, photoFile("image/webp"));
@@ -327,6 +339,52 @@ describe("clinic cover (Foto de portada)", () => {
     expect(await removeClinicCover(CLINIC)).toEqual({ status: "ok", value: undefined });
     expect(updates).toEqual([{ cover_url: null }]);
     expect(calls).toEqual(["update-row", `remove:${CLINIC}/cover`]);
+  });
+});
+
+describe("migration 20260925180000 — cover overwrite needs SELECT (static)", () => {
+  const read = (f: string) => fs.readFileSync(path.resolve(__dirname, "../../../supabase/migrations", f), "utf8");
+  const code = read("20260925180000_clinic_cover_storage_select.sql")
+    .split("\n")
+    .filter((l) => !l.trim().startsWith("--"))
+    .join("\n")
+    .trim();
+
+  it("adds only a SELECT policy, for the cover object only, with the write policies' own ownership guard", () => {
+    expect(code).toBe(
+      [
+        "create policy clinic_media_cover_select_admin",
+        "  on storage.objects for select",
+        "  to authenticated",
+        "  using (",
+        "    bucket_id = 'clinic-media'",
+        "    and split_part(name, '/', 2) = 'cover'",
+        "    and split_part(name, '/', 3) = ''",
+        "    and public.owns_clinic_logo_path(name)",
+        "  );",
+      ].join("\n"),
+    );
+  });
+
+  it("the guard is the same one the clinic-media writes use (clinic_admin of that clinic, or Superadmin — never a patient)", () => {
+    const writes = read("20260924160000_clinic_portal_profile_media.sql");
+    expect(writes).toContain("with check (bucket_id = 'clinic-media' and public.owns_clinic_logo_path(name));");
+    const guard = read("20260916220000_allow_superadmin_manage_clinic_logo.sql");
+    const fn = guard.slice(guard.indexOf("create or replace function public.owns_clinic_logo_path"));
+    expect(fn).toContain("v_clinic_id := split_part(object_name, '/', 1)::uuid;");
+    expect(fn).toContain("public.has_clinic_role(v_clinic_id, array['clinic_admin']::public.membership_role[])");
+    expect(fn).toContain("or public.is_platform_superadmin();");
+    expect(fn).not.toMatch(/patient_user_links|patients/);
+  });
+
+  it("mirrors the fix clinic-logos already has (its upsert works with the same SELECT)", () => {
+    expect(read("20260826203000_add_clinic_logos_select_policy.sql")).toMatch(
+      /create policy clinic_logos_select_admin\s+on storage\.objects\s+for select\s+to authenticated/,
+    );
+  });
+
+  it("the cover path is exactly <clinicId>/cover (what the policy matches)", () => {
+    expect(clinicCoverPath(CLINIC).split("/")).toEqual([CLINIC, "cover"]);
   });
 });
 

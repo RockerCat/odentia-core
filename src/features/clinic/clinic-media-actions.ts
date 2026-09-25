@@ -150,11 +150,18 @@ export async function uploadClinicCover(clinicId: string, file: File): Promise<M
   const { error: uploadError } = await supabase.storage
     .from(CLINIC_MEDIA_BUCKET)
     .upload(path, file, { contentType: file.type, upsert: true, cacheControl: "3600" });
-  if (uploadError) return { status: "error", message: GENERIC_ERROR };
+  if (uploadError) {
+    // Keep the real cause visible for diagnosis (the UI stays generic).
+    console.error("[clinic-media] cover upload failed", uploadError);
+    return { status: "error", message: GENERIC_ERROR };
+  }
 
   const url = `${clinicMediaPublicUrl(supabase, path)}?v=${Date.now()}`;
   const { data, error } = await supabase.from("clinics").update({ cover_url: url }).eq("id", clinicId).select("id");
-  if (error || !data || data.length === 0) return { status: "error", message: GENERIC_ERROR };
+  if (error || !data || data.length === 0) {
+    console.error("[clinic-media] cover_url not saved", error ?? "no row updated");
+    return { status: "error", message: GENERIC_ERROR };
+  }
   return { status: "ok", value: url };
 }
 
