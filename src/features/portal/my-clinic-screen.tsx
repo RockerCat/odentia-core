@@ -201,6 +201,12 @@ export function MyClinicScreen({
                   avatar_url={member.avatarUrl}
                   shapeClassName="rounded-none"
                   sizeClassName="aspect-[4/5] w-full object-top"
+                  // Real card widths (TEAM_GRID_CLASS: 2 → 3 → 4 columns;
+                  // measured ~166 / ~149 / ~232px at 375 / 768 / 1280)
+                  // × COVER_CROP_ALLOWANCE (2) for the 4:5 object-cover crop.
+                  sizes="(min-width: 1024px) 480px, (min-width: 768px) 320px, (min-width: 640px) 66vw, 100vw"
+                  width={240}
+                  height={300}
                   textClassName="text-4xl font-semibold"
                 />
                 <div className="flex min-w-0 flex-col gap-0.5 p-3 sm:p-4">
