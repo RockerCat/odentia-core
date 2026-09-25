@@ -444,17 +444,24 @@ Detailed per-vertical implementation notes are further below.
   informational Mi Suscripción. **No payment provider, no checkout, no
   billing engine** — see "Suscripción / Billing — piloto (Checkpoint
   2026-09-22)" below for the full detail and DEFERRED BILLING list.
-- **Clínica** — Información general, sede principal (map/geocoding/logo), Equipo
-  (real list + invite + activate/deactivate), Mi perfil profesional (**real
-  editing**, not just display), Consultorios (`rooms`).
+- **Clínica** (`/clinica`) — organized in four client-side tabs: Información
+  (datos generales + logo, sede principal map/geocoding, Consultorios), Equipo
+  (member cards, invite, activate/deactivate, member photos), RIPS
+  (Configuración RIPS + Servicios RIPS por especialidad), Portal público
+  (description, cover, gallery, image viewer). See "Clínica (real, Clinic
+  Admin)" below.
 - **Equipo** — real invite (`invite_clinic_member`) → real accept
   (`accept_clinic_invitation`) → real activate/deactivate
   (`set_clinic_member_status`). No automated email; no member-role-editing RPC
   exists (only invite + status toggle).
-- **Mi perfil profesional** — real create (`create_my_professional_profile`, Clinic
-  Admin self-service) and edit (`update_my_professional_profile`, Dentist +
-  clinically-active Clinic Admin), reachable from both `/clinica` and its own
-  `/mi-perfil-profesional` route.
+- **Mi perfil profesional** (`/mi-perfil-profesional`, its only home) — identity
+  column (photo, name, email, phone; inline personal edit) + professional
+  column (real create/edit via `create_my_professional_profile`/
+  `update_my_professional_profile`, inline).
+- **Perfiles / foto universal** — one profile photo per user
+  (`profiles.avatar_url`), self-managed by every role and reused everywhere
+  (headers, Equipo, `/portal/clinica`, profiles). See "Perfiles y foto
+  universal" below.
 - **Pacientes** — real CRUD, real KPIs ("Sin atención +6 meses" excludes patients
   with zero finalized encounters — see Historia Clínica below), real "Acceso del
   paciente" invitation issuance (see Patient Portal below).
@@ -478,8 +485,7 @@ Detailed per-vertical implementation notes are further below.
   their procedures), with period and professional filters.
 - **Patient Portal** — real identity (`patient_user_links` via
   `resolvePatientContext()`), Mis citas, Confirmar asistencia, Solicitud de Cita,
-  Mi Historia Clínica (read-only), Mi perfil, Mi clínica. **Except** Mi salud
-  dental (still mock — see OUT OF SCOPE ACTUAL).
+  Mi Historia Clínica (read-only), Mi salud dental, Mi perfil, Mi clínica.
 - **Marketplace** — real external link to the independently-deployed Marketplace
   app; Odentia Core never shares its database or business logic with it.
 - **RIPS** (`/rips`, Clinic Admin only) — real regulatory-identity fields on
@@ -1716,15 +1722,55 @@ created.
 
 ## Clínica (real, Clinic Admin)
 
-- `/clinica` — **Información general** (real, editable inline). **Equipo** (real:
-  list, invite via `invite_clinic_member`, activate/deactivate via
-  `set_clinic_member_status`). **Mi perfil profesional** (real display AND real
-  editing — `create_my_professional_profile`/`update_my_professional_profile`).
-  **Consultorios** — real, tenant-scoped catalog (`public.rooms`): add/rename, no
+`/clinica` is one route with four client-side tabs (default Información). All
+panels stay mounted and inactive ones are `hidden`, so switching never
+reloads, saves or resets a section; `/clinica#rips` opens the RIPS tab.
+
+- **Información** — datos generales (inline-edit; WhatsApp still has no
+  column) + logo; "Ubicación de la sede principal" (map | fields 50/50 from
+  lg, fields first below lg; Leaflet re-measures after a hidden tab);
+  **Consultorios** — real, tenant-scoped (`public.rooms`): add/rename, no
   physical delete (`active = false`).
-- `/mi-perfil-profesional` — a second, narrower real route into the exact same
-  Mi perfil profesional card, reachable by a plain Dentist (who has no `/clinica`
-  access at all).
+- **Equipo** — member cards (80px photo/initials, name, role, specialty,
+  status) with photo/Editar/Desactivar actions; invite via
+  `invite_clinic_member`, activate/deactivate via `set_clinic_member_status`;
+  pending invitations below. A discreet "Ver mi perfil profesional" link when
+  the admin has a professional profile — her professional data is NOT
+  duplicated here.
+- **RIPS** — Configuración RIPS + Servicios RIPS por especialidad (see RIPS
+  below); `#rips` anchor kept for `/rips`'s "Corregir" links.
+- **Portal público** — what patients see in `/portal/clinica`: clinic
+  description ("Sobre nosotros", `clinics.description`), cover
+  (`clinics.cover_url`, one `clinic-media` `<clinic>/cover` object, generic
+  Odentia fallback never stored) and gallery (max 5, multi-upload +
+  drag & drop), cover | gallery 50/50 from lg. The REAL cover and each
+  gallery photo open in a full-screen viewer (next/image viewport-width
+  variant, Esc/backdrop close, gallery prev/next + ←/→); the fallback cover
+  is not enlargeable.
+- `/mi-perfil-profesional` — the only home of Mi perfil profesional (also
+  reachable by a plain Dentist, who has no `/clinica` access at all).
+
+## Perfiles y foto universal
+
+- **One photo per user** — `profiles.avatar_url`, one `clinic-media`
+  `avatars/<profile_id>` object. Self-service via `set_my_avatar()` (target
+  always `auth.uid()`) from each role's own profile surface; a Clinic Admin
+  can also manage her team's photos from Equipo via
+  `set_clinic_member_avatar()` (same object/field). Rendered through
+  `UserAvatar` + next/image (right-sized variants, never the original for a
+  small avatar); initials when there's no photo.
+- **`/mi-perfil-profesional`** — identity (large photo, name, email, phone) +
+  professional info, both edited INLINE, one section at a time. Name/phone:
+  `update_my_personal_info()` (`profiles`, always `auth.uid()`); email is the
+  Auth login, read-only.
+- **Admin/Assistant without a professional profile** — photo from the header
+  "Mi perfil" modal.
+- **`/portal/perfil`** (Patient) — identity (photo, name, age) + Mi información
+  (birth date, phone, RIPS document type/number, email) + Mi clínica (clinic,
+  "Tu odontólogo habitual" with photo/specialty via the shared
+  `usual-dentist.ts` rule). The patient edits ONLY her photo and phone
+  (`update_my_patient_phone()`, her own `patients` row via `auth.uid()`);
+  name, document, birth date and email are clinic-managed/read-only.
 
 ## Equipo — real invitations
 
@@ -2170,9 +2216,8 @@ implementation.
 
 ## Patient Portal — Mi clínica, Mi perfil (real)
 
-- **Mi perfil** (`/portal/perfil`) — real, read-only: `patients.first_name/
-  last_name/phone/email/document_id/birth_date` and the linked clinic's name, all
-  from `resolvePatientContext()`.
+- **Mi perfil** (`/portal/perfil`) — real; see "Perfiles y foto universal"
+  above (phone + photo self-editable, the rest read-only).
 - **Mi clínica** (`/portal/clinica`) — real nombre/teléfono (`context.clinic`) and
   real dirección (`fetchPrimaryLocation()`, the exact same fetcher Clínica staff
   uses — composed from `address`/`city`/`state`, never a demo string). Needed its
@@ -2186,10 +2231,11 @@ implementation.
   Google Maps by coordinates or address); "Conoce nuestra clínica" (Clinic
   Admin gallery, max 5, `clinic_gallery_photos` + public `clinic-media`
   bucket; hidden when empty); "Nuestro equipo" (active clinical professionals
-  via `get_my_clinic_professionals()`, photo/specialty/registro only when
-  real; hidden when none). Clinic Admin manages the gallery in Clínica →
-  "Fotos de la clínica" and each professional's photo in Clínica → Equipo
-  (`set_professional_photo()` → `profiles.avatar_url`). **Horario de atención
+  now the whole ACTIVE team via `get_my_clinic_team()`, the patient's usual
+  dentist first with a badge; photo/specialty/registro only when real;
+  hidden when none). Clinic Admin manages the public media in Clínica →
+  Portal público and photos in Clínica → Equipo (`profiles.avatar_url`, see
+  "Perfiles y foto universal"). **Horario de atención
   deferred:** only per-professional availability exists — no clinic-wide
   hours to show honestly. SQL/RLS verified statically only (no local
   Postgres); migration applied to the linked project.

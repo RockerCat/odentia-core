@@ -6,6 +6,7 @@ import { useToast } from "@/components/toast";
 import { removeClinicCover, uploadClinicCover } from "./clinic-media-actions";
 import { resolveClinicCover, validateClinicImage } from "./clinic-media-data";
 import { ImageDropZone } from "./image-drop-zone";
+import { ImageLightbox, ZoomBadge } from "./image-lightbox";
 
 // "Foto de portada" — the ONE cover image behind the clinic's name in the
 // Patient Portal (/portal/clinica). Distinct from "Fotos de la clínica".
@@ -17,6 +18,7 @@ export function ClinicCoverSection({ clinicId, initialCoverUrl }: { clinicId: st
   const [action, setAction] = useState<"uploading" | "removing" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cover = resolveClinicCover(coverUrl);
+  const [viewing, setViewing] = useState(false);
 
   const handleFiles = async (files: File[]) => {
     const file = files[0];
@@ -65,12 +67,17 @@ export function ClinicCoverSection({ clinicId, initialCoverUrl }: { clinicId: st
             La imagen principal de tu clínica en el Portal del paciente. JPG, PNG o WebP, máx. 5 MB. Se recorta para llenar el espacio.
           </p>
 
+          {/* A REAL cover opens large in the viewer ("Cambiar foto" below
+              still replaces it); the generic fallback is never "enlarged" —
+              clicking it picks a file, as before. */}
           <button
             type="button"
-            onClick={open}
+            onClick={cover.isFallback ? open : () => setViewing(true)}
             disabled={action !== null}
-            aria-label={coverUrl ? "Cambiar foto de portada" : "Seleccionar foto de portada"}
-            className="group relative mt-4 block aspect-[16/9] w-full overflow-hidden rounded-xl border border-border bg-surface sm:aspect-[21/9] lg:aspect-[2/1] disabled:cursor-wait"
+            aria-label={cover.isFallback ? "Seleccionar foto de portada" : "Ampliar foto de portada"}
+            className={`group relative mt-4 block aspect-[16/9] w-full overflow-hidden rounded-xl border border-border bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:aspect-[21/9] lg:aspect-[2/1] disabled:cursor-wait ${
+              cover.isFallback ? "" : "cursor-zoom-in"
+            }`}
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- clinic Storage photo / bundled fallback */}
             <img src={cover.src} alt="" className={`absolute inset-0 size-full object-cover ${cover.isFallback ? "scale-[1.04]" : ""}`} />
@@ -85,6 +92,7 @@ export function ClinicCoverSection({ clinicId, initialCoverUrl }: { clinicId: st
                 <span className="text-xs text-muted-foreground">Ahora se muestra la imagen genérica de Odentia.</span>
               </span>
             )}
+            {!cover.isFallback && <ZoomBadge />}
             {action === "uploading" && (
               <span className="absolute inset-0 flex items-center justify-center bg-background/70 text-sm font-medium">Subiendo…</span>
             )}
@@ -114,6 +122,9 @@ export function ClinicCoverSection({ clinicId, initialCoverUrl }: { clinicId: st
             <p className="mt-2 text-xs text-danger" role="alert">
               {error}
             </p>
+          )}
+          {viewing && !cover.isFallback && (
+            <ImageLightbox images={[{ src: cover.src, alt: "Foto de portada de la clínica" }]} index={0} onIndexChange={() => {}} onClose={() => setViewing(false)} />
           )}
         </>
       )}

@@ -374,6 +374,26 @@ its agenda-defaults/notification/regional-preference sections are still
 local `useState` with no backend at all — never claim those persist
 anything.
 
+`/clinica` (Clinic Admin) is ONE route with four client-side tabs —
+Información (datos generales/logo, sede principal, Consultorios), Equipo
+(member cards, invitations, member photos), RIPS (Configuración RIPS +
+Servicios RIPS por especialidad), Portal público (description, cover,
+gallery, image viewer). Regression-prone: every panel stays MOUNTED and
+inactive ones are only `hidden` (sections keep local state seeded from
+props — unmounting would show stale values after a save), `/clinica#rips`
+must keep opening the RIPS tab (it's `/rips`'s "Corregir" target), and the
+Leaflet map re-measures on resize (it may have been hidden). "Mi información
+profesional" lives only in `/mi-perfil-profesional` — never duplicate it
+back into `/clinica`.
+
+Profile editing is always self-scoped server-side, never by a client id:
+`update_my_personal_info()` (staff: `profiles` name/phone, from
+`/mi-perfil-profesional`'s inline identity column) and
+`update_my_patient_phone()` (Patient: ONLY her own `patients.phone` — the
+Portal shows the clinic's `patients` record, not `profiles`; name/document/
+birth date stay clinic-managed). Email is the Auth login, read-only
+everywhere.
+
 `src/components/toast.tsx` (`ToastProvider`/`useToast()`) is the one shared
 primitive for ephemeral success/error confirmations — mounted once in the
 root layout, available everywhere. Reuse it for any new mutation's

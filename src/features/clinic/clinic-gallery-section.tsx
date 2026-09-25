@@ -6,6 +6,7 @@ import { useToast } from "@/components/toast";
 import { deleteClinicGalleryPhoto, uploadClinicGalleryPhoto } from "./clinic-media-actions";
 import { MAX_CLINIC_GALLERY_PHOTOS, planGalleryUploads, type ClinicGalleryPhoto } from "./clinic-media-data";
 import { ImageDropZone } from "./image-drop-zone";
+import { ImageLightbox, ZoomBadge } from "./image-lightbox";
 
 // "Fotos de la clínica" — the real photos patients see under "Conoce nuestra
 // clínica" in /portal/clinica. Up to 5, oldest first (no reordering in this
@@ -19,6 +20,8 @@ export function ClinicGallerySection({ clinicId, initialPhotos }: { clinicId: st
   const [uploading, setUploading] = useState<{ done: number; total: number } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
+  // Index of the photo open in the viewer, or null.
+  const [viewing, setViewing] = useState<number | null>(null);
   const full = photos.length >= MAX_CLINIC_GALLERY_PHOTOS;
   const busy = uploading !== null || deletingId !== null;
 
@@ -112,8 +115,17 @@ export function ClinicGallerySection({ clinicId, initialPhotos }: { clinicId: st
             <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
               {photos.map((photo, index) => (
                 <li key={photo.id} className="flex flex-col gap-1.5">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- clinic Storage photo */}
-                  <img src={photo.url} alt={`Foto ${index + 1} de la clínica`} className="aspect-[4/3] w-full rounded-lg border border-border object-cover" />
+                  {/* Tap/click to view it large (ImageLightbox); Eliminar stays its own button below. */}
+                  <button
+                    type="button"
+                    onClick={() => setViewing(index)}
+                    aria-label={`Ampliar foto ${index + 1} de la clínica`}
+                    className="group relative block cursor-zoom-in rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- clinic Storage photo */}
+                    <img src={photo.url} alt={`Foto ${index + 1} de la clínica`} className="aspect-[4/3] w-full rounded-lg border border-border object-cover" />
+                    <ZoomBadge />
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleDelete(photo)}
@@ -145,6 +157,14 @@ export function ClinicGallerySection({ clinicId, initialPhotos }: { clinicId: st
                 JPG, PNG o WebP · máx. 5 MB c/u · te quedan {MAX_CLINIC_GALLERY_PHOTOS - photos.length}
               </span>
             </button>
+          )}
+          {viewing !== null && photos.length > 0 && (
+            <ImageLightbox
+              images={photos.map((p, i) => ({ src: p.url, alt: `Foto ${i + 1} de la clínica` }))}
+              index={viewing}
+              onIndexChange={setViewing}
+              onClose={() => setViewing(null)}
+            />
           )}
         </>
       )}
