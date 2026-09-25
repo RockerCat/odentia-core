@@ -29,7 +29,7 @@ export async function resolvePatientContext(supabase: SupabaseClient): Promise<P
   const { data: links, error: linksError } = await supabase
     .from("patient_user_links")
     .select(
-      "patient_id, patient:patients(id, first_name, last_name, email, phone, document_id, birth_date, clinic_id, clinic:clinics(id, name, slug, logo_url, phone, status, description))",
+      "patient_id, patient:patients(id, first_name, last_name, email, phone, document_id, birth_date, clinic_id, clinic:clinics(id, name, slug, logo_url, phone, status, description, cover_url))",
     )
     .eq("profile_id", user.id);
   if (linksError) throw linksError;
@@ -90,6 +90,7 @@ export async function resolvePatientContext(supabase: SupabaseClient): Promise<P
     phone: clinicRow.phone,
     status: clinicRow.status,
     description: clinicRow.description,
+    coverUrl: clinicRow.cover_url,
   };
 
   return { status: "ok", profile, patient, clinic };

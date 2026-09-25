@@ -2,7 +2,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { PrimaryLocation } from "@/features/clinic/data";
-import { directionsUrl, formatClinicAddress, hasUsableCoordinates, teamCards } from "./clinic-profile";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { CLINIC_COVER_FALLBACK_SRC, resolveClinicCover, type ClinicGalleryPhoto } from "@/features/clinic/clinic-media-data";
+import type { PatientClinic } from "@/features/session/types";
+import {
+  directionsUrl,
+  formatClinicAddress,
+  galleryGridClass,
+  galleryLayout,
+  galleryTileClass,
+  hasUsableCoordinates,
+  teamCards,
+} from "./clinic-profile";
+import { MyClinicScreen } from "./my-clinic-screen";
 
 // /portal/clinica — real clinic profile only; every missing piece omitted.
 
@@ -77,7 +90,7 @@ describe("/portal/clinica sources", () => {
   });
 
   it("sections hide without data; no invented content", () => {
-    expect(code(screen)).toContain("{gallery.status === \"ok\" && gallery.value.length > 0 && (");
+    expect(code(screen)).toContain("{layout && (");
     expect(code(screen)).toContain("{team.length > 0 && (");
     expect(code(screen)).toContain("{showMap && location && (");
     expect(code(screen)).not.toMatch(/Odontología general|placeholder|demo/i);
@@ -86,7 +99,7 @@ describe("/portal/clinica sources", () => {
   it("'Sobre nosotros': only with a real description, after identity/contact and before 'Dónde estamos', line breaks kept", () => {
     const body = code(screen);
     expect(body).toContain("const description = normalizeClinicDescription(clinic?.description);");
-    const section = body.slice(body.indexOf("{description && ("), body.indexOf("{(showMap || address) && ("));
+    const section = body.slice(body.indexOf("{description && ("), body.indexOf("{(showMap || directions) && ("));
     expect(section).toContain("Sobre nosotros");
     expect(section).toContain("whitespace-pre-line");
     expect(section).toContain("{description}</p>");
@@ -99,7 +112,7 @@ describe("/portal/clinica sources", () => {
 
   it("the description is read only through resolvePatientContext()'s own clinic embed (patient-scoped)", () => {
     const resolver = fs.readFileSync(path.resolve(__dirname, "../session/resolve-patient-context.ts"), "utf8");
-    expect(resolver).toContain("clinic:clinics(id, name, slug, logo_url, phone, status, description))");
+    expect(resolver).toContain("clinic:clinics(id, name, slug, logo_url, phone, status, description, cover_url))");
     expect(resolver).toContain('.eq("profile_id", user.id)');
     expect(resolver).toContain("description: clinicRow.description,");
     expect(page).toContain("if (context.status === \"ok\") clinic = context.clinic;");
@@ -126,5 +139,93 @@ describe("/portal/clinica sources", () => {
     expect(fn).toContain("and m.role in ('clinic_admin', 'dentist')");
     expect(fn).toContain("and pt.clinic_id = pp.clinic_id");
     expect(fn).toContain("where l.profile_id = auth.uid()");
+  });
+});
+
+describe("Portada (hero)", () => {
+  const clinic = (overrides: Partial<PatientClinic> = {}): PatientClinic => ({
+    id: "c1",
+    name: "Clínica Borcelle",
+    slug: "borcelle",
+    logoUrl: null,
+    phone: null,
+    status: "active",
+    description: null,
+    coverUrl: null,
+    ...overrides,
+  });
+  const render = (c: PatientClinic, loc: PrimaryLocation | null = null, photos: ClinicGalleryPhoto[] = []) =>
+    renderToStaticMarkup(
+      createElement(MyClinicScreen, { clinic: c, location: loc, gallery: { status: "ok", value: photos }, professionals: { status: "ok", value: [] } }),
+    );
+  const COVER = "https://proj.supabase.co/storage/v1/object/public/clinic-media/c1/cover?v=1";
+
+  it("no configured cover → the bundled generic asset (resolved at render, never a stored value)", () => {
+    expect(resolveClinicCover(null)).toEqual({ src: CLINIC_COVER_FALLBACK_SRC, isFallback: true });
+    expect(resolveClinicCover("  ")).toEqual({ src: CLINIC_COVER_FALLBACK_SRC, isFallback: true });
+    expect(CLINIC_COVER_FALLBACK_SRC.startsWith("/")).toBe(true);
+    expect(fs.existsSync(path.resolve(__dirname, "../../../public", CLINIC_COVER_FALLBACK_SRC.slice(1)))).toBe(true);
+    expect(render(clinic())).toContain(`src="${CLINIC_COVER_FALLBACK_SRC}"`);
+  });
+
+  it("a real cover is shown as-is instead of the fallback", () => {
+    expect(resolveClinicCover(COVER)).toEqual({ src: COVER, isFallback: false });
+    const html = render(clinic({ coverUrl: COVER }));
+    expect(html).toContain(`src="${COVER}"`);
+    expect(html).not.toContain(CLINIC_COVER_FALLBACK_SRC);
+  });
+
+  it("identity/contact over the cover shows only real data — nothing invented when missing", () => {
+    const bare = render(clinic());
+    expect(bare).toContain("Clínica Borcelle");
+    expect(bare).not.toMatch(/No registrado|WhatsApp|tel:|Logo de|Dónde estamos|Conoce nuestra clínica/);
+
+    const full = render(clinic({ phone: "+57 300 123 4567", logoUrl: "https://x/logo.png" }), location());
+    expect(full).toContain('href="https://wa.me/573001234567"');
+    expect(full).toContain('href="tel:+573001234567"');
+    expect(full).toContain('alt="Logo de Clínica Borcelle"');
+    // The address lives on the portada only — not repeated in "Dónde estamos".
+    expect(full.match(/Cra 10 # 20-30, Tunja, Boyacá/g)?.length).toBe(1);
+  });
+});
+
+describe("Conoce nuestra clínica — editorial gallery", () => {
+  const photos = (n: number): ClinicGalleryPhoto[] =>
+    Array.from({ length: n }, (_, i) => ({ id: `g${i}`, storagePath: `c1/gallery/g${i}`, url: `https://x/g${i}.jpg`, createdAt: `2026-09-2${i}` }));
+
+  it("picks the variant by count", () => {
+    expect(galleryLayout(0)).toBeNull();
+    expect(galleryLayout(1)).toBe("single");
+    expect(galleryLayout(2)).toBe("pair");
+    for (const n of [3, 4, 5]) expect(galleryLayout(n)).toBe("editorial");
+  });
+
+  it("mobile-first: never more than 2 per row below lg; pair is 1 col on mobile, 50/50 from sm", () => {
+    expect(galleryGridClass("single")).toBe("grid grid-cols-1");
+    expect(galleryGridClass("pair")).toMatch(/^grid grid-cols-1 .*sm:grid-cols-2/);
+    expect(galleryGridClass("editorial")).toMatch(/^grid grid-cols-2 .*lg:grid-cols-4 lg:grid-rows-2/);
+  });
+
+  it("editorial: a wide main photo + secondaries; an odd secondary out spans the row (no orphan gap)", () => {
+    expect(galleryTileClass("editorial", 0, 5)).toContain("col-span-2");
+    expect(galleryTileClass("editorial", 0, 5)).toContain("lg:row-span-2");
+    // 3 photos: 2 secondaries side by side on mobile, stacked halves on desktop.
+    expect(galleryTileClass("editorial", 1, 3)).toContain("lg:col-span-2");
+    // 4 photos: the last of 3 secondaries spans 2.
+    expect(galleryTileClass("editorial", 3, 4)).toMatch(/^col-span-2/);
+    expect(galleryTileClass("editorial", 1, 4)).not.toContain("col-span-2");
+    // 5 photos: 4 secondaries fill a 2×2 area.
+    for (const i of [1, 2, 3, 4]) expect(galleryTileClass("editorial", i, 5)).not.toContain("col-span");
+  });
+
+  it("renders every photo in stored order with object-cover (never distorted), and nothing without photos", () => {
+    const clinicRow: PatientClinic = { id: "c1", name: "C", slug: "c", logoUrl: null, phone: null, status: "active", description: null, coverUrl: null };
+    const html = renderToStaticMarkup(
+      createElement(MyClinicScreen, { clinic: clinicRow, location: null, gallery: { status: "ok", value: photos(4) }, professionals: { status: "ok", value: [] } }),
+    );
+    const order = [0, 1, 2, 3].map((i) => html.indexOf(`https://x/g${i}.jpg`));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(html.match(/object-cover/g)?.length).toBe(5); // 4 photos + the cover
+    expect(html).toContain("Conoce nuestra clínica");
   });
 });

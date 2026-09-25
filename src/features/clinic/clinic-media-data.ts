@@ -30,6 +30,45 @@ export function professionalPhotoPath(clinicId: string, professionalProfileId: s
   return `${clinicId}/professionals/${professionalProfileId}`;
 }
 
+// ONE fixed object per clinic, overwritten on replace — a replaced cover
+// never leaves an orphan. clinics.cover_url's CHECK only accepts this
+// clinic's own <clinicId>/cover public URL (migration 20260925100000).
+export function clinicCoverPath(clinicId: string): string {
+  return `${clinicId}/cover`;
+}
+
+// No configured cover → Odentia's own generic dental image, bundled with
+// the app (public/). Resolved at render time only — never written to
+// clinics.cover_url, never presented as the clinic's own photo. The asset
+// has a thin white rounded frame baked in, so callers scale it slightly
+// (isFallback) to crop that frame away under object-cover.
+export const CLINIC_COVER_FALLBACK_SRC = "/marketplace-background.png";
+
+export function resolveClinicCover(coverUrl: string | null | undefined): { src: string; isFallback: boolean } {
+  const url = coverUrl?.trim();
+  return url ? { src: url, isFallback: false } : { src: CLINIC_COVER_FALLBACK_SRC, isFallback: true };
+}
+
+// "Fotos de la clínica" multi-add (drop or multi-select): validates every
+// file BEFORE any upload and keeps only as many valid ones as there are
+// free slots (max 5 total, first-come in the order given). Everything else
+// is reported, never silently dropped.
+export type GalleryUploadPlan = { accepted: File[]; rejected: { name: string; message: string }[]; overflow: number };
+
+export function planGalleryUploads(files: File[], currentCount: number): GalleryUploadPlan {
+  const free = Math.max(0, MAX_CLINIC_GALLERY_PHOTOS - currentCount);
+  const accepted: File[] = [];
+  const rejected: GalleryUploadPlan["rejected"] = [];
+  let overflow = 0;
+  for (const file of files) {
+    const invalid = validateClinicImage(file);
+    if (invalid) rejected.push({ name: file.name, message: invalid });
+    else if (accepted.length < free) accepted.push(file);
+    else overflow += 1;
+  }
+  return { accepted, rejected, overflow };
+}
+
 export function clinicMediaPublicUrl(supabase: SupabaseClient, path: string): string {
   return supabase.storage.from(CLINIC_MEDIA_BUCKET).getPublicUrl(path).data.publicUrl;
 }

@@ -1,12 +1,12 @@
-import { BuildingIcon, MapPinIcon, PhoneIcon } from "@/components/shell/icons";
+import { MapPinIcon, PhoneIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
-import type { ClinicGalleryPhoto } from "@/features/clinic/clinic-media-data";
+import { resolveClinicCover, type ClinicGalleryPhoto } from "@/features/clinic/clinic-media-data";
 import type { PrimaryLocation } from "@/features/clinic/data";
 import { normalizeClinicDescription } from "@/features/clinic/description";
 import { initialsOf } from "@/features/dashboard/real-format";
 import type { PatientClinic } from "@/features/session/types";
 import { ClinicLocationView } from "./clinic-location-view";
-import { directionsUrl, formatClinicAddress, hasUsableCoordinates, teamCards } from "./clinic-profile";
+import { directionsUrl, formatClinicAddress, galleryGridClass, galleryLayout, galleryTileClass, hasUsableCoordinates, teamCards } from "./clinic-profile";
 import type { PortalProfessional } from "./requests-data";
 
 // Same wa.me deep-link convention as the rest of the Portal — a manual
@@ -15,7 +15,6 @@ function waLink(phone: string): string {
   return `https://wa.me/${phone.replace(/[^\d]/g, "")}`;
 }
 
-const EMPTY_VALUE = "No registrado";
 const CARD = "rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6";
 
 // A section whose read failed says so — never replaced by empty/fake content.
@@ -43,49 +42,72 @@ export function MyClinicScreen({
   const phone = clinic?.phone;
   const description = normalizeClinicDescription(clinic?.description);
   const address = formatClinicAddress(location);
+  const cover = resolveClinicCover(clinic?.coverUrl);
+  const galleryPhotos = gallery.status === "ok" ? gallery.value : [];
+  const layout = galleryLayout(galleryPhotos.length);
   const showMap = location !== null && hasUsableCoordinates(location);
   const directions = directionsUrl(location);
   const team = professionals.status === "ok" ? teamCards(professionals.value) : [];
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Identidad / contacto */}
-      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 shadow-sm sm:p-6">
-        <div className="flex items-center gap-3">
-          {clinic?.logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element -- clinic logo can be any Storage URL, not worth Next/Image's pipeline
-            <img src={clinic.logoUrl} alt={`Logo de ${name}`} className="h-11 w-auto max-w-[140px] shrink-0 object-contain" />
-          ) : (
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
-              <BuildingIcon className="size-5" />
+      {/* Portada — the clinic's own cover photo, or Odentia's generic
+          dental asset when none is configured (resolveClinicCover; never
+          stored as the clinic's photo). Mobile-first: a contained height
+          (never the whole first screen) with identity/contact over a
+          bottom-up scrim; from sm the scrim runs left→right behind the
+          text column and the cover widens into a panorama. Only real
+          fields are shown — a missing address/phone is simply omitted. */}
+      <section aria-label={`Portada de ${name}`} className="relative isolate overflow-hidden rounded-2xl bg-neutral-800 shadow-sm">
+        {/* eslint-disable-next-line @next/next/no-img-element -- clinic Storage photo / bundled fallback */}
+        <img
+          src={cover.src}
+          alt=""
+          className={`absolute inset-0 -z-10 size-full object-cover ${cover.isFallback ? "scale-[1.04] object-right" : ""}`}
+        />
+        <div
+          aria-hidden
+          className="absolute inset-0 -z-10 bg-gradient-to-t from-black/85 via-black/55 to-black/10 sm:bg-gradient-to-r sm:from-black/80 sm:via-black/55 sm:to-black/5"
+        />
+        <div className="flex min-h-[17rem] flex-col justify-end gap-3 p-5 text-white sm:min-h-[18rem] sm:max-w-xl sm:p-7 lg:min-h-[21rem]">
+          {clinic?.logoUrl && (
+            <span className="inline-flex w-fit rounded-xl bg-white/95 p-2 shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element -- clinic logo can be any Storage URL, not worth Next/Image's pipeline */}
+              <img src={clinic.logoUrl} alt={`Logo de ${name}`} className="h-9 w-auto max-w-[140px] object-contain sm:h-10" />
             </span>
           )}
-          <h2 className="text-base font-semibold text-foreground">{name}</h2>
+          <h2 className="text-2xl leading-tight font-semibold break-words drop-shadow-sm sm:text-3xl">{name}</h2>
+          {(address || phone) && (
+            <ul className="flex flex-col gap-1.5 text-sm text-white/90">
+              {address && (
+                <li className="flex items-start gap-2">
+                  <MapPinIcon className="mt-0.5 size-4 shrink-0" />
+                  <span className="break-words">{address}</span>
+                </li>
+              )}
+              {phone && (
+                <li className="flex items-center gap-2">
+                  <PhoneIcon className="size-4 shrink-0" />
+                  <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="underline-offset-2 hover:underline">
+                    {phone}
+                  </a>
+                </li>
+              )}
+            </ul>
+          )}
+          {phone && (
+            <a
+              href={waLink(phone)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-primary shadow-sm hover:bg-white/90 sm:w-fit"
+            >
+              <PhoneIcon className="size-4" />
+              Escribir por WhatsApp
+            </a>
+          )}
         </div>
-
-        <dl className="mt-5 flex flex-col gap-3 text-sm">
-          <div className="flex items-center justify-between gap-2">
-            <dt className="text-label-foreground">Dirección</dt>
-            <dd className="text-right font-medium">{address ?? EMPTY_VALUE}</dd>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <dt className="text-label-foreground">Teléfono</dt>
-            <dd className="font-medium">{phone || EMPTY_VALUE}</dd>
-          </div>
-        </dl>
-
-        {phone && (
-          <a
-            href={waLink(phone)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-5 inline-flex items-center gap-1.5 rounded-lg border border-primary/25 bg-background px-3 py-2 text-sm font-medium text-primary hover:bg-primary/10"
-          >
-            <PhoneIcon className="size-3.5" />
-            WhatsApp
-          </a>
-        )}
-      </div>
+      </section>
 
       {/* Sobre nosotros — only when the clinic configured a description
           (Clínica → Información general); otherwise nothing is rendered. */}
@@ -96,11 +118,11 @@ export function MyClinicScreen({
         </div>
       )}
 
-      {/* Dónde estamos — only with a real address and/or coordinates. */}
-      {(showMap || address) && (
+      {/* Dónde estamos — only with real coordinates and/or an address to
+          route to. The address itself is already on the portada. */}
+      {(showMap || directions) && (
         <div className={CARD}>
           <h2 className="text-base font-semibold">Dónde estamos</h2>
-          {address && <p className="mt-1 text-sm text-muted-foreground">{address}</p>}
           {showMap && location && (
             <div className="mt-4 overflow-hidden rounded-md">
               <ClinicLocationView latitude={location.latitude!} longitude={location.longitude!} />
@@ -111,7 +133,7 @@ export function MyClinicScreen({
               href={directions}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground/80 hover:bg-foreground/5"
+              className="mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-foreground/5"
             >
               <MapPinIcon className="size-3.5" />
               Cómo llegar
@@ -121,18 +143,18 @@ export function MyClinicScreen({
       )}
 
       {/* Conoce nuestra clínica — only real uploaded photos; hidden when none. */}
-      {gallery.status === "ok" && gallery.value.length > 0 && (
+      {layout && (
         <div className={CARD}>
           <h2 className="text-base font-semibold">Conoce nuestra clínica</h2>
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {gallery.value.map((photo, index) => (
+          <div className={`mt-4 ${galleryGridClass(layout)}`}>
+            {galleryPhotos.map((photo, index) => (
               // eslint-disable-next-line @next/next/no-img-element -- clinic Storage photo, not worth Next/Image's pipeline
               <img
                 key={photo.id}
                 src={photo.url}
                 alt={`Foto ${index + 1} de ${name}`}
                 loading="lazy"
-                className="aspect-[4/3] w-full rounded-lg border border-border object-cover"
+                className={`w-full rounded-xl object-cover ${galleryTileClass(layout, index, galleryPhotos.length)}`}
               />
             ))}
           </div>

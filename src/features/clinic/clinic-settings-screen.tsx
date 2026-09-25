@@ -12,6 +12,7 @@ import { CLINIC_LOGO_ACCEPTED_TYPES, CLINIC_LOGO_MAX_BYTES, removeClinicLogo, up
 import { InviteMemberModal } from "@/features/clinic/invite-member-modal";
 import { MyProfessionalProfileSection, StatusBadge } from "@/features/clinic/my-professional-profile-section";
 import { PrimaryLocationSection } from "@/features/clinic/primary-location-section";
+import { ClinicCoverSection } from "@/features/clinic/clinic-cover-section";
 import { ClinicGallerySection } from "@/features/clinic/clinic-gallery-section";
 import type { ClinicGalleryPhoto } from "@/features/clinic/clinic-media-data";
 import { ProfessionalPhotoControls } from "@/features/clinic/professional-photo-controls";
@@ -118,6 +119,7 @@ export function ClinicSettingsScreen({
         }
       />
       <ConsultoriosSection clinicId={clinic.id} initialRooms={rooms} />
+      <ClinicCoverSection clinicId={clinic.id} initialCoverUrl={clinic.coverUrl} />
       <ClinicGallerySection clinicId={clinic.id} initialPhotos={galleryPhotos} />
     </div>
   );

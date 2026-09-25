@@ -766,7 +766,9 @@ acceptance is where overlap/horario/ausencias are enforced. Mi clínica
 (`/portal/clinica`) is a compact, real clinic profile — never a miniweb:
 map only with usable sede coordinates; gallery = `clinic_gallery_photos`
 (max 5, DB trigger) in the public `clinic-media` bucket (writes via the
-clinic-folder check `owns_clinic_logo_path()`); team = active clinical
+clinic-folder check `owns_clinic_logo_path()`); portada = `clinics.cover_url`
+(one fixed `<clinic>/cover` object, CHECK-bound to that clinic; null →
+the bundled generic asset, resolved at render only, never stored); team = active clinical
 professionals from `get_my_clinic_professionals()`. A professional's photo
 is `profiles.avatar_url`, set by the clinic's admin only through
 `set_professional_photo()` (Clínica → Equipo). No clinic-wide "horario de

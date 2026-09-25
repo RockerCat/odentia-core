@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { galleryPhotoPath, MAX_CLINIC_GALLERY_PHOTOS, professionalPhotoPath, validateClinicImage } from "./clinic-media-data";
+import { clinicCoverPath, galleryPhotoPath, MAX_CLINIC_GALLERY_PHOTOS, planGalleryUploads, professionalPhotoPath, validateClinicImage } from "./clinic-media-data";
 
 // Clinic profile media: "Conoce nuestra clínica" gallery (max 5) and
 // admin-managed professional photos (migration 20260924160000).
@@ -10,6 +10,8 @@ const calls: string[] = [];
 let insertResult: { data: unknown; error: { message: string } | null } = { data: null, error: null };
 let deleteResult: { data: unknown; error: unknown } = { data: [{ id: "g1" }], error: null };
 let rpcResult: { error: unknown } = { error: null };
+let updateResult: { data: unknown; error: unknown } = { data: [{ id: "c1" }], error: null };
+const updates: unknown[] = [];
 const rpc = vi.fn(async () => rpcResult);
 
 vi.mock("@/lib/supabase/client", () => ({
@@ -32,6 +34,17 @@ vi.mock("@/lib/supabase/client", () => ({
         calls.push(`insert:${row.storage_path}`);
         return { select: () => ({ single: async () => insertResult }) };
       },
+      update: (values: unknown) => {
+        updates.push(values);
+        return {
+          eq: () => ({
+            select: async () => {
+              calls.push("update-row");
+              return updateResult;
+            },
+          }),
+        };
+      },
       delete: () => ({
         eq: () => ({
           select: async () => {
@@ -45,7 +58,8 @@ vi.mock("@/lib/supabase/client", () => ({
   }),
 }));
 
-const { deleteClinicGalleryPhoto, removeProfessionalPhoto, uploadClinicGalleryPhoto, uploadProfessionalPhoto } = await import("./clinic-media-actions");
+const { deleteClinicGalleryPhoto, removeClinicCover, removeProfessionalPhoto, uploadClinicCover, uploadClinicGalleryPhoto, uploadProfessionalPhoto } =
+  await import("./clinic-media-actions");
 
 const CLINIC = "11111111-1111-1111-1111-111111111111";
 const photoFile = (type = "image/jpeg", size = 1000) => new File([new Uint8Array(size)], "foto.jpg", { type });
@@ -55,6 +69,8 @@ beforeEach(() => {
   insertResult = { data: null, error: null };
   deleteResult = { data: [{ id: "g1" }], error: null };
   rpcResult = { error: null };
+  updateResult = { data: [{ id: "c1" }], error: null };
+  updates.length = 0;
   rpc.mockClear();
 });
 
@@ -126,6 +142,89 @@ describe("professional photo", () => {
     rpcResult = { error: { message: "not authorized to manage this professional" } };
     expect((await removeProfessionalPhoto(CLINIC, "pp-x")).status).toBe("error");
     expect(calls).toEqual([]);
+  });
+});
+
+describe("gallery multi-add plan (drop / multi-select)", () => {
+  const named = (name: string, type = "image/jpeg", size = 1000) => new File([new Uint8Array(size)], name, { type });
+
+  it("never exceeds 5 in total: extra valid files are counted as overflow, not uploaded", () => {
+    const plan = planGalleryUploads([named("a"), named("b"), named("c")], 3);
+    expect(plan.accepted.map((f) => f.name)).toEqual(["a", "b"]);
+    expect(plan.overflow).toBe(1);
+    expect(planGalleryUploads([named("a")], 5)).toEqual({ accepted: [], rejected: [], overflow: 1 });
+  });
+
+  it("validates type/size before any upload and reports each rejected file by name", () => {
+    const plan = planGalleryUploads([named("ok.png", "image/png"), named("anim.gif", "image/gif"), named("big.jpg", "image/jpeg", 5 * 1024 * 1024 + 1)], 0);
+    expect(plan.accepted.map((f) => f.name)).toEqual(["ok.png"]);
+    expect(plan.rejected).toEqual([
+      { name: "anim.gif", message: "Usa una imagen JPG, PNG o WebP." },
+      { name: "big.jpg", message: "La imagen supera el tamaño máximo de 5 MB." },
+    ]);
+    expect(plan.overflow).toBe(0);
+  });
+
+  it("keeps the chosen order", () => {
+    expect(planGalleryUploads([named("1"), named("2"), named("3")], 0).accepted.map((f) => f.name)).toEqual(["1", "2", "3"]);
+  });
+});
+
+describe("clinic cover (Foto de portada)", () => {
+  it("overwrites ONE fixed object per clinic (replace never leaves an orphan), then sets clinics.cover_url", async () => {
+    expect(clinicCoverPath(CLINIC)).toBe(`${CLINIC}/cover`);
+    const outcome = await uploadClinicCover(CLINIC, photoFile("image/webp"));
+    expect(calls).toEqual([`upload:${CLINIC}/cover:upsert`, "update-row"]);
+    expect(outcome.status).toBe("ok");
+    expect(updates).toEqual([{ cover_url: expect.stringMatching(new RegExp(`/clinic-media/${CLINIC}/cover\\?v=\\d+$`)) }]);
+    // Replacing is the exact same call → same object.
+    await uploadClinicCover(CLINIC, photoFile("image/png"));
+    expect(calls.filter((c) => c.startsWith("upload:"))).toEqual([`upload:${CLINIC}/cover:upsert`, `upload:${CLINIC}/cover:upsert`]);
+  });
+
+  it("an invalid file never reaches Storage or the DB", async () => {
+    expect(await uploadClinicCover(CLINIC, photoFile("image/svg+xml"))).toEqual({ status: "error", message: "Usa una imagen JPG, PNG o WebP." });
+    expect(await uploadClinicCover(CLINIC, photoFile("image/jpeg", 5 * 1024 * 1024 + 1))).toEqual({
+      status: "error",
+      message: "La imagen supera el tamaño máximo de 5 MB.",
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("an RLS-filtered update (not this clinic's admin → 0 rows) is an error", async () => {
+    updateResult = { data: [], error: null };
+    expect((await uploadClinicCover(CLINIC, photoFile())).status).toBe("error");
+    expect((await removeClinicCover(CLINIC)).status).toBe("error");
+    // The failed remove touched no file.
+    expect(calls.filter((c) => c.startsWith("remove:"))).toEqual([]);
+  });
+
+  it("remove clears the pointer (Portal → generic fallback, never stored), then deletes the object", async () => {
+    expect(await removeClinicCover(CLINIC)).toEqual({ status: "ok", value: undefined });
+    expect(updates).toEqual([{ cover_url: null }]);
+    expect(calls).toEqual(["update-row", `remove:${CLINIC}/cover`]);
+  });
+});
+
+describe("migration 20260925100000 — clinic cover (static)", () => {
+  const sql = fs.readFileSync(path.resolve(__dirname, "../../../supabase/migrations/20260925100000_add_clinic_cover_photo.sql"), "utf8");
+  const code = sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
+
+  it("is additive: one nullable column + a check + a column-level UPDATE grant, no policy/data changes", () => {
+    expect(code).toContain("add column cover_url text,");
+    expect(code).toContain("grant update (cover_url) on public.clinics to authenticated;");
+    expect(code).not.toMatch(/\b(drop|delete|truncate|create policy|alter policy|insert into|update public\.)/i);
+    // No fallback value is ever written: no default.
+    expect(code).not.toMatch(/default/i);
+  });
+
+  it("cover_url can only be null or THIS clinic's own clinic-media cover object", () => {
+    expect(code).toContain("cover_url is null");
+    expect(code).toContain("/storage/v1/object/public/clinic-media/' || id::text || '/cover(\\?v=[0-9]+)?$'");
+    const re = (id: string) => new RegExp(`^https?://[^/?#]+/storage/v1/object/public/clinic-media/${id}/cover(\\?v=[0-9]+)?$`);
+    expect(re(CLINIC).test(`https://p.supabase.co/storage/v1/object/public/clinic-media/${CLINIC}/cover?v=1`)).toBe(true);
+    expect(re(CLINIC).test("https://p.supabase.co/storage/v1/object/public/clinic-media/other/cover?v=1")).toBe(false);
+    expect(re(CLINIC).test(`https://p.supabase.co/storage/v1/object/public/clinic-media/${CLINIC}/gallery/x`)).toBe(false);
   });
 });
 

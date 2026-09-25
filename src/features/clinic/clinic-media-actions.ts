@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/client";
 import {
   CLINIC_MEDIA_BUCKET,
+  clinicCoverPath,
   clinicMediaPublicUrl,
   galleryPhotoPath,
   professionalPhotoPath,
@@ -88,5 +89,38 @@ export async function removeProfessionalPhoto(clinicId: string, professionalProf
     .from(CLINIC_MEDIA_BUCKET)
     .remove([professionalPhotoPath(clinicId, professionalProfileId)]);
   if (removeError) console.error("[clinic-media] professional photo object not removed", removeError);
+  return { status: "ok", value: undefined };
+}
+
+// Clinic cover ("Foto de portada") — same shape as professional photos:
+// one fixed object (<clinic>/cover) overwritten on replace, a version query
+// to bust caches, then clinics.cover_url (clinics_update_admin RLS + the
+// column's own-clinic CHECK). `.select()` turns an RLS-filtered update
+// (0 rows — not this clinic's admin) into a visible error.
+export async function uploadClinicCover(clinicId: string, file: File): Promise<MediaOutcome<string>> {
+  const invalid = validateClinicImage(file);
+  if (invalid) return { status: "error", message: invalid };
+  const supabase = createClient();
+  const path = clinicCoverPath(clinicId);
+
+  const { error: uploadError } = await supabase.storage
+    .from(CLINIC_MEDIA_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: true, cacheControl: "3600" });
+  if (uploadError) return { status: "error", message: GENERIC_ERROR };
+
+  const url = `${clinicMediaPublicUrl(supabase, path)}?v=${Date.now()}`;
+  const { data, error } = await supabase.from("clinics").update({ cover_url: url }).eq("id", clinicId).select("id");
+  if (error || !data || data.length === 0) return { status: "error", message: GENERIC_ERROR };
+  return { status: "ok", value: url };
+}
+
+// Pointer first (the Portal falls back to the generic asset immediately),
+// then the object itself.
+export async function removeClinicCover(clinicId: string): Promise<MediaOutcome> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from("clinics").update({ cover_url: null }).eq("id", clinicId).select("id");
+  if (error || !data || data.length === 0) return { status: "error", message: "No pudimos quitar la portada. Intenta de nuevo." };
+  const { error: removeError } = await supabase.storage.from(CLINIC_MEDIA_BUCKET).remove([clinicCoverPath(clinicId)]);
+  if (removeError) console.error("[clinic-media] cover object not removed", removeError);
   return { status: "ok", value: undefined };
 }

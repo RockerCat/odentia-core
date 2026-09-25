@@ -89,7 +89,9 @@ describe("migration 20260924170000_add_clinic_description", () => {
     expect(latest).not.toMatch(/dentist|assistant|patient_user_links/);
     // status/trial_ends_at stay RPC-only: no later grant ever adds them back.
     const clinicUpdateGrants = stmts.filter((stmt) => /grant update[^]*on public\.clinics/.test(stmt));
-    expect(clinicUpdateGrants.at(-1)).toMatch(/grant update \(description\) on public\.clinics to authenticated/);
+    // Later additive column grants (e.g. cover_url) never revoke it.
+    expect(clinicUpdateGrants.join("\n")).toMatch(/grant update \(description\) on public\.clinics to authenticated/);
+    expect(stmts.filter((stmt) => /revoke update[^]*on public\.clinics/.test(stmt))).toHaveLength(1);
     expect(clinicUpdateGrants.join("\n")).not.toMatch(/status|trial_ends_at|legal_name/);
   });
 });

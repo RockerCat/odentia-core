@@ -100,6 +100,9 @@ export type PatientClinic = {
   status: "active" | "suspended";
   // Portal "Sobre nosotros" (/portal/clinica) — null when not configured.
   description: string | null;
+  // Portal cover photo — null when not configured (the Portal then shows
+  // its bundled generic asset, never stored here).
+  coverUrl: string | null;
 };
 
 // See resolve-patient-context.ts for how each status is reached:

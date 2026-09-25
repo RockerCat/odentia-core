@@ -26,12 +26,14 @@ export type ClinicDetail = {
   trialEndsAt: string | null;
   // Portal "Sobre nosotros" — null when not configured.
   description: string | null;
+  // Portal cover photo (clinic-media <clinic>/cover) — null → generic fallback.
+  coverUrl: string | null;
 };
 
 export async function fetchClinicDetail(supabase: SupabaseClient, clinicId: string): Promise<ClinicDetail | null> {
   const { data, error } = await supabase
     .from("clinics")
-    .select("id, name, legal_name, tax_id, email, phone, logo_url, status, created_at, trial_ends_at, description")
+    .select("id, name, legal_name, tax_id, email, phone, logo_url, status, created_at, trial_ends_at, description, cover_url")
     .eq("id", clinicId)
     .maybeSingle();
   if (error) {
@@ -52,6 +54,7 @@ export async function fetchClinicDetail(supabase: SupabaseClient, clinicId: stri
     createdAt: data.created_at,
     trialEndsAt: data.trial_ends_at,
     description: data.description,
+    coverUrl: data.cover_url,
   };
 }
 
