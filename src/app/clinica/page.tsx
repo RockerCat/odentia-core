@@ -1,6 +1,5 @@
 import { AppShell } from "@/components/shell/app-shell";
 import {
-  fetchActiveSpecialties,
   fetchClinicDetail,
   fetchClinicRelevantSpecialties,
   fetchPendingInvitations,
@@ -33,7 +32,7 @@ import { createClient } from "@/lib/supabase/server";
 // URL/form — it only ever comes from resolveClinicContext (see task scope,
 // section 15). Every section is now real data or an honest empty state —
 // selfMember (the authenticated user's own row in the real team list,
-// matched by profile.id) is what "Mi perfil profesional" renders from,
+// matched by profile.id) is what Equipo's "Ver mi perfil profesional" link reads,
 // never RoleContext/useRole() (see task scope, sections 5/15).
 //
 // Sequential, not Promise.all: only resolveClinicContext/fetchClinicDetail
@@ -69,8 +68,6 @@ export default async function ClinicaPage() {
   let members: TeamMember[] = [];
   let pendingInvitations: PendingInvitation[] = [];
   let rooms: Room[] = [];
-  let specialties: Specialty[] = [];
-  let documentTypes: ReferenceValue[] = [];
   let ripsRelevantSpecialties: Specialty[] = [];
   let ripsConfirmedServices: ConfirmedSpecialtyRipsService[] = [];
   let ripsSuggestions: SpecialtyRipsServiceDefault[] = [];
@@ -123,22 +120,6 @@ export default async function ClinicaPage() {
       logStepFailed("fetchRooms", error);
     }
 
-    try {
-      specialties = await fetchActiveSpecialties(supabase);
-    } catch (error) {
-      // Only feeds Mi perfil profesional's own specialty picker — an empty
-      // list there just means fewer options, not a broken page.
-      logStepFailed("fetchActiveSpecialties", error);
-    }
-
-    try {
-      documentTypes = await getActiveReferenceValues("TipoDocumento");
-    } catch (error) {
-      // RIPS #3 — only feeds Mi perfil profesional's own document-type
-      // picker, same "empty list, not a broken page" handling as above.
-      logStepFailed("getActiveReferenceValues(TipoDocumento)", error);
-    }
-
     // RIPS #A4 — "Servicios RIPS por especialidad". Five independent
     // fetches, same "optional section, empty list on failure" convention
     // as everything else on this page — a failure in any one of them
@@ -175,7 +156,7 @@ export default async function ClinicaPage() {
     }
   }
 
-  // "Mi perfil profesional" is always about the authenticated user's own
+  // selfMember is always the authenticated user's own
   // row — matched by profile.id, the one real identity CurrentUserContext
   // already resolved, never RoleContext/useRole() (see task scope,
   // "Fotos de la clínica" — same "optional section, empty list on failure"
@@ -208,8 +189,6 @@ export default async function ClinicaPage() {
           selfMember={selfMember}
           pendingInvitations={pendingInvitations}
           rooms={rooms}
-          specialties={specialties}
-          documentTypes={documentTypes}
           ripsRelevantSpecialties={ripsRelevantSpecialties}
           ripsConfirmedServices={ripsConfirmedServices}
           ripsSuggestions={ripsSuggestions}

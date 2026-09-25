@@ -1,16 +1,17 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import Link from "next/link";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { BuildingIcon, PencilIcon, PlusIcon } from "@/components/shell/icons";
 import { useToast } from "@/components/toast";
 import { UserAvatar } from "@/components/user-avatar";
 import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import { updateClinicInfo } from "@/features/clinic/actions";
-import type { ClinicDetail, PendingInvitation, PrimaryLocation, Specialty, TeamMember } from "@/features/clinic/data";
+import type { ClinicDetail, PendingInvitation, PrimaryLocation, TeamMember } from "@/features/clinic/data";
 import { CLINIC_DESCRIPTION_MAX_LENGTH, normalizeClinicDescription } from "@/features/clinic/description";
 import { CLINIC_LOGO_ACCEPTED_TYPES, CLINIC_LOGO_MAX_BYTES, removeClinicLogo, uploadClinicLogo } from "@/features/clinic/logo";
 import { InviteMemberModal } from "@/features/clinic/invite-member-modal";
-import { MyProfessionalProfileSection, StatusBadge } from "@/features/clinic/my-professional-profile-section";
+import { StatusBadge } from "@/features/clinic/my-professional-profile-section";
 import { PrimaryLocationSection } from "@/features/clinic/primary-location-section";
 import { ClinicCoverSection } from "@/features/clinic/clinic-cover-section";
 import { ClinicGallerySection } from "@/features/clinic/clinic-gallery-section";
@@ -28,9 +29,10 @@ import type { ReferenceValue } from "@/features/rips/catalog-data";
 // anywhere in this tree (see CLAUDE.md task scope: "cero fallbacks mock").
 // Does not import useRole()/session.ts/mock-data.ts/CURRENT_USER — the
 // mock session must never affect what this screen shows (see task scope,
-// section 15). Four section cards
-// in one vertical page, each independently self-contained, visually
-// unchanged from the approved design — a card showing less because a
+// section 15). Organized in four client-side tabs (Información, Equipo,
+// RIPS, Portal del paciente — see ClinicSettingsScreen), each section still
+// self-contained; "Mi información profesional" lives only in
+// /mi-perfil-profesional. A card showing less because a
 // backend piece (invitations, membership status RPC, professional_profiles
 // RPC) doesn't exist yet is the correct, honest state, not a bug (see task
 // scope, section 13). Consultorios (below) is the one section with real
@@ -47,8 +49,6 @@ export function ClinicSettingsScreen({
   selfMember: initialSelfMember,
   pendingInvitations: initialPendingInvitations,
   rooms,
-  specialties,
-  documentTypes,
   ripsRelevantSpecialties,
   ripsConfirmedServices,
   ripsSuggestions,
@@ -62,8 +62,6 @@ export function ClinicSettingsScreen({
   selfMember: TeamMember | null;
   pendingInvitations: PendingInvitation[];
   rooms: Room[];
-  specialties: Specialty[];
-  documentTypes: ReferenceValue[];
   ripsRelevantSpecialties: RelevantSpecialty[];
   ripsConfirmedServices: ConfirmedSpecialtyRipsService[];
   ripsSuggestions: SuggestedSpecialtyRipsService[];
@@ -71,12 +69,8 @@ export function ClinicSettingsScreen({
   ripsServiciosOptions: ReferenceValue[];
   galleryPhotos: ClinicGalleryPhoto[];
 }) {
-  // Lifted above Equipo/Mi perfil profesional (not local to either) so
-  // both sections read the SAME real data — Equipo's own role/specialty
-  // label (roleLabel below) reuses professionalProfile.specialtyName, so a
-  // save in Mi perfil profesional must be reflected there too without a
-  // full page reload, never a second, independently-stale copy of the
-  // same team list (see this task's own "Consistencia" requirement).
+  // Lifted above the tabs (not local to Equipo) so the team list survives
+  // tab switches with any in-session change (photos, status) intact.
   const [members, setMembers] = useState(initialMembers);
   const selfMember = initialSelfMember
     ? (members.find((m) => m.membershipId === initialSelfMember.membershipId) ?? null)
@@ -90,38 +84,142 @@ export function ClinicSettingsScreen({
   const [taxId, setTaxId] = useState(clinic.taxId ?? "");
   const [codPrestador, setCodPrestador] = useState(location?.codPrestador ?? "");
 
+  // Tabs are plain client state (default Información). /clinica#rips (the
+  // /rips readiness "Corregir" links) opens the RIPS tab and scrolls to
+  // the block.
+  const [tab, setTab] = useState<ClinicTabId>("info");
+  useEffect(() => {
+    const syncFromHash = () => {
+      if (window.location.hash !== "#rips") return;
+      setTab("rips");
+      requestAnimationFrame(() => document.getElementById("rips")?.scrollIntoView({ block: "start" }));
+    };
+    syncFromHash();
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
+  }, []);
+
+  // Every panel stays MOUNTED and inactive ones are only `hidden`: sections
+  // keep local state seeded from props (e.g. a just-saved clinic name), so
+  // unmounting on a tab switch would show stale values on return. Switching
+  // never saves, reloads or resets anything.
   return (
     <div className="flex flex-col gap-6">
-      <InformacionGeneralSection clinic={clinic} location={location} taxId={taxId} onTaxIdChange={setTaxId} />
-      <RipsConfigSection taxId={taxId} location={location} codPrestador={codPrestador} onCodPrestadorSaved={setCodPrestador} />
-      <RipsSpecialtyServicesSection
-        specialties={ripsRelevantSpecialties}
-        confirmedServices={ripsConfirmedServices}
-        suggestions={ripsSuggestions}
-        grupoServiciosOptions={ripsGrupoServiciosOptions}
-        serviciosOptions={ripsServiciosOptions}
-      />
-      <EquipoSection
-        members={members}
-        onMembersChange={setMembers}
-        initialPendingInvitations={initialPendingInvitations}
-      />
-      <MyProfessionalProfileSection
-        selfMember={selfMember}
-        specialties={specialties}
-        documentTypes={documentTypes}
-        onSaved={(updated) =>
-          setMembers((prev) =>
-            prev.map((m) => (m.membershipId === selfMember?.membershipId ? { ...m, professionalProfile: updated } : m)),
-          )
-        }
-        onAvatarChange={(avatarUrl) =>
-          setMembers((prev) => prev.map((m) => (m.membershipId === selfMember?.membershipId ? { ...m, avatarUrl } : m)))
-        }
-      />
-      <ConsultoriosSection clinicId={clinic.id} initialRooms={rooms} />
-      <ClinicCoverSection clinicId={clinic.id} initialCoverUrl={clinic.coverUrl} />
-      <ClinicGallerySection clinicId={clinic.id} initialPhotos={galleryPhotos} />
+      <div role="tablist" aria-label="Secciones de la clínica" className="-mx-4 flex gap-1 overflow-x-auto border-b border-border px-4 sm:mx-0 sm:px-0">
+        {CLINIC_TABS.map((t) => (
+          <button
+            key={t.id}
+            id={`clinica-tab-${t.id}`}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            aria-controls={`clinica-panel-${t.id}`}
+            onClick={() => setTab(t.id)}
+            className={`shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
+              tab === t.id ? "border-primary text-primary" : "border-transparent text-foreground/60 hover:text-foreground"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <ClinicTabPanel id="info" active={tab}>
+        <InformacionGeneralSection clinic={clinic} location={location} taxId={taxId} onTaxIdChange={setTaxId} />
+        <ConsultoriosSection clinicId={clinic.id} initialRooms={rooms} />
+      </ClinicTabPanel>
+
+      <ClinicTabPanel id="equipo" active={tab}>
+        {/* Her own professional profile lives in its own screen — never
+            duplicated here; just a discreet way there when she has one. */}
+        {selfMember?.professionalProfile && (
+          <Link href="/mi-perfil-profesional" className="self-end text-xs font-medium text-primary hover:underline">
+            Ver mi perfil profesional
+          </Link>
+        )}
+        <EquipoSection members={members} onMembersChange={setMembers} initialPendingInvitations={initialPendingInvitations} />
+      </ClinicTabPanel>
+
+      <ClinicTabPanel id="rips" active={tab}>
+        <RipsConfigSection taxId={taxId} location={location} codPrestador={codPrestador} onCodPrestadorSaved={setCodPrestador} />
+        <RipsSpecialtyServicesSection
+          specialties={ripsRelevantSpecialties}
+          confirmedServices={ripsConfirmedServices}
+          suggestions={ripsSuggestions}
+          grupoServiciosOptions={ripsGrupoServiciosOptions}
+          serviciosOptions={ripsServiciosOptions}
+        />
+      </ClinicTabPanel>
+
+      <ClinicTabPanel id="portal" active={tab}>
+        <div>
+          <h2 className="text-lg font-semibold">Portal del paciente</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">Personaliza cómo ven tus pacientes la clínica en su Portal.</p>
+        </div>
+        <PortalDescriptionSection clinicId={clinic.id} initialDescription={clinic.description} />
+        <ClinicCoverSection clinicId={clinic.id} initialCoverUrl={clinic.coverUrl} />
+        <ClinicGallerySection clinicId={clinic.id} initialPhotos={galleryPhotos} />
+      </ClinicTabPanel>
+    </div>
+  );
+}
+
+export const CLINIC_TABS = [
+  { id: "info", label: "Información" },
+  { id: "equipo", label: "Equipo" },
+  { id: "rips", label: "RIPS" },
+  { id: "portal", label: "Portal del paciente" },
+] as const;
+type ClinicTabId = (typeof CLINIC_TABS)[number]["id"];
+
+function ClinicTabPanel({ id, active, children }: { id: ClinicTabId; active: ClinicTabId; children: ReactNode }) {
+  return (
+    <div id={`clinica-panel-${id}`} role="tabpanel" aria-labelledby={`clinica-tab-${id}`} hidden={active !== id} className="flex flex-col gap-6">
+      {children}
+    </div>
+  );
+}
+
+// "Portal del paciente" → the clinic's public description ("Sobre nosotros"
+// in /portal/clinica). Same field, same DescriptionField, same
+// updateClinicInfo save as before — only moved out of Información general.
+function PortalDescriptionSection({ clinicId, initialDescription }: { clinicId: string; initialDescription: string | null }) {
+  const [description, setDescription] = useState<string | null>(initialDescription);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const saveDescription = async (next: string) => {
+    setSaving(true);
+    setError(null);
+    const normalized = normalizeClinicDescription(next);
+    const outcome = await updateClinicInfo(clinicId, { description: normalized });
+    setSaving(false);
+    if (outcome.status === "error") {
+      setError("No pudimos guardar el cambio. Intenta de nuevo.");
+      return;
+    }
+    setDescription(normalized);
+    setEditing(false);
+  };
+
+  return (
+    <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
+      <h2 className="text-base font-semibold">Información pública</h2>
+      <dl className="mt-4 grid grid-cols-1 text-sm sm:grid-cols-2">
+        <DescriptionField
+          value={description}
+          isEditing={editing}
+          saving={saving}
+          error={editing ? error : null}
+          onStartEdit={() => {
+            setError(null);
+            setEditing(true);
+          }}
+          onSave={saveDescription}
+          onCancel={() => setEditing(false)}
+        />
+      </dl>
     </div>
   );
 }
@@ -173,7 +271,6 @@ function InformacionGeneralSection({
   const [clinicName, setClinicName] = useState(clinic.name);
   const [phone, setPhone] = useState(clinic.phone ?? "");
   const [email, setEmail] = useState(clinic.email ?? "");
-  const [description, setDescription] = useState<string | null>(clinic.description);
 
   // Only one field editable at a time (see task scope) — a single key here,
   // rather than each InfoField owning its own "isEditing" state.
@@ -191,20 +288,6 @@ function InformacionGeneralSection({
       return;
     }
     apply();
-    setEditingField(null);
-  };
-
-  const saveDescription = async (next: string) => {
-    setSavingField("description");
-    setFieldError(null);
-    const normalized = normalizeClinicDescription(next);
-    const outcome = await updateClinicInfo(clinic.id, { description: normalized });
-    setSavingField(null);
-    if (outcome.status === "error") {
-      setFieldError("No pudimos guardar el cambio. Intenta de nuevo.");
-      return;
-    }
-    setDescription(normalized);
     setEditingField(null);
   };
 
@@ -301,15 +384,6 @@ function InformacionGeneralSection({
             error={editingField === "tax_id" ? fieldError : null}
             onStartEdit={() => setEditingField("tax_id")}
             onSave={(next) => saveClinicField("tax_id", next, () => onTaxIdChange(next))}
-            onCancel={() => setEditingField(null)}
-          />
-          <DescriptionField
-            value={description}
-            isEditing={editingField === "description"}
-            saving={savingField === "description"}
-            error={editingField === "description" ? fieldError : null}
-            onStartEdit={() => setEditingField("description")}
-            onSave={saveDescription}
             onCancel={() => setEditingField(null)}
           />
         </div>
