@@ -1,12 +1,20 @@
-import { ProfilePhotoField } from "@/features/clinic/profile-photo-field";
-import { MyContactDetails } from "./my-contact-details";
+import { MyProfileCard, type MyProfileCardData } from "./my-profile-card";
 import type { PatientContext } from "@/features/session/types";
 
 // Real identity — patients.first_name/last_name/phone/email/document_id/
 // birth_date and the linked clinic's name (see resolve-patient-context.ts),
 // never the old mock CURRENT_PATIENT/MY_PATIENT_RECORD. The patient may
-// edit only her own phone (MyContactDetails); the rest is read-only.
-export function MyProfile({ context }: { context: PatientContext }) {
+// edit only her own phone (MyProfileCard); the rest is read-only.
+export function MyProfile({
+  context,
+  documentTypeLabel = null,
+  usualDentist = null,
+}: {
+  context: PatientContext;
+  // TipoDocumento label for patient.documentType (resolved server-side).
+  documentTypeLabel?: string | null;
+  usualDentist?: MyProfileCardData["usualDentist"];
+}) {
   if (context.status !== "ok") {
     // src/lib/supabase/proxy.ts already gates this route — reaching here
     // with anything but "ok" would mean the real session changed between
@@ -19,37 +27,38 @@ export function MyProfile({ context }: { context: PatientContext }) {
     );
   }
 
-  const { patient, clinic } = context;
-  const name = `${patient.firstName} ${patient.lastName}`.trim();
-  const initials = `${patient.firstName[0] ?? ""}${patient.lastName[0] ?? ""}`.toUpperCase() || "?";
-  const age = patient.birthDate ? computeAge(patient.birthDate) : null;
+  return <MyProfileCard data={buildMyProfileCardData(context, documentTypeLabel, usualDentist)} />;
+}
 
-  return (
-    <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
-      <div className="flex flex-col items-center gap-2 text-center">
-        {/* Her own profile photo (set_my_avatar) — also shown in the Portal header. */}
-        <ProfilePhotoField
-          name={name}
-          initials={initials}
-          initialAvatarUrl={context.profile.avatarUrl}
-          // 160px: prominent like Mi perfil profesional, sized to the ~303px
-          // mobile card. UserAvatar derives next/image `sizes` from it.
-          sizeClassName="size-40"
-          textClassName="text-4xl font-semibold"
-        />
-        <p className="text-base font-semibold">{name}</p>
-        {age !== null && <p className="text-sm text-muted-foreground">{age} años</p>}
-      </div>
+export function buildMyProfileCardData(
+  context: Extract<PatientContext, { status: "ok" }>,
+  documentTypeLabel: string | null,
+  usualDentist: MyProfileCardData["usualDentist"],
+): MyProfileCardData {
+  const { patient, clinic, profile } = context;
+  const hasRipsDocument = Boolean(patient.documentType && patient.documentNumber);
+  return {
+    name: `${patient.firstName} ${patient.lastName}`.trim(),
+    initials: `${patient.firstName[0] ?? ""}${patient.lastName[0] ?? ""}`.toUpperCase() || "?",
+    age: patient.birthDate ? computeAge(patient.birthDate) : null,
+    avatarUrl: profile.avatarUrl,
+    phone: patient.phone,
+    email: patient.email,
+    birthDateLabel: patient.birthDate ? formatBirthDate(patient.birthDate) : null,
+    // RIPS identity when set (the catalog label, or the raw code if the
+    // label couldn't be resolved); else the legacy free-text document.
+    documentTypeLabel: hasRipsDocument ? (documentTypeLabel ?? patient.documentType) : null,
+    documentNumber: hasRipsDocument ? patient.documentNumber : patient.documentId,
+    clinicName: clinic.name,
+    usualDentist,
+  };
+}
 
-      {/* Read ↔ inline edit (phone only; see MyContactDetails). */}
-      <MyContactDetails phone={patient.phone} email={patient.email} documentId={patient.documentId} />
-
-      <div className="mt-5 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
-        <p className="text-xs font-semibold text-primary uppercase">Clínica vinculada</p>
-        <p className="mt-1 text-sm font-medium text-foreground">{clinic.name}</p>
-      </div>
-    </div>
-  );
+// "2006-03-12" → "12 de marzo de 2006" — parsed as a calendar date (no
+// timezone shift).
+export function formatBirthDate(isoDate: string): string {
+  const [year, month, day] = isoDate.slice(0, 10).split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
 
 function computeAge(birthDateIso: string): number {

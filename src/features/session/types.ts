@@ -87,6 +87,11 @@ export type PatientInfo = {
   email: string | null;
   phone: string | null;
   documentId: string | null;
+  // RIPS identity (TipoDocumento code + number) — read-only for the patient;
+  // null for a record created before RIPS identity existed (documentId is
+  // the legacy free-text value then).
+  documentType: string | null;
+  documentNumber: string | null;
   birthDate: string | null;
   clinicId: string;
 };

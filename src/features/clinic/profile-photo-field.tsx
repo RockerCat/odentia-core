@@ -22,6 +22,7 @@ export function ProfilePhotoField({
   textClassName = "text-lg",
   layout = "stack",
   onChange,
+  imageSizes,
   children,
 }: {
   name: string;
@@ -31,6 +32,10 @@ export function ProfilePhotoField({
   textClassName?: string;
   layout?: "stack" | "row";
   onChange?: (avatarUrl: string | null) => void;
+  // For a responsive avatar (different size per breakpoint): UserAvatar's
+  // next/image `sizes` plus the largest rendered box. Omitted → derived
+  // from sizeClassName.
+  imageSizes?: { sizes: string; px: number };
   // Optional identity lines shown above the actions (e.g. name/email).
   children?: ReactNode;
 }) {
@@ -88,7 +93,16 @@ export function ProfilePhotoField({
     >
       {(open) => (
         <>
-          <UserAvatar name={name} initials={initials} avatar_url={avatarUrl ?? undefined} sizeClassName={sizeClassName} textClassName={textClassName} />
+          <UserAvatar
+            name={name}
+            initials={initials}
+            avatar_url={avatarUrl ?? undefined}
+            sizeClassName={sizeClassName}
+            textClassName={textClassName}
+            sizes={imageSizes?.sizes}
+            width={imageSizes?.px}
+            height={imageSizes?.px}
+          />
           <div className={`flex min-w-0 flex-col gap-1.5 ${stack ? "items-center" : ""}`}>
             {children}
             <div className="flex flex-wrap items-center gap-2">

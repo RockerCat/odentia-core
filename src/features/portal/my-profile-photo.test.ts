@@ -16,7 +16,7 @@ const { MyProfile } = await import("./my-profile");
 const context = (avatarUrl: string | null): PatientContext => ({
   status: "ok",
   profile: { id: "u-1", firstName: "Alex", lastName: "Paciente", email: "a@x.co", phone: null, avatarUrl },
-  patient: { id: "p-1", firstName: "Alex", lastName: "Paciente", email: "a@x.co", phone: null, documentId: null, birthDate: null, clinicId: "c1" },
+  patient: { id: "p-1", firstName: "Alex", lastName: "Paciente", email: "a@x.co", phone: null, documentId: null, documentType: null, documentNumber: null, birthDate: null, clinicId: "c1" },
   clinic: { id: "c1", name: "C", slug: "c", logoUrl: null, phone: null, status: "active", description: null, coverUrl: null },
 });
 const render = (avatarUrl: string | null) => renderToStaticMarkup(createElement(ToastProvider, null, createElement(MyProfile, { context: context(avatarUrl) })));
@@ -44,7 +44,7 @@ describe("one photo, every surface (sources)", () => {
 
   it("self-service surfaces all use ProfilePhotoField (set_my_avatar) — every role has one", () => {
     for (const f of [
-      "features/portal/my-profile.tsx",
+      "features/portal/my-profile-card.tsx",
       "features/dashboard/admin-profile-modal.tsx",
       "features/dashboard/assistant-profile-modal.tsx",
       "features/clinic/my-professional-profile-section.tsx",

@@ -42,6 +42,8 @@ const OK_PATIENT: PatientContext = {
     email: null,
     phone: null,
     documentId: null,
+    documentType: null,
+    documentNumber: null,
     birthDate: null,
     clinicId: "c1",
   },
