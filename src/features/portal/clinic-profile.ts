@@ -92,3 +92,15 @@ export function galleryTileClass(layout: GalleryLayout, index: number, count: nu
   if (secondaries === 3 && index === count - 1) return "col-span-2 aspect-[16/9] lg:aspect-auto lg:h-full";
   return "aspect-[4/3] lg:aspect-auto lg:h-full";
 }
+
+// "Nuestro equipo" — the professional's photo (or same-size initials) is
+// the protagonist. Mobile: one wide card per row, full-width square
+// portrait. "solo" (a single professional) turns into a horizontal card
+// from sm so it reads as intentional instead of a lone tile on the left;
+// "grid" grows to 2 → 3 per row (~300px cards at desktop width).
+export type TeamLayout = "solo" | "grid";
+
+export function teamLayout(count: number): TeamLayout | null {
+  if (count <= 0) return null;
+  return count === 1 ? "solo" : "grid";
+}

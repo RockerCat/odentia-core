@@ -6,7 +6,7 @@ import { normalizeClinicDescription } from "@/features/clinic/description";
 import { initialsOf } from "@/features/dashboard/real-format";
 import type { PatientClinic } from "@/features/session/types";
 import { ClinicLocationView } from "./clinic-location-view";
-import { directionsUrl, formatClinicAddress, galleryGridClass, galleryLayout, galleryTileClass, hasUsableCoordinates, teamCards } from "./clinic-profile";
+import { directionsUrl, formatClinicAddress, galleryGridClass, galleryLayout, galleryTileClass, hasUsableCoordinates, teamCards, teamLayout } from "./clinic-profile";
 import type { PortalProfessional } from "./requests-data";
 
 // Same wa.me deep-link convention as the rest of the Portal — a manual
@@ -15,7 +15,11 @@ function waLink(phone: string): string {
   return `https://wa.me/${phone.replace(/[^\d]/g, "")}`;
 }
 
-const CARD = "rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6";
+// One continuous page, not a stack of admin cards: sections sit directly
+// on the page background under a shared title style; only real content
+// (map, photos, professionals) gets its own rounded surface.
+const SECTION = "flex flex-col gap-3 sm:gap-4";
+const SECTION_TITLE = "text-lg font-semibold text-foreground sm:text-xl";
 
 // A section whose read failed says so — never replaced by empty/fake content.
 export type Loaded<T> = { status: "ok"; value: T } | { status: "error" };
@@ -48,9 +52,10 @@ export function MyClinicScreen({
   const showMap = location !== null && hasUsableCoordinates(location);
   const directions = directionsUrl(location);
   const team = professionals.status === "ok" ? teamCards(professionals.value) : [];
+  const teamMode = teamLayout(team.length);
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-8 sm:gap-10">
       {/* Portada — the clinic's own cover photo, or Odentia's generic
           dental asset when none is configured (resolveClinicCover; never
           stored as the clinic's photo). Mobile-first: a contained height
@@ -76,7 +81,7 @@ export function MyClinicScreen({
               <img src={clinic.logoUrl} alt={`Logo de ${name}`} className="h-9 w-auto max-w-[140px] object-contain sm:h-10" />
             </span>
           )}
-          <h2 className="text-2xl leading-tight font-semibold break-words drop-shadow-sm sm:text-3xl">{name}</h2>
+          <h1 className="text-2xl leading-tight font-semibold break-words drop-shadow-sm sm:text-3xl">{name}</h1>
           {(address || phone) && (
             <ul className="flex flex-col gap-1.5 text-sm text-white/90">
               {address && (
@@ -112,19 +117,19 @@ export function MyClinicScreen({
       {/* Sobre nosotros — only when the clinic configured a description
           (Clínica → Información general); otherwise nothing is rendered. */}
       {description && (
-        <div className={CARD}>
-          <h2 className="text-base font-semibold">Sobre nosotros</h2>
-          <p className="mt-2 whitespace-pre-line break-words text-sm text-foreground/80">{description}</p>
-        </div>
+        <section className={SECTION}>
+          <h2 className={SECTION_TITLE}>Sobre nosotros</h2>
+          <p className="max-w-prose whitespace-pre-line break-words text-[15px] leading-relaxed text-foreground/80">{description}</p>
+        </section>
       )}
 
       {/* Dónde estamos — only with real coordinates and/or an address to
           route to. The address itself is already on the portada. */}
       {(showMap || directions) && (
-        <div className={CARD}>
-          <h2 className="text-base font-semibold">Dónde estamos</h2>
+        <section className={SECTION}>
+          <h2 className={SECTION_TITLE}>Dónde estamos</h2>
           {showMap && location && (
-            <div className="mt-4 overflow-hidden rounded-md">
+            <div className="overflow-hidden rounded-2xl border border-border">
               <ClinicLocationView latitude={location.latitude!} longitude={location.longitude!} />
             </div>
           )}
@@ -133,20 +138,20 @@ export function MyClinicScreen({
               href={directions}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-foreground/5"
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-medium text-foreground/80 hover:bg-foreground/5 sm:w-fit"
             >
-              <MapPinIcon className="size-3.5" />
+              <MapPinIcon className="size-4" />
               Cómo llegar
             </a>
           )}
-        </div>
+        </section>
       )}
 
       {/* Conoce nuestra clínica — only real uploaded photos; hidden when none. */}
       {layout && (
-        <div className={CARD}>
-          <h2 className="text-base font-semibold">Conoce nuestra clínica</h2>
-          <div className={`mt-4 ${galleryGridClass(layout)}`}>
+        <section className={SECTION}>
+          <h2 className={SECTION_TITLE}>Conoce nuestra clínica</h2>
+          <div className={galleryGridClass(layout)}>
             {galleryPhotos.map((photo, index) => (
               // eslint-disable-next-line @next/next/no-img-element -- clinic Storage photo, not worth Next/Image's pipeline
               <img
@@ -154,57 +159,62 @@ export function MyClinicScreen({
                 src={photo.url}
                 alt={`Foto ${index + 1} de ${name}`}
                 loading="lazy"
-                className={`w-full rounded-xl object-cover ${galleryTileClass(layout, index, galleryPhotos.length)}`}
+                className={`w-full rounded-2xl object-cover ${galleryTileClass(layout, index, galleryPhotos.length)}`}
               />
             ))}
           </div>
-        </div>
+        </section>
       )}
       {gallery.status === "error" && (
-        <div className={CARD}>
-          <h2 className="text-base font-semibold">Conoce nuestra clínica</h2>
-          <p className="mt-2 text-sm text-muted-foreground">No pudimos cargar las fotos de la clínica. Intenta de nuevo más tarde.</p>
-        </div>
+        <section className={SECTION}>
+          <h2 className={SECTION_TITLE}>Conoce nuestra clínica</h2>
+          <p className="text-sm text-muted-foreground">No pudimos cargar las fotos de la clínica. Intenta de nuevo más tarde.</p>
+        </section>
       )}
 
       {/* Nuestro equipo — active clinical professionals only (from
-          get_my_clinic_professionals); hidden when there are none. */}
-      {team.length > 0 && (
-        <div className={CARD}>
-          <h2 className="text-base font-semibold">Nuestro equipo</h2>
-          {/* Protagonist cards: photo/initials first, then name, specialty
-              and registro — each optional line only when it really exists,
-              so a missing field never leaves a gap. 1 → 2 → 3 per row. */}
-          <ul className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          get_my_clinic_professionals); hidden when there are none. The
+          portrait (real photo, or the same-size initials via UserAvatar —
+          never a stock/mock photo) leads; then name, specialty, registro,
+          each optional line only when it really exists. */}
+      {teamMode && (
+        <section className={SECTION}>
+          <h2 className={SECTION_TITLE}>Nuestro equipo</h2>
+          <ul className={teamMode === "solo" ? "grid grid-cols-1" : "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"}>
             {team.map((member) => (
               <li
                 key={member.id}
-                className="mx-auto flex w-full max-w-[320px] flex-col items-center rounded-2xl border border-border bg-surface px-5 py-6 text-center"
+                className={`flex flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-sm ${
+                  teamMode === "solo" ? "sm:max-w-2xl sm:flex-row" : ""
+                }`}
               >
                 <UserAvatar
                   name={member.name}
                   initials={initialsOf(member.name)}
                   avatar_url={member.avatarUrl}
-                  sizeClassName="size-24 ring-4 ring-background shadow-sm"
-                  textClassName="text-2xl"
+                  shapeClassName="rounded-none"
+                  sizeClassName={`aspect-square w-full object-top ${teamMode === "solo" ? "sm:aspect-[4/5] sm:w-60" : "sm:aspect-[4/5]"}`}
+                  textClassName="text-6xl font-semibold"
                 />
-                <p className="mt-4 text-base leading-snug font-semibold text-foreground">{member.name}</p>
-                {member.specialty && <p className="mt-1 text-sm font-medium text-primary">{member.specialty}</p>}
-                {member.licenseNumber && (
-                  <p className="mt-3 border-t border-border pt-3 text-[11px] text-label-foreground">
-                    Registro profesional <span className="font-medium text-foreground/70">{member.licenseNumber}</span>
-                  </p>
-                )}
+                <div className={`flex flex-col gap-1 p-5 ${teamMode === "solo" ? "sm:justify-center sm:p-8" : ""}`}>
+                  <p className="text-xl leading-snug font-semibold text-foreground">{member.name}</p>
+                  {member.specialty && <p className="text-base font-medium text-primary">{member.specialty}</p>}
+                  {member.licenseNumber && (
+                    <p className="mt-2 text-xs text-label-foreground">
+                      Registro profesional <span className="font-medium text-foreground/70">{member.licenseNumber}</span>
+                    </p>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
-        </div>
+        </section>
       )}
       {professionals.status === "error" && (
-        <div className={CARD}>
-          <h2 className="text-base font-semibold">Nuestro equipo</h2>
-          <p className="mt-2 text-sm text-muted-foreground">No pudimos cargar el equipo de la clínica. Intenta de nuevo más tarde.</p>
-        </div>
+        <section className={SECTION}>
+          <h2 className={SECTION_TITLE}>Nuestro equipo</h2>
+          <p className="text-sm text-muted-foreground">No pudimos cargar el equipo de la clínica. Intenta de nuevo más tarde.</p>
+        </section>
       )}
     </div>
   );

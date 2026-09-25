@@ -22,7 +22,6 @@ const ALLOWED: Record<string, { routes: RegExp; why: string }> = {
   "features/settings/mock-data.ts": { routes: /^app\/configuracion\//, why: "option lists + non-persisted preference defaults (no people/records)" },
   "features/settings/dentist-mock-data.ts": { routes: /^app\/configuracion\//, why: "notification option labels/defaults (no people/records)" },
   "dev/role-context.tsx": { routes: /.*/, why: "session store fed the REAL role by role-bridge.ts; renders nothing" },
-  "dev/role-switcher.tsx": { routes: /.*/, why: "renders null outside NODE_ENV=development" },
 };
 
 const MOCK_MODULE = /(mock|fixture)|^lib\/current-user\.ts$|use-authenticated-identity|^dev\//;
@@ -119,7 +118,7 @@ describe("no mocks in product surfaces", () => {
     ]) {
       const mocks = [...reachableFrom(path.join(SRC, route))]
         .map(rel)
-        .filter((m) => MOCK_MODULE.test(m) && !["dev/role-context.tsx", "dev/role-switcher.tsx", "dev/role.ts"].includes(m));
+        .filter((m) => MOCK_MODULE.test(m) && !["dev/role-context.tsx", "dev/role.ts"].includes(m));
       expect({ route, mocks }).toEqual({ route, mocks: [] });
     }
   });
@@ -140,7 +139,7 @@ describe("no mocks in product surfaces", () => {
     for (const route of portalRoutes) {
       const mocks = [...reachableFrom(path.join(SRC, route))]
         .map(rel)
-        .filter((m) => MOCK_MODULE.test(m) && !["dev/role-context.tsx", "dev/role-switcher.tsx", "dev/role.ts"].includes(m));
+        .filter((m) => MOCK_MODULE.test(m) && !["dev/role-context.tsx", "dev/role.ts"].includes(m));
       expect({ route, mocks }).toEqual({ route, mocks: [] });
     }
   });
@@ -174,5 +173,16 @@ describe("no mocks in product surfaces", () => {
     const menu = fs.readFileSync(path.join(SRC, "components/shell/authenticated-user-menu.tsx"), "utf8");
     const bell = menu.slice(menu.indexOf('aria-label="Notificaciones"'), menu.indexOf("</button>", menu.indexOf('aria-label="Notificaciones"')));
     expect(bell).not.toMatch(/>\s*\d+\s*</);
+  });
+});
+
+describe("DEV · Cambiar rol switcher — removed (E2E uses real users/roles)", () => {
+  it("no module exists for it and nothing under src can render it, in any environment", () => {
+    expect(fs.existsSync(path.join(SRC, "dev/role-switcher.tsx"))).toBe(false);
+    const self = path.join(SRC, "lib/no-mocks-in-product.test.ts");
+    const offenders = walk(SRC)
+      .filter((f) => f !== self && /<RoleSwitcher|role-switcher"|Dev · Cambiar rol/.test(fs.readFileSync(f, "utf8")))
+      .map(rel);
+    expect(offenders).toEqual([]);
   });
 });

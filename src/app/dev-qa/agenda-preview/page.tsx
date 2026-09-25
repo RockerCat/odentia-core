@@ -1,7 +1,7 @@
 // Dev-only QA fixture route — deliberately NOT "use client": a real async
 // Server Component, exactly matching /agenda/page.tsx's own shape (AppShell
-// → RealAgendaScreen, including Sidebar/Header/MobileHeader/BottomTabBar/
-// RoleSwitcher, not RealAgendaScreen in isolation), with deterministic
+// → RealAgendaScreen, including Sidebar/Header/MobileHeader/BottomTabBar,
+// not RealAgendaScreen in isolation), with deterministic
 // synthetic data, so scripts/qa-agenda-console-check.mjs can load it
 // without a real Supabase session and assert zero unexpected console
 // output. 404s outside development — never a real, production-reachable

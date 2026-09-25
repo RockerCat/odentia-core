@@ -65,7 +65,8 @@ export default async function PortalClinicPage() {
   const clinicName = clinic?.name ?? "Mi clínica";
 
   return (
-    <PortalShell activeNavLabel={clinicName} heading={clinicName}>
+    // No shell heading: the portada's own <h1> already carries the name.
+    <PortalShell activeNavLabel={clinicName}>
       <MyClinicScreen clinic={clinic} location={location} gallery={gallery} professionals={professionals} />
     </PortalShell>
   );

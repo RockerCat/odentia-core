@@ -172,7 +172,8 @@ sections, `/admin` — see PROJECT_STATUS.md's "OUT OF SCOPE ACTUAL"/
 `clinics.status`/`trial_ends_at`, informational-only (no payment
 provider yet — see PROJECT_STATUS.md for the current DEFERRED BILLING
 list). Do not scatter session logic into feature folders. `src/dev/`
-(role switcher, mock dentist resolver) is a separate, disposable dev-only
+(mock role store, mock dentist resolver — the old DEV · Cambiar rol
+switcher was removed 2026-09-25; E2E uses real users/roles) is a separate, disposable dev-only
 shim, still used by those remaining mock screens — never a source of
 authorization for a real feature, and not yet safe to delete. Any
 component that shows a real user's NAME/avatar must read
@@ -634,12 +635,12 @@ otherwise failed.
 
 `/admin` is the OLD, separate, fully mock UI
 (`src/features/admin/mock-data.ts`), with no `resolveClinicContext()` call
-and no route protection beyond the mock role switcher —
+and no route protection beyond the mock role guard —
 `ClinicContext.membership.role` only ever resolves to `clinic_admin |
 dentist | assistant` for a real session, so `role-bridge.ts` can never
 produce a real `"superadmin"` mock role. `/admin` is therefore
-unreachable through any real login in production, only through the DEV
-role switcher in development — it is unrelated to `platform_roles`/
+unreachable through any real login (the DEV role switcher that once
+reached it in development was removed 2026-09-25) — it is unrelated to `platform_roles`/
 `resolveSuperadminContext()` above, not yet migrated or removed, and not
 itself a model to copy for any future real authorization.
 

@@ -14,6 +14,7 @@ import {
   galleryTileClass,
   hasUsableCoordinates,
   teamCards,
+  teamLayout,
 } from "./clinic-profile";
 import { MyClinicScreen } from "./my-clinic-screen";
 
@@ -91,7 +92,7 @@ describe("/portal/clinica sources", () => {
 
   it("sections hide without data; no invented content", () => {
     expect(code(screen)).toContain("{layout && (");
-    expect(code(screen)).toContain("{team.length > 0 && (");
+    expect(code(screen)).toContain("{teamMode && (");
     expect(code(screen)).toContain("{showMap && location && (");
     expect(code(screen)).not.toMatch(/Odontología general|placeholder|demo/i);
   });
@@ -117,17 +118,6 @@ describe("/portal/clinica sources", () => {
     expect(resolver).toContain("description: clinicRow.description,");
     expect(page).toContain("if (context.status === \"ok\") clinic = context.clinic;");
     expect(page).not.toMatch(/from\("clinics"\)/);
-  });
-
-  it("'Nuestro equipo' cards: responsive grid, one prominent avatar (photo or same-size initials), optional lines only when real", () => {
-    const team = screen.slice(screen.indexOf("{team.length > 0 && ("), screen.indexOf('{professionals.status === "error" && ('));
-    expect(team).toContain('className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"');
-    expect(team).toContain("max-w-[320px]");
-    // One UserAvatar for both cases → a real photo and the initials fallback share size/prominence.
-    expect(team.match(/<UserAvatar/g)?.length).toBe(1);
-    expect(team).toContain('sizeClassName="size-24 ring-4 ring-background shadow-sm"');
-    expect(team).toContain("{member.specialty && <p");
-    expect(team).toContain("{member.licenseNumber && (");
   });
 
   // No local Postgres here (same caveat as every SQL test in this repo).
@@ -227,5 +217,48 @@ describe("Conoce nuestra clínica — editorial gallery", () => {
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(html.match(/object-cover/g)?.length).toBe(5); // 4 photos + the cover
     expect(html).toContain("Conoce nuestra clínica");
+  });
+});
+
+describe("Nuestro equipo — protagonist portraits", () => {
+  const clinicRow: PatientClinic = { id: "c1", name: "C", slug: "c", logoUrl: null, phone: null, status: "active", description: null, coverUrl: null };
+  const pro = (id: string, overrides: Partial<{ avatarUrl: string | null; specialty: string | null; licenseNumber: string | null }> = {}) => ({
+    professionalProfileId: id,
+    name: `Ana ${id}`,
+    avatarUrl: null,
+    specialty: null,
+    licenseNumber: null,
+    ...overrides,
+  });
+  const render = (pros: ReturnType<typeof pro>[]) =>
+    renderToStaticMarkup(
+      createElement(MyClinicScreen, { clinic: clinicRow, location: null, gallery: { status: "ok", value: [] }, professionals: { status: "ok", value: pros } }),
+    );
+
+  it("layout: none → hidden, 1 → solo (horizontal from sm), 2+ → grid up to 3 per row", () => {
+    expect(teamLayout(0)).toBeNull();
+    expect(teamLayout(1)).toBe("solo");
+    expect(teamLayout(4)).toBe("grid");
+    expect(render([])).not.toContain("Nuestro equipo");
+    expect(render([pro("1")])).toContain("sm:max-w-2xl sm:flex-row");
+    const grid = render([pro("1"), pro("2")]);
+    expect(grid).toContain("grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3");
+    expect(grid).not.toContain("sm:flex-row");
+  });
+
+  it("a real photo is a large object-cover portrait; without one, the real initials fill the exact same box (never a mock photo)", () => {
+    const html = render([pro("1", { avatarUrl: "https://x/ana.jpg" }), pro("2")]);
+    const box = "aspect-square w-full object-top sm:aspect-[4/5]";
+    expect(html).toMatch(new RegExp(`<img[^>]*src="https://x/ana.jpg"[^>]*class="${box.replace(/[[\]/]/g, "\\$&")} shrink-0 rounded-none object-cover"`));
+    expect(html).toMatch(new RegExp(`<span class="flex ${box.replace(/[[\]/]/g, "\\$&")} [^"]*rounded-none[^"]*">A2</span>`));
+    expect(html.match(/<img/g)?.length).toBe(2); // the cover + Ana 1 — no invented photo for Ana 2
+  });
+
+  it("optional specialty/registro are omitted when missing, shown when real", () => {
+    const bare = render([pro("1")]);
+    expect(bare).not.toMatch(/Registro profesional|text-base font-medium text-primary/);
+    const full = render([pro("1", { specialty: "Ortodoncia", licenseNumber: "RM-1" })]);
+    expect(full).toContain(">Ortodoncia</p>");
+    expect(full).toContain("RM-1");
   });
 });

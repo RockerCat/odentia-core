@@ -10,6 +10,9 @@ type UserAvatarProps = {
   avatar_url?: string;
   sizeClassName?: string;
   textClassName?: string;
+  // Circle by default; a large portrait (e.g. Portal "Nuestro equipo")
+  // can pass its own shape — photo and initials always share it.
+  shapeClassName?: string;
 };
 
 // The single, canonical avatar component for every user in the system
@@ -21,6 +24,7 @@ export function UserAvatar({
   avatar_url,
   sizeClassName = "size-9",
   textClassName = "text-xs",
+  shapeClassName = "rounded-full",
 }: UserAvatarProps) {
   // Falls back to initials if the photo fails to load (missing file, dead
   // URL, offline) — this is what actually makes the component safe to
@@ -46,7 +50,7 @@ export function UserAvatar({
         ref={imgRef}
         src={avatar_url}
         alt={name}
-        className={`${sizeClassName} shrink-0 rounded-full object-cover`}
+        className={`${sizeClassName} shrink-0 ${shapeClassName} object-cover`}
         onError={() => setImageFailed(true)}
       />
     );
@@ -54,7 +58,7 @@ export function UserAvatar({
 
   return (
     <span
-      className={`flex ${sizeClassName} shrink-0 items-center justify-center rounded-full bg-primary/10 ${textClassName} font-medium text-primary`}
+      className={`flex ${sizeClassName} shrink-0 items-center justify-center ${shapeClassName} bg-primary/10 ${textClassName} font-medium text-primary`}
     >
       {initials}
     </span>

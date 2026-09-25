@@ -1,4 +1,3 @@
-import { RoleSwitcher } from "@/dev/role-switcher"; // DEV TOOL — see src/dev/role.ts
 import { Logo } from "./logo";
 import { SidebarNav } from "./sidebar-nav";
 
@@ -14,8 +13,6 @@ export function Sidebar({ activeLabel }: SidebarProps) {
       </div>
 
       <SidebarNav activeLabel={activeLabel} />
-
-      <RoleSwitcher />
     </aside>
   );
 }

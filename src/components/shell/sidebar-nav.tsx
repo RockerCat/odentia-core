@@ -32,8 +32,8 @@ function groupIntoSections(items: readonly NavItem[]) {
 
 export function SidebarNav({ activeLabel }: SidebarNavProps) {
   const { role } = useRole();
-  // DEV TOOL — see src/dev/role.ts. `role` is the mock session set at
-  // /login (production-safe) or, in development only, the RoleSwitcher —
+  // DEV TOOL — see src/dev/role.ts. `role` is the mock session, fed the
+  // REAL resolved clinic role by role-bridge.ts (or a /login demo pick) —
   // either way this always reflects who's actually "logged in" right now.
   const items = ROLE_NAV_ITEMS[role];
   const sections = groupIntoSections(items);

@@ -3,9 +3,9 @@
 // DEV TOOL — see src/dev/role.ts. The `role` state itself now also doubles
 // as the app's mock "session" (see src/features/auth/session.ts): it hydrates
 // from localStorage on load and persists on every change, so a /login demo
-// profile survives a refresh. Only the RoleSwitcher UI stays dev-only — the
-// underlying role/session mechanism is what src/app/login relies on in
-// production too.
+// profile survives a refresh. The old dev "Cambiar rol" switcher is gone
+// (E2E runs with real users/roles); the underlying role/session mechanism
+// stays, fed by role-bridge.ts and src/app/login.
 
 import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
 import { clearSession, readSession, subscribeToSession, writeSession } from "@/features/auth/session";
@@ -23,7 +23,7 @@ import { DEFAULT_ROLE, DEV_DENTIST_ID, type Role } from "./role";
 const getServerRole = (): Role => DEFAULT_ROLE;
 const getClientRole = (): Role => readSession()?.role ?? DEFAULT_ROLE;
 
-// "Administrador Odontólogo Único" demo scenario (see role-switcher.tsx) —
+// "Administrador Odontólogo Único" demo scenario —
 // a Clinic Admin (role stays "clinic-admin", never a new Role — see
 // CLAUDE.md Domain Model's Primary Use Case) who is ALSO the clinic's only
 // practicing dentist, with no other dentists and no assistants. Same
@@ -31,10 +31,6 @@ const getClientRole = (): Role => readSession()?.role ?? DEFAULT_ROLE;
 // the same hydration-safety reason.
 const getServerSolo = (): boolean => false;
 const getClientSolo = (): boolean => readSession()?.soloDentistClinic ?? false;
-
-// Shared label so role-switcher.tsx and the "Administrador Odontólogo
-// Único" bridge (see src/features/session/role-bridge.ts) never drift apart.
-export const SOLO_DENTIST_SCENARIO_LABEL = "Administrador Odontólogo Único";
 
 // Auto-configured "Perfil profesional" for the solo-practitioner scenario —
 // same shape/values format as the manual "Mi perfil profesional" flow
@@ -89,7 +85,7 @@ type RoleContextValue = {
   role: Role;
   setRole: (role: Role) => void;
   // DEV TOOL — "Administrador Odontólogo Único" (see SOLO_PRACTITIONER_PROFILE
-  // above and role-switcher.tsx). Always implies role === "clinic-admin".
+  // above). Always implies role === "clinic-admin".
   soloDentistClinic: boolean;
   setSoloDentistClinic: (next: boolean) => void;
   // DEV TOOL — which mock dentist "I am" when role is "dentist". Fixed for
@@ -153,8 +149,8 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   const [assistantIdentityOverride, setAssistantIdentityOverrideState] =
     useState<AssistantIdentityOverride>(NO_ASSISTANT_OVERRIDE);
 
-  // Persisted immediately so both the /login demo picker and the dev
-  // RoleSwitcher survive a refresh through the exact same mechanism.
+  // Persisted immediately so the /login demo picker and the real-role
+  // bridge survive a refresh through the exact same mechanism.
   const setRole = (next: Role) => {
     writeSession({ role: next });
   };

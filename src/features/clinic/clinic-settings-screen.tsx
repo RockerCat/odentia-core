@@ -26,10 +26,9 @@ import type { ReferenceValue } from "@/features/rips/catalog-data";
 
 // Clínica — 100% real data or an honest empty state, no mock fallback
 // anywhere in this tree (see CLAUDE.md task scope: "cero fallbacks mock").
-// Does not import useRole()/session.ts/mock-data.ts/CURRENT_USER — the DEV
-// · Cambiar rol switcher (src/dev/role-switcher.tsx) can keep existing
-// globally for other screens' previews, but changing it must never affect
-// what this screen shows (see task scope, section 15). Four section cards
+// Does not import useRole()/session.ts/mock-data.ts/CURRENT_USER — the
+// mock session must never affect what this screen shows (see task scope,
+// section 15). Four section cards
 // in one vertical page, each independently self-contained, visually
 // unchanged from the approved design — a card showing less because a
 // backend piece (invitations, membership status RPC, professional_profiles

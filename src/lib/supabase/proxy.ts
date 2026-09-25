@@ -26,10 +26,7 @@ import type { ClinicContext, PatientContext, SuperadminContext } from "@/feature
 // use-route-guard.ts's own mock-session bypass, this real gate must hold
 // in `npm run dev` too, so `npm run dev` alone is enough to verify
 // unauthenticated/logged-out access actually gets redirected (see the
-// follow-up task that removed an earlier version of this bypass). The DEV
-// · Cambiar rol switcher (src/dev/role-switcher.tsx) is unaffected: it only
-// overrides which mock role/data the already-authorized shell renders,
-// never whether a request gets past this gate.
+// follow-up task that removed an earlier version of this bypass).
 const PRIVATE_CLINIC_PATHS = [
   "/agenda",
   "/pacientes",

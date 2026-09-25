@@ -9,8 +9,8 @@ const SESSION_STORAGE_KEY = "odentia:session";
 //
 // authUserId: the real Supabase auth.uid() this bridged session was
 // written for (see src/features/session/role-bridge.ts) — undefined for a
-// DEV role-switcher pick (never tied to a real account) or a legacy
-// session written before this field existed. NEVER an authorization
+// /login demo pick (never tied to a real account) or a legacy session
+// written before this field existed. NEVER an authorization
 // signal (it's plain localStorage, trivially spoofable) — used only by
 // use-route-guard.ts's self-heal to detect "this cached role belongs to a
 // DIFFERENT real user than the one currently signed in" and re-resolve;

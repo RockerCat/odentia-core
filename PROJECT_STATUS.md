@@ -524,8 +524,8 @@ built for this MVP:
 - **Superadmin** (`/admin`) — fully mock, no real auth wired up. `role-bridge.ts`
   never produces a `"superadmin"` mock role from a real session (`ClinicContext`'s
   `membership.role` type only ever has `clinic_admin | dentist | assistant`), so
-  `/admin` is unreachable through any real login flow in production — only through
-  the DEV role switcher in development.
+  `/admin` is unreachable through any real login flow (the DEV role switcher that
+  once reached it in development was removed 2026-09-25).
 - **`/portal/salud`** (Mi salud dental) — **real since 2026-09-24**: allergies,
   "Odontólogo habitual" (shared `usual-dentist.ts` rule), recent services and
   her last finalized atenciones, from the same patient-scoped fetchers/RLS as
@@ -711,7 +711,8 @@ touched; if code and this section ever disagree, the code wins (see CLAUDE.md).
   `useAuthenticatedIdentity()` alone — the bridge above never carries name/avatar,
   so the mock hook alone can show a fixed/mock name for a real user (this was a
   real, fixed bug: `/agenda`'s own greeting).
-- `src/dev/` (role switcher, mock dentist resolver) is still present — still used
+- `src/dev/` (mock role store, mock dentist resolver — the DEV · Cambiar rol
+  switcher itself was removed 2026-09-25) is still present — still used
   by every remaining mock screen — and remains a disposable, never-a-source-of-
   real-authorization shim.
 - Route guard (`proxy.ts`) enforces real auth on every private route, including

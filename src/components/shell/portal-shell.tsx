@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { UserAvatar } from "@/components/user-avatar";
 import { RoleProvider } from "@/dev/role-context"; // DEV TOOL — see src/dev/role.ts
-import { RoleSwitcher } from "@/dev/role-switcher"; // DEV TOOL — see src/dev/role.ts
 import { usePatientContextResult } from "@/features/session/use-patient-context";
 import { BuildingIcon, CalendarIcon, ChevronDownIcon, LogOutIcon, NoteIcon, ToothIcon, UserIcon } from "./icons";
 import { NavLinkContent } from "./nav-link-status";
@@ -179,8 +178,6 @@ function PortalChrome({ activeNavLabel, heading, children }: PortalShellProps) {
             );
           })}
         </nav>
-
-        <RoleSwitcher />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

@@ -129,8 +129,8 @@ export function useRouteGuard(allowedRoles?: Role[]): boolean {
   // like `role` below already is.
   const hasSession = useSyncExternalStore(subscribeToSession, () => readSession() !== null, noSessionOnServer);
   // In production, only a /login demo session unlocks the app. In
-  // development, the DEV · CAMBIAR ROL switcher still works without ever
-  // logging in — see src/dev/role.ts.
+  // development this mock-session check is skipped (the real gate is
+  // proxy.ts either way) — see src/dev/role.ts.
   const sessionOk = process.env.NODE_ENV === "development" || hasSession;
 
   // Hydration-safe the same way role-context.tsx's own role read is: the

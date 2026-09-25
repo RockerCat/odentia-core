@@ -7,7 +7,7 @@
 //
 // Why this exists: a prior regression pass tested RealAgendaScreen in
 // isolation (never wrapped in the real AppShell — Sidebar/Header/
-// MobileHeader/BottomTabBar/RoleSwitcher) and, separately, used ad-hoc
+// MobileHeader/BottomTabBar) and, separately, used ad-hoc
 // substring filters like `text.includes("400")` to silence expected noise
 // from non-UUID synthetic IDs. Both were real gaps, since fixed.
 //
