@@ -56,7 +56,7 @@ export function MemberPhotoControls({
   };
 
   return (
-    <span className="flex flex-col items-end gap-0.5">
+    <span className="flex flex-col items-start gap-0.5">
       <span className="flex items-center gap-3">
         <button
           type="button"

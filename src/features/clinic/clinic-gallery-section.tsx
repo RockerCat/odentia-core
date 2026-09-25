@@ -109,7 +109,7 @@ export function ClinicGallerySection({ clinicId, initialPhotos }: { clinicId: st
           )}
 
           {photos.length > 0 && (
-            <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
               {photos.map((photo, index) => (
                 <li key={photo.id} className="flex flex-col gap-1.5">
                   {/* eslint-disable-next-line @next/next/no-img-element -- clinic Storage photo */}

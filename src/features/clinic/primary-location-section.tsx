@@ -14,7 +14,7 @@ const ClinicLocationMap = dynamic(
   () => import("@/features/location/clinic-location-map").then((mod) => mod.ClinicLocationMap),
   {
     ssr: false,
-    loading: () => <div className="mt-2.5 h-40 w-full animate-pulse rounded-md bg-foreground/5 sm:h-48" />,
+    loading: () => <div className="h-64 w-full animate-pulse rounded-lg bg-foreground/5 lg:h-72" />,
   },
 );
 
@@ -118,18 +118,19 @@ export function PrimaryLocationSection({ location }: { location: PrimaryLocation
     <div>
       <p className="text-sm font-medium text-foreground/80">Ubicación de la sede principal</p>
 
-      <div className="mt-2 flex flex-col gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-xs text-label-foreground">Dirección</span>
-          <input
-            className={FIELD_CLASS}
-            value={address}
-            placeholder="Dirección no configurada"
-            onChange={(e) => updateField({ address: e.target.value })}
-          />
-        </label>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {/* lg+: map left, fields right (~50/50). Below lg: fields first, then
+          the full-width map (DOM order; the map is moved first only at lg). */}
+      <div className="mt-3 grid grid-cols-1 gap-5 lg:grid-cols-2 lg:gap-6">
+        <div className="flex min-w-0 flex-col gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-xs text-label-foreground">Dirección</span>
+            <input
+              className={FIELD_CLASS}
+              value={address}
+              placeholder="Dirección no configurada"
+              onChange={(e) => updateField({ address: e.target.value })}
+            />
+          </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-xs text-label-foreground">Ciudad</span>
             <input
@@ -148,43 +149,51 @@ export function PrimaryLocationSection({ location }: { location: PrimaryLocation
               onChange={(e) => updateField({ state: e.target.value })}
             />
           </label>
-        </div>
 
-        <div>
-          <button
-            type="button"
-            onClick={handleLocate}
-            disabled={!address.trim() || locating}
-            className="text-xs font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
-          >
-            {locating ? "Ubicando…" : hasPin ? "Actualizar ubicación" : "Ubicar en el mapa"}
-          </button>
+          <div>
+            <button
+              type="button"
+              onClick={handleLocate}
+              disabled={!address.trim() || locating}
+              className="text-xs font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
+            >
+              {locating ? "Ubicando…" : hasPin ? "Actualizar ubicación" : "Ubicar en el mapa"}
+            </button>
+            {locateError && <p className="mt-1.5 text-xs text-danger">{locateError}</p>}
+          </div>
 
-          {locateError && <p className="mt-1.5 text-xs text-danger">{locateError}</p>}
-
-          {hasPin ? (
-            <div className="mt-2.5">
-              <ClinicLocationMap latitude={latitude} longitude={longitude} onMarkerMove={handleMarkerMove} />
-              <p className="mt-1.5 text-xs text-muted-foreground">Arrastra el marcador si la ubicación no es exacta.</p>
+          {dirty && (
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+              >
+                {saving ? "Guardando…" : "Guardar ubicación"}
+              </button>
+              {saveError && <p className="text-xs text-danger">{saveError}</p>}
             </div>
-          ) : (
-            <p className="mt-1.5 text-xs text-muted-foreground">Esta sede aún no está ubicada en el mapa.</p>
           )}
         </div>
 
-        {dirty && (
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
-            >
-              {saving ? "Guardando…" : "Guardar ubicación"}
-            </button>
-            {saveError && <p className="text-xs text-danger">{saveError}</p>}
-          </div>
-        )}
+        <div className="flex min-w-0 flex-col lg:order-first">
+          {hasPin ? (
+            <>
+              <ClinicLocationMap
+                latitude={latitude}
+                longitude={longitude}
+                onMarkerMove={handleMarkerMove}
+                className="h-64 w-full rounded-lg lg:h-auto lg:min-h-72 lg:flex-1"
+              />
+              <p className="mt-1.5 text-xs text-muted-foreground">Arrastra el marcador si la ubicación no es exacta.</p>
+            </>
+          ) : (
+            <p className="flex min-h-32 flex-1 items-center justify-center rounded-lg border border-dashed border-border px-4 text-center text-xs text-muted-foreground">
+              Esta sede aún no está ubicada en el mapa.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

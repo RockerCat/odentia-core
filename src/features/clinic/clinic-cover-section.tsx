@@ -70,7 +70,7 @@ export function ClinicCoverSection({ clinicId, initialCoverUrl }: { clinicId: st
             onClick={open}
             disabled={action !== null}
             aria-label={coverUrl ? "Cambiar foto de portada" : "Seleccionar foto de portada"}
-            className="group relative mt-4 block aspect-[16/9] w-full overflow-hidden rounded-xl border border-border bg-surface sm:aspect-[21/9] disabled:cursor-wait"
+            className="group relative mt-4 block aspect-[16/9] w-full overflow-hidden rounded-xl border border-border bg-surface sm:aspect-[21/9] lg:aspect-[2/1] disabled:cursor-wait"
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- clinic Storage photo / bundled fallback */}
             <img src={cover.src} alt="" className={`absolute inset-0 size-full object-cover ${cover.isFallback ? "scale-[1.04]" : ""}`} />

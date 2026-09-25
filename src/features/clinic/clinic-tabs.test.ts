@@ -81,7 +81,7 @@ const panel = (html: string, id: string) => {
 
 describe("/clinica tabs", () => {
   it("four tabs in order, Información selected by default; the others are hidden (still mounted)", () => {
-    expect(CLINIC_TABS.map((t) => t.label)).toEqual(["Información", "Equipo", "RIPS", "Portal del paciente"]);
+    expect(CLINIC_TABS.map((t) => t.label)).toEqual(["Información", "Equipo", "RIPS", "Portal público"]);
     const html = render();
     expect(html).toContain('role="tablist"');
     expect(html).toMatch(/id="clinica-tab-info"[^>]*aria-selected="true"/);
@@ -101,7 +101,20 @@ describe("/clinica tabs", () => {
     expect(info).not.toContain("Descripción de la clínica");
   });
 
-  it("Equipo: the team section (+ a discreet link to her own professional profile, only when she has one)", () => {
+  it("Equipo: member cards (80px photo/initials, name, role, specialty, status, same actions) — 1 per row, 2 from lg", () => {
+    const equipo = panel(render(), "equipo");
+    expect(equipo).toContain('<ul class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">');
+    const card = equipo.slice(equipo.indexOf("<li"), equipo.indexOf("</li>"));
+    expect(card).toMatch(/<span class="flex size-20[^"]*">AB<\/span>/);
+    expect(card).toContain("Admin Borcelle 2");
+    expect(card).toContain("Administrador · Odontólogo");
+    expect(card).toContain(">Ortodoncia</p>");
+    expect(card).toContain("Activo");
+    for (const action of ["Subir foto", "Editar", "Desactivar"]) expect(card).toContain(action);
+    expect(equipo.indexOf("Invitaciones pendientes")).toBeGreaterThan(equipo.indexOf("</ul>"));
+  });
+
+  it("Equipo: a discreet link to her own professional profile, only when she has one", () => {
     const equipo = panel(render(), "equipo");
     expect(equipo).toContain("Agregar miembro");
     expect(equipo).toContain('href="/mi-perfil-profesional"');
@@ -114,8 +127,13 @@ describe("/clinica tabs", () => {
     expect(rips.indexOf("Configuración RIPS")).toBeLessThan(rips.indexOf("Servicios RIPS por especialidad"));
   });
 
-  it("Portal del paciente: description, then cover, then gallery", () => {
+  it("Portal público: description on top, then cover | gallery side by side from lg", () => {
     const portal = panel(render(), "portal");
+    expect(portal).toContain(">Portal público</h2>");
+    expect(portal).not.toContain("Portal del paciente</h2>");
+    const pair = portal.slice(portal.indexOf("lg:grid-cols-2"));
+    expect(pair.indexOf("Foto de portada")).toBeGreaterThan(-1);
+    expect(pair.indexOf("Fotos de la clínica")).toBeGreaterThan(pair.indexOf("Foto de portada"));
     expect(portal).toContain("Personaliza cómo ven tus pacientes la clínica en su Portal.");
     const order = ["Descripción de la clínica", "Foto de portada", "Fotos de la clínica"].map((t) => portal.indexOf(t));
     expect(order.every((i) => i > -1)).toBe(true);
@@ -128,6 +146,18 @@ describe("/clinica tabs", () => {
     expect(html.match(/>Descripción de la clínica<\/dt>/g)?.length).toBe(1);
     expect(html.match(/Foto de portada/g)?.length).toBe(1);
     expect(html).not.toMatch(/Mi información profesional|Mi perfil profesional<\/h2>|Editar perfil profesional/);
+  });
+
+  it("Información: location is fields + map, map first only at lg; the map re-measures after being hidden", () => {
+    const location = fs.readFileSync(path.resolve(__dirname, "primary-location-section.tsx"), "utf8");
+    expect(location).toContain('<div className="mt-3 grid grid-cols-1 gap-5 lg:grid-cols-2 lg:gap-6">');
+    expect(location).toContain('<div className="flex min-w-0 flex-col lg:order-first">');
+    expect(location.indexOf("Dirección</span>")).toBeLessThan(location.indexOf("<ClinicLocationMap\n"));
+    const map = fs.readFileSync(path.resolve(__dirname, "../location/clinic-location-map.tsx"), "utf8");
+    expect(map).toContain("new ResizeObserver(");
+    expect(map).toContain("map.invalidateSize()");
+    // Portal's read-only map keeps its default size.
+    expect(map).toContain('className = "h-40 w-full rounded-md sm:h-48"');
   });
 
   it("/clinica#rips opens the RIPS tab (the /rips 'Corregir' links)", () => {

@@ -30,7 +30,7 @@ import type { ReferenceValue } from "@/features/rips/catalog-data";
 // Does not import useRole()/session.ts/mock-data.ts/CURRENT_USER — the
 // mock session must never affect what this screen shows (see task scope,
 // section 15). Organized in four client-side tabs (Información, Equipo,
-// RIPS, Portal del paciente — see ClinicSettingsScreen), each section still
+// RIPS, Portal público — see ClinicSettingsScreen), each section still
 // self-contained; "Mi información profesional" lives only in
 // /mi-perfil-profesional. A card showing less because a
 // backend piece (invitations, membership status RPC, professional_profiles
@@ -153,12 +153,15 @@ export function ClinicSettingsScreen({
 
       <ClinicTabPanel id="portal" active={tab}>
         <div>
-          <h2 className="text-lg font-semibold">Portal del paciente</h2>
+          <h2 className="text-lg font-semibold">Portal público</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">Personaliza cómo ven tus pacientes la clínica en su Portal.</p>
         </div>
         <PortalDescriptionSection clinicId={clinic.id} initialDescription={clinic.description} />
-        <ClinicCoverSection clinicId={clinic.id} initialCoverUrl={clinic.coverUrl} />
-        <ClinicGallerySection clinicId={clinic.id} initialPhotos={galleryPhotos} />
+        {/* lg+: cover left, gallery right (~50/50); stacked below lg. */}
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+          <ClinicCoverSection clinicId={clinic.id} initialCoverUrl={clinic.coverUrl} />
+          <ClinicGallerySection clinicId={clinic.id} initialPhotos={galleryPhotos} />
+        </div>
       </ClinicTabPanel>
     </div>
   );
@@ -168,7 +171,7 @@ export const CLINIC_TABS = [
   { id: "info", label: "Información" },
   { id: "equipo", label: "Equipo" },
   { id: "rips", label: "RIPS" },
-  { id: "portal", label: "Portal del paciente" },
+  { id: "portal", label: "Portal público" },
 ] as const;
 type ClinicTabId = (typeof CLINIC_TABS)[number]["id"];
 
@@ -180,7 +183,7 @@ function ClinicTabPanel({ id, active, children }: { id: ClinicTabId; active: Cli
   );
 }
 
-// "Portal del paciente" → the clinic's public description ("Sobre nosotros"
+// "Portal público" → the clinic's public description ("Sobre nosotros"
 // in /portal/clinica). Same field, same DescriptionField, same
 // updateClinicInfo save as before — only moved out of Información general.
 function PortalDescriptionSection({ clinicId, initialDescription }: { clinicId: string; initialDescription: string | null }) {
@@ -714,13 +717,11 @@ function EquipoSection({
   // this section is accurate enough.
   const [nowMs] = useState(() => Date.now());
 
+  // Role(s) and specialty on separate lines of the member card (same
+  // information the old one-line label combined).
   const roleLabel = (member: TeamMember): string => {
-    const specialty = member.professionalProfile?.specialtyName;
-    if (member.role === "clinic_admin") {
-      if (!member.professionalProfile) return "Administrador";
-      return specialty ? `Administrador · Odontólogo · ${specialty}` : "Administrador · Odontólogo";
-    }
-    if (member.role === "dentist") return specialty ? `Odontólogo · ${specialty}` : "Odontólogo";
+    if (member.role === "clinic_admin") return member.professionalProfile ? "Administrador · Odontólogo" : "Administrador";
+    if (member.role === "dentist") return "Odontólogo";
     return "Asistente";
   };
 
@@ -799,23 +800,37 @@ function EquipoSection({
           Todavía no tienes otros miembros en tu equipo.
         </p>
       ) : (
-        <ul className="mt-4 divide-y divide-border overflow-hidden rounded-xl border border-border">
+        // One card per member: identity first (80px photo or initials, name,
+        // role, specialty, status), the existing actions in a quiet footer.
+        // 1 per row until lg, then 2.
+        <ul className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
           {members.map((member) => {
             const name = `${member.firstName} ${member.lastName}`.trim() || member.email;
             const initials =
               `${member.firstName[0] ?? ""}${member.lastName[0] ?? ""}`.toUpperCase() || member.email[0]?.toUpperCase() || "?";
             const isActive = member.status === "active";
             const isSaving = savingId === member.membershipId;
+            const specialty = member.professionalProfile?.specialtyName;
             return (
-              <li key={member.membershipId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <UserAvatar name={name} initials={initials} avatar_url={member.avatarUrl ?? undefined} sizeClassName="size-9" />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{name}</p>
-                    <p className="truncate text-xs text-muted-foreground">{roleLabel(member)}</p>
+              <li key={member.membershipId} className="flex min-w-0 flex-col gap-4 rounded-xl border border-border p-4 sm:p-5">
+                <div className="flex items-start gap-4">
+                  <UserAvatar
+                    name={name}
+                    initials={initials}
+                    avatar_url={member.avatarUrl ?? undefined}
+                    sizeClassName="size-20"
+                    textClassName="text-xl font-semibold"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <p className="min-w-0 text-base leading-snug font-semibold break-words">{name}</p>
+                      <StatusBadge active={isActive} />
+                    </div>
+                    <p className="mt-0.5 text-sm text-muted-foreground">{roleLabel(member)}</p>
+                    {specialty && <p className="text-sm font-medium text-primary">{specialty}</p>}
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-start gap-x-4 gap-y-2 border-t border-border pt-3">
                   {/* That member's ONE profile photo (profiles.avatar_url) —
                       the same one she manages herself and patients see in
                       /portal/clinica ("Nuestro equipo"). */}
@@ -826,7 +841,6 @@ function EquipoSection({
                       onMembersChange((prev) => prev.map((m) => (m.membershipId === member.membershipId ? { ...m, avatarUrl } : m)))
                     }
                   />
-                  <StatusBadge active={isActive} />
                   <button
                     type="button"
                     disabled

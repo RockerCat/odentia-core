@@ -47,6 +47,23 @@ function RecenterOnChange({ center }: { center: [number, number] }) {
   return null;
 }
 
+// Leaflet measures its container once; if it was resized while hidden
+// (e.g. /clinica keeps inactive tabs mounted with display:none) it would
+// render with stale dimensions. Re-measure whenever the container's size
+// actually changes — including going from hidden (0×0) to visible.
+function InvalidateSizeOnResize() {
+  const map = useMap();
+  useEffect(() => {
+    const container = map.getContainer();
+    const observer = new ResizeObserver(() => {
+      if (container.clientWidth > 0 && container.clientHeight > 0) map.invalidateSize();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [map]);
+  return null;
+}
+
 // Renders only once coordinates exist (from a successful geocode, a
 // dragged marker, or a prior saved value); moving the marker only ever
 // reports new coordinates upward, never touches address/city/state.
@@ -54,9 +71,12 @@ export function ClinicLocationMap({
   latitude,
   longitude,
   onMarkerMove,
+  className = "h-40 w-full rounded-md sm:h-48",
 }: {
   latitude: number;
   longitude: number;
+  // Box size/shape; the default is the compact map every caller had.
+  className?: string;
   // Omitted → a read-only map (e.g. the Patient Portal's "Dónde estamos");
   // Clínica's own sede editor passes it to make the marker draggable.
   onMarkerMove?: (next: { latitude: number; longitude: number }) => void;
@@ -68,7 +88,7 @@ export function ClinicLocationMap({
       center={center}
       zoom={DEFAULT_ZOOM}
       scrollWheelZoom={false}
-      className="h-40 w-full rounded-md sm:h-48"
+      className={className}
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -91,6 +111,7 @@ export function ClinicLocationMap({
         }
       />
       <RecenterOnChange center={center} />
+      <InvalidateSizeOnResize />
     </MapContainer>
   );
 }
