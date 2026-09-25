@@ -4,6 +4,7 @@ import { CloseIcon } from "@/components/shell/icons";
 import { UserAvatar } from "@/components/user-avatar";
 import { MEMBERSHIP_ROLE_LABELS } from "@/features/session/types";
 import { useCurrentUserContext } from "@/features/session/use-current-user-context";
+import { ProfilePhotoField } from "@/features/clinic/profile-photo-field";
 
 // The Clinic Admin's own "Mi perfil" — real identity only (see PROMPT
 // MASTER "Odentia: corregir role bridge stale + Mi perfil real"). Used to
@@ -72,7 +73,12 @@ export function AdminProfileModal({
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
           <div className="flex flex-col items-center gap-2 text-center">
-            <UserAvatar name={displayName} initials={initials} avatar_url={displayAvatar} sizeClassName="size-16" />
+            {ok ? (
+              // Her own ONE profile photo (set_my_avatar) — same one Equipo/headers show.
+              <ProfilePhotoField name={displayName} initials={initials} initialAvatarUrl={ok.profile.avatarUrl} sizeClassName="size-16" />
+            ) : (
+              <UserAvatar name={displayName} initials={initials} avatar_url={displayAvatar} sizeClassName="size-16" />
+            )}
           </div>
 
           <dl className="mt-5 flex flex-col gap-3 text-sm">

@@ -4,16 +4,15 @@ import {
   clinicCoverPath,
   clinicMediaPublicUrl,
   galleryPhotoPath,
-  memberPhotoPath,
-  professionalPhotoPath,
+  profileAvatarPath,
   validateClinicImage,
   type ClinicGalleryPhoto,
 } from "./clinic-media-data";
 
-// Clinic Admin writes for the clinic profile media. Every write is
-// re-authorized server-side (clinic-media Storage policies via
-// owns_clinic_logo_path, clinic_gallery_photos RLS + max-5 trigger,
-// set_professional_photo()) — the clinic id here only picks the folder.
+// Clinic media + profile photo writes. Every write is re-authorized
+// server-side (clinic-media Storage policies via owns_clinic_logo_path /
+// owns_profile_avatar_path, clinic_gallery_photos RLS + max-5 trigger,
+// set_my_avatar()/set_clinic_member_avatar()) — ids here only pick paths.
 
 export type MediaOutcome<T = void> = { status: "ok"; value: T } | { status: "error"; message: string };
 
@@ -61,54 +60,80 @@ export async function deleteClinicGalleryPhoto(photo: Pick<ClinicGalleryPhoto, "
   return { status: "ok", value: undefined };
 }
 
-// Team member photo = profiles.avatar_url (what every surface shows). One
-// fixed object per person, overwritten on replace — so a replaced photo
-// never leaves an orphan. A version query busts caches; the RPC writes the
-// URL after re-checking authorization (clinic_admin of that member's own
-// clinic, or Superadmin) and that it's this clinic's own object:
-// - professionals: <clinic>/professionals/<ppId> via set_professional_photo();
-// - everyone else: <clinic>/members/<membershipId> via set_clinic_member_photo().
-export type MemberPhotoTarget = { kind: "professional"; professionalProfileId: string } | { kind: "member"; membershipId: string };
-
-function photoTargetWrite(clinicId: string, target: MemberPhotoTarget) {
-  return target.kind === "professional"
-    ? {
-        path: professionalPhotoPath(clinicId, target.professionalProfileId),
-        rpc: "set_professional_photo",
-        args: (url: string | null) => ({ p_professional_profile_id: target.professionalProfileId, p_avatar_url: url }),
-      }
-    : {
-        path: memberPhotoPath(clinicId, target.membershipId),
-        rpc: "set_clinic_member_photo",
-        args: (url: string | null) => ({ p_membership_id: target.membershipId, p_avatar_url: url }),
-      };
-}
-
-export async function uploadMemberPhoto(clinicId: string, target: MemberPhotoTarget, file: File): Promise<MediaOutcome<string>> {
+// Profile photo = profiles.avatar_url, ONE per user (see profileAvatarPath):
+// the same object and field whether the user manages her own photo
+// (set_my_avatar — the target is always the session's auth.uid(), never an
+// id from here) or her clinic's admin does it from Equipo
+// (set_clinic_member_avatar — clinic re-derived from the membership). A
+// version query busts caches.
+async function uploadAvatar(
+  profileId: string,
+  file: File,
+  save: (url: string) => PromiseLike<{ error: unknown }>,
+): Promise<MediaOutcome<string>> {
   const invalid = validateClinicImage(file);
   if (invalid) return { status: "error", message: invalid };
   const supabase = createClient();
-  const write = photoTargetWrite(clinicId, target);
+  const path = profileAvatarPath(profileId);
 
   const { error: uploadError } = await supabase.storage
     .from(CLINIC_MEDIA_BUCKET)
-    .upload(write.path, file, { contentType: file.type, upsert: true, cacheControl: "3600" });
+    .upload(path, file, { contentType: file.type, upsert: true, cacheControl: "3600" });
   if (uploadError) return { status: "error", message: GENERIC_ERROR };
 
-  const url = `${clinicMediaPublicUrl(supabase, write.path)}?v=${Date.now()}`;
-  const { error } = await supabase.rpc(write.rpc, write.args(url));
+  const url = `${clinicMediaPublicUrl(supabase, path)}?v=${Date.now()}`;
+  const { error } = await save(url);
   if (error) return { status: "error", message: GENERIC_ERROR };
   return { status: "ok", value: url };
 }
 
-export async function removeMemberPhoto(clinicId: string, target: MemberPhotoTarget): Promise<MediaOutcome> {
-  const supabase = createClient();
-  const write = photoTargetWrite(clinicId, target);
-  const { error } = await supabase.rpc(write.rpc, write.args(null));
+// Pointer first (every surface falls back to initials immediately), then
+// the object.
+async function removeAvatar(profileId: string, clear: () => PromiseLike<{ error: unknown }>): Promise<MediaOutcome> {
+  const { error } = await clear();
   if (error) return { status: "error", message: "No pudimos quitar la foto. Intenta de nuevo." };
-  const { error: removeError } = await supabase.storage.from(CLINIC_MEDIA_BUCKET).remove([write.path]);
-  if (removeError) console.error("[clinic-media] member photo object not removed", removeError);
+  const { error: removeError } = await createClient().storage.from(CLINIC_MEDIA_BUCKET).remove([profileAvatarPath(profileId)]);
+  if (removeError) console.error("[clinic-media] avatar object not removed", removeError);
   return { status: "ok", value: undefined };
+}
+
+// The folder is the session's own user id — the Storage policy and
+// set_my_avatar() both re-check it against auth.uid() server-side.
+async function sessionUserId(): Promise<string | null> {
+  const { data } = await createClient().auth.getUser();
+  return data.user?.id ?? null;
+}
+
+export async function uploadMyAvatar(file: File): Promise<MediaOutcome<string>> {
+  const invalid = validateClinicImage(file);
+  if (invalid) return { status: "error", message: invalid };
+  const userId = await sessionUserId();
+  if (!userId) return { status: "error", message: GENERIC_ERROR };
+  const supabase = createClient();
+  return uploadAvatar(userId, file, (url) => supabase.rpc("set_my_avatar", { p_avatar_url: url }));
+}
+
+export async function removeMyAvatar(): Promise<MediaOutcome> {
+  const userId = await sessionUserId();
+  if (!userId) return { status: "error", message: "No pudimos quitar la foto. Intenta de nuevo." };
+  const supabase = createClient();
+  return removeAvatar(userId, () => supabase.rpc("set_my_avatar", { p_avatar_url: null }));
+}
+
+export type AvatarMember = { membershipId: string; profileId: string };
+
+export function uploadMemberAvatar(member: AvatarMember, file: File): Promise<MediaOutcome<string>> {
+  const supabase = createClient();
+  return uploadAvatar(member.profileId, file, (url) =>
+    supabase.rpc("set_clinic_member_avatar", { p_membership_id: member.membershipId, p_avatar_url: url }),
+  );
+}
+
+export function removeMemberAvatar(member: AvatarMember): Promise<MediaOutcome> {
+  const supabase = createClient();
+  return removeAvatar(member.profileId, () =>
+    supabase.rpc("set_clinic_member_avatar", { p_membership_id: member.membershipId, p_avatar_url: null }),
+  );
 }
 
 // Clinic cover ("Foto de portada") — same shape as professional photos:

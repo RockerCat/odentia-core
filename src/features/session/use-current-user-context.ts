@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveClinicContext } from "./resolve-clinic-context";
 import type { ClinicContext } from "./types";
+import { onIdentityChanged } from "./identity-events";
 
 // Real display identity for the authenticated app shell (see
 // components/shell/use-shell-identity.ts) — re-resolved on mount rather
@@ -65,8 +66,19 @@ export function useCurrentUserContextResult(enabled = true): CurrentUserContextR
         if (!cancelled) setResult({ state: "error" });
       });
 
+    // A photo change (identity-events.ts) re-resolves in place — a failed
+    // refresh keeps what's already shown rather than blanking the header.
+    const unsubscribe = onIdentityChanged(() => {
+      resolveOnce()
+        .then((context) => {
+          if (!cancelled) setResult({ state: "ready", context });
+        })
+        .catch(() => {});
+    });
+
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [enabled]);
 

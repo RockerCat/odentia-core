@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { clinicCoverPath, galleryPhotoPath, MAX_CLINIC_GALLERY_PHOTOS, planGalleryUploads, professionalPhotoPath, validateClinicImage } from "./clinic-media-data";
+import { clinicCoverPath, galleryPhotoPath, MAX_CLINIC_GALLERY_PHOTOS, planGalleryUploads, profileAvatarPath, validateClinicImage } from "./clinic-media-data";
 
 // Clinic profile media: "Conoce nuestra clínica" gallery (max 5) and
 // admin-managed professional photos (migration 20260924160000).
@@ -10,6 +10,7 @@ const calls: string[] = [];
 let insertResult: { data: unknown; error: { message: string } | null } = { data: null, error: null };
 let deleteResult: { data: unknown; error: unknown } = { data: [{ id: "g1" }], error: null };
 let rpcResult: { error: unknown } = { error: null };
+let sessionUserId: string | null = "33333333-3333-3333-3333-333333333333";
 let updateResult: { data: unknown; error: unknown } = { data: [{ id: "c1" }], error: null };
 const updates: unknown[] = [];
 const rpc = vi.fn(async () => rpcResult);
@@ -55,10 +56,11 @@ vi.mock("@/lib/supabase/client", () => ({
       }),
     }),
     rpc,
+    auth: { getUser: async () => ({ data: { user: sessionUserId ? { id: sessionUserId } : null } }) },
   }),
 }));
 
-const { deleteClinicGalleryPhoto, removeClinicCover, removeMemberPhoto, uploadClinicCover, uploadClinicGalleryPhoto, uploadMemberPhoto } =
+const { deleteClinicGalleryPhoto, removeClinicCover, removeMemberAvatar, removeMyAvatar, uploadClinicCover, uploadClinicGalleryPhoto, uploadMemberAvatar, uploadMyAvatar } =
   await import("./clinic-media-actions");
 
 const CLINIC = "11111111-1111-1111-1111-111111111111";
@@ -69,6 +71,7 @@ beforeEach(() => {
   insertResult = { data: null, error: null };
   deleteResult = { data: [{ id: "g1" }], error: null };
   rpcResult = { error: null };
+  sessionUserId = "33333333-3333-3333-3333-333333333333";
   updateResult = { data: [{ id: "c1" }], error: null };
   updates.length = 0;
   rpc.mockClear();
@@ -83,7 +86,7 @@ describe("validation and paths", () => {
 
   it("paths always live in the clinic's own folder", () => {
     expect(galleryPhotoPath(CLINIC, "abc")).toBe(`${CLINIC}/gallery/abc`);
-    expect(professionalPhotoPath(CLINIC, "pp-1")).toBe(`${CLINIC}/professionals/pp-1`);
+    expect(profileAvatarPath("u-1")).toBe("avatars/u-1");
     expect(MAX_CLINIC_GALLERY_PHOTOS).toBe(5);
   });
 });
@@ -121,57 +124,112 @@ describe("gallery writes", () => {
   });
 });
 
-describe("professional photo", () => {
-  it("overwrites ONE fixed object per professional (no orphans on replace) and sets it via set_professional_photo", async () => {
-    const outcome = await uploadMemberPhoto(CLINIC, { kind: "professional", professionalProfileId: "pp-1" }, photoFile("image/png"));
-    expect(calls).toEqual([`upload:${CLINIC}/professionals/pp-1:upsert`]);
+describe("profile photo — ONE per user (profiles.avatar_url, avatars/<profileId>)", () => {
+  const ME = "33333333-3333-3333-3333-333333333333";
+  const member = { membershipId: "m-1", profileId: "44444444-4444-4444-4444-444444444444" };
+
+  it("self-service: uploads to the SESSION user's own object and saves via set_my_avatar (no id sent to the RPC)", async () => {
+    const outcome = await uploadMyAvatar(photoFile("image/png"));
     expect(outcome.status).toBe("ok");
-    expect(rpc).toHaveBeenCalledWith("set_professional_photo", {
-      p_professional_profile_id: "pp-1",
-      p_avatar_url: expect.stringMatching(new RegExp(`/clinic-media/${CLINIC}/professionals/pp-1\\?v=\\d+$`)),
+    expect(calls).toEqual([`upload:avatars/${ME}:upsert`]);
+    expect(rpc).toHaveBeenCalledWith("set_my_avatar", {
+      p_avatar_url: expect.stringMatching(new RegExp(`/clinic-media/avatars/${ME}\\?v=\\d+$`)),
     });
   });
 
-  it("remove clears it via the RPC, then deletes the object", async () => {
-    expect((await removeMemberPhoto(CLINIC, { kind: "professional", professionalProfileId: "pp-1" })).status).toBe("ok");
-    expect(rpc).toHaveBeenCalledWith("set_professional_photo", { p_professional_profile_id: "pp-1", p_avatar_url: null });
-    expect(calls).toEqual([`remove:${CLINIC}/professionals/pp-1`]);
+  it("replace overwrites the same object (no accumulation); remove clears the pointer then deletes it", async () => {
+    await uploadMyAvatar(photoFile("image/png"));
+    await uploadMyAvatar(photoFile("image/webp"));
+    expect(calls).toEqual([`upload:avatars/${ME}:upsert`, `upload:avatars/${ME}:upsert`]);
+    calls.length = 0;
+    expect(await removeMyAvatar()).toEqual({ status: "ok", value: undefined });
+    expect(rpc).toHaveBeenLastCalledWith("set_my_avatar", { p_avatar_url: null });
+    expect(calls).toEqual([`remove:avatars/${ME}`]);
   });
 
-  it("an unauthorized RPC (another clinic) surfaces as an error and deletes nothing", async () => {
-    rpcResult = { error: { message: "not authorized to manage this professional" } };
-    expect((await removeMemberPhoto(CLINIC, { kind: "professional", professionalProfileId: "pp-x" })).status).toBe("error");
+  it("invalid type/size or no session never reaches Storage", async () => {
+    expect(await uploadMyAvatar(photoFile("image/gif"))).toEqual({ status: "error", message: "Usa una imagen JPG, PNG o WebP." });
+    expect((await uploadMyAvatar(photoFile("image/jpeg", 5 * 1024 * 1024 + 1))).status).toBe("error");
+    sessionUserId = null;
+    expect((await uploadMyAvatar(photoFile())).status).toBe("error");
+    expect((await removeMyAvatar()).status).toBe("error");
+    expect(calls).toEqual([]);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("Clinic Admin (Equipo) writes the SAME per-user object/field via set_clinic_member_avatar", async () => {
+    expect((await uploadMemberAvatar(member, photoFile("image/webp"))).status).toBe("ok");
+    expect(calls).toEqual([`upload:avatars/${member.profileId}:upsert`]);
+    expect(rpc).toHaveBeenCalledWith("set_clinic_member_avatar", {
+      p_membership_id: "m-1",
+      p_avatar_url: expect.stringMatching(new RegExp(`/clinic-media/avatars/${member.profileId}\\?v=\\d+$`)),
+    });
+    calls.length = 0;
+    expect((await removeMemberAvatar(member)).status).toBe("ok");
+    expect(rpc).toHaveBeenLastCalledWith("set_clinic_member_avatar", { p_membership_id: "m-1", p_avatar_url: null });
+    expect(calls).toEqual([`remove:avatars/${member.profileId}`]);
+  });
+
+  it("a rejected RPC (another clinic's member / someone else's photo) is an error and deletes nothing", async () => {
+    rpcResult = { error: { message: "not authorized to manage this member" } };
+    expect((await removeMemberAvatar(member)).status).toBe("error");
+    expect((await removeMyAvatar()).status).toBe("error");
     expect(calls).toEqual([]);
   });
 });
 
-describe("non-clinical member photo (assistant / non-clinical admin)", () => {
-  const target = { kind: "member", membershipId: "m-1" } as const;
+describe("migration 20260925140000 — self-service profile avatar (static)", () => {
+  const sql = fs.readFileSync(path.resolve(__dirname, "../../../supabase/migrations/20260925140000_self_service_profile_avatar.sql"), "utf8");
+  const code = sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
+  const fnBody = (name: string) => code.slice(code.indexOf(`create function public.${name}`), code.indexOf(`revoke execute on function public.${name}`));
 
-  it("same field and format as professionals: one fixed members/<membershipId> object, set via set_clinic_member_photo", async () => {
-    const outcome = await uploadMemberPhoto(CLINIC, target, photoFile("image/webp"));
-    expect(outcome.status).toBe("ok");
-    expect(calls).toEqual([`upload:${CLINIC}/members/m-1:upsert`]);
-    expect(rpc).toHaveBeenCalledWith("set_clinic_member_photo", {
-      p_membership_id: "m-1",
-      p_avatar_url: expect.stringMatching(new RegExp(`/clinic-media/${CLINIC}/members/m-1\\?v=\\d+$`)),
-    });
+  it("is additive: new functions + avatars/ storage policies only, no table/column/RLS/data change", () => {
+    expect(code).not.toMatch(/\b(drop|alter table|alter policy|insert into|delete from|truncate)\b/i);
+    expect(code).not.toMatch(/on public\.\w+ for /);
+    for (const op of ["insert", "update", "delete"]) {
+      expect(code).toContain(`create policy clinic_media_avatar_${op}`);
+    }
+    expect(code.match(/bucket_id = 'clinic-media' and public\.owns_profile_avatar_path\(name\)/g)?.length).toBe(4);
   });
 
-  it("same validation: invalid type/size never reaches Storage", async () => {
-    expect((await uploadMemberPhoto(CLINIC, target, photoFile("image/gif"))).status).toBe("error");
-    expect((await uploadMemberPhoto(CLINIC, target, photoFile("image/png", 5 * 1024 * 1024 + 1))).status).toBe("error");
-    expect(calls).toEqual([]);
+  it("set_my_avatar: the target is ALWAYS auth.uid() — no profile id parameter to spoof", () => {
+    const fn = fnBody("set_my_avatar");
+    expect(fn).toContain("create function public.set_my_avatar(p_avatar_url text)");
+    expect(fn).toContain("v_profile_id uuid := auth.uid();");
+    expect(fn).toContain("not public.is_profile_avatar_url(v_profile_id, p_avatar_url)");
+    expect(fn).toContain("where id = v_profile_id;");
   });
 
-  it("remove clears it via the RPC, then deletes the object; an unauthorized RPC deletes nothing", async () => {
-    expect((await removeMemberPhoto(CLINIC, target)).status).toBe("ok");
-    expect(rpc).toHaveBeenCalledWith("set_clinic_member_photo", { p_membership_id: "m-1", p_avatar_url: null });
-    expect(calls).toEqual([`remove:${CLINIC}/members/m-1`]);
-    calls.length = 0;
-    rpcResult = { error: { message: "not authorized to manage this member" } };
-    expect((await removeMemberPhoto(CLINIC, target)).status).toBe("error");
-    expect(calls).toEqual([]);
+  it("set_clinic_member_avatar: clinic from the membership; its admin (or Superadmin) only; that member's own object", () => {
+    const fn = fnBody("set_clinic_member_avatar");
+    expect(fn).toContain("where m.id = p_membership_id;");
+    expect(fn).toContain("public.has_clinic_role(v_clinic_id, array['clinic_admin']::public.membership_role[])");
+    expect(fn).toContain("not public.is_profile_avatar_url(v_profile_id, p_avatar_url)");
+    expect(fn.slice(0, fn.indexOf(")"))).not.toMatch(/p_clinic_id|p_profile_id/);
+  });
+
+  it("storage: only the owner, or an admin of a clinic the owner belongs to — never a patient's photo by staff", () => {
+    const fn = fnBody("can_manage_profile_avatar");
+    expect(fn).toContain("select p_profile_id = auth.uid()");
+    expect(fn).toContain("from public.clinic_memberships m");
+    expect(fn).toContain("where m.profile_id = p_profile_id");
+    expect(fnBody("owns_profile_avatar_path")).toContain("'^avatars/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'");
+  });
+
+  it("upsert also needs SELECT (a real 400 without it): 20260925150000 adds it with the SAME guard, nothing wider", () => {
+    const select = fs.readFileSync(path.resolve(__dirname, "../../../supabase/migrations/20260925150000_profile_avatar_storage_select.sql"), "utf8");
+    const body = select.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n").trim();
+    expect(body).toBe(
+      "create policy clinic_media_avatar_select\n  on storage.objects for select\n  to authenticated\n  using (bucket_id = 'clinic-media' and public.owns_profile_avatar_path(name));",
+    );
+  });
+
+  it("the only accepted URL is that user's own avatars/<id> object", () => {
+    expect(code).toContain("'^https?://[^/?#]+/storage/v1/object/public/clinic-media/avatars/' || p_profile_id::text || '(\\?v=[0-9]+)?$'");
+    const re = (id: string) => new RegExp(`^https?://[^/?#]+/storage/v1/object/public/clinic-media/avatars/${id}(\\?v=[0-9]+)?$`);
+    expect(re("u-1").test("https://p.supabase.co/storage/v1/object/public/clinic-media/avatars/u-1?v=3")).toBe(true);
+    expect(re("u-1").test("https://p.supabase.co/storage/v1/object/public/clinic-media/avatars/u-2?v=3")).toBe(false);
+    expect(re("u-1").test(`https://p.supabase.co/storage/v1/object/public/clinic-media/${CLINIC}/members/m-1`)).toBe(false);
   });
 });
 

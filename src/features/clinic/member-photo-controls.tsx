@@ -2,21 +2,20 @@
 
 import { useRef, useState } from "react";
 import { useToast } from "@/components/toast";
-import { removeMemberPhoto, uploadMemberPhoto, type MemberPhotoTarget } from "./clinic-media-actions";
+import { notifyIdentityChanged } from "@/features/session/identity-events";
+import { removeMemberAvatar, uploadMemberAvatar, type AvatarMember } from "./clinic-media-actions";
 import { CLINIC_IMAGE_ACCEPTED_TYPES } from "./clinic-media-data";
 
-// Equipo row action (every member): the photo patients see under "Nuestro
-// equipo" and everywhere else the person's avatar shows. Written via
-// set_professional_photo() / set_clinic_member_photo() — clinic_admin of
-// that member's own clinic only (see uploadMemberPhoto).
+// Equipo row action (every member): that person's ONE profile photo — the
+// same one she manages herself from her own profile and that every surface
+// shows. Written via set_clinic_member_avatar() — clinic_admin of that
+// member's own clinic only (see uploadMemberAvatar).
 export function MemberPhotoControls({
-  clinicId,
-  target,
+  member,
   hasPhoto,
   onChange,
 }: {
-  clinicId: string;
-  target: MemberPhotoTarget;
+  member: AvatarMember;
   hasPhoto: boolean;
   onChange: (avatarUrl: string | null) => void;
 }) {
@@ -29,7 +28,7 @@ export function MemberPhotoControls({
     if (!file || busy) return;
     setError(null);
     setBusy("upload");
-    const outcome = await uploadMemberPhoto(clinicId, target, file);
+    const outcome = await uploadMemberAvatar(member, file);
     setBusy(null);
     if (inputRef.current) inputRef.current.value = "";
     if (outcome.status === "error") {
@@ -37,6 +36,7 @@ export function MemberPhotoControls({
       return;
     }
     onChange(outcome.value);
+    notifyIdentityChanged();
     showToast("Foto actualizada");
   };
 
@@ -44,13 +44,14 @@ export function MemberPhotoControls({
     if (busy) return;
     setError(null);
     setBusy("remove");
-    const outcome = await removeMemberPhoto(clinicId, target);
+    const outcome = await removeMemberAvatar(member);
     setBusy(null);
     if (outcome.status === "error") {
       setError(outcome.message);
       return;
     }
     onChange(null);
+    notifyIdentityChanged();
     showToast("Foto eliminada");
   };
 

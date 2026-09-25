@@ -30,6 +30,7 @@ export function MyProfessionalProfileScreen({
       specialties={specialties}
       documentTypes={documentTypes}
       onSaved={(updated) => setSelfMember((prev) => (prev ? { ...prev, professionalProfile: updated } : prev))}
+      onAvatarChange={(avatarUrl) => setSelfMember((prev) => (prev ? { ...prev, avatarUrl } : prev))}
     />
   );
 }

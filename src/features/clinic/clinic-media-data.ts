@@ -20,20 +20,18 @@ export function validateClinicImage(file: { type: string; size: number }): strin
 }
 
 // Paths are always built here (never taken from the client as-is by the
-// DB — clinic_gallery_photos' CHECK and set_professional_photo() re-verify
-// the clinic folder): <clinicId>/gallery/<uuid>, <clinicId>/professionals/<ppId>.
+// DB — clinic_gallery_photos' CHECK re-verifies the clinic folder).
 export function galleryPhotoPath(clinicId: string, id: string): string {
   return `${clinicId}/gallery/${id}`;
 }
 
-export function professionalPhotoPath(clinicId: string, professionalProfileId: string): string {
-  return `${clinicId}/professionals/${professionalProfileId}`;
-}
-
-// A member WITHOUT a professional profile (assistant, non-clinical admin):
-// <clinicId>/members/<membershipId>, re-verified by set_clinic_member_photo().
-export function memberPhotoPath(clinicId: string, membershipId: string): string {
-  return `${clinicId}/members/${membershipId}`;
+// ONE profile photo per USER (profiles.avatar_url), whoever uploads it —
+// the user herself or her clinic's admin: avatars/<profileId>, overwritten
+// on replace. Storage policy owns_profile_avatar_path() and the
+// set_my_avatar()/set_clinic_member_avatar() URL check both re-verify it
+// (migration 20260925140000).
+export function profileAvatarPath(profileId: string): string {
+  return `avatars/${profileId}`;
 }
 
 // ONE fixed object per clinic, overwritten on replace — a replaced cover

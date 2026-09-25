@@ -1,4 +1,4 @@
-import { UserAvatar } from "@/components/user-avatar";
+import { ProfilePhotoField } from "@/features/clinic/profile-photo-field";
 import type { PatientContext } from "@/features/session/types";
 
 // Real identity — patients.first_name/last_name/phone/email/document_id/
@@ -26,7 +26,8 @@ export function MyProfile({ context }: { context: PatientContext }) {
   return (
     <div className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
       <div className="flex flex-col items-center gap-2 text-center">
-        <UserAvatar name={name} initials={initials} sizeClassName="size-20" />
+        {/* Her own profile photo (set_my_avatar) — also shown in the Portal header. */}
+        <ProfilePhotoField name={name} initials={initials} initialAvatarUrl={context.profile.avatarUrl} sizeClassName="size-20" />
         <p className="text-base font-semibold">{name}</p>
         {age !== null && <p className="text-sm text-muted-foreground">{age} años</p>}
       </div>

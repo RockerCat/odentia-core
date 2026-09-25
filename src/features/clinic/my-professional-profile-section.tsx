@@ -2,13 +2,13 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useToast } from "@/components/toast";
-import { UserAvatar } from "@/components/user-avatar";
 import { FIELD_CLASS } from "@/features/dashboard/form-primitives";
 import type { ReferenceValue } from "@/features/rips/catalog-data";
 import { fetchWeeklyAvailability, summarizeWeeklyAvailability } from "@/features/settings/availability-data";
 import { createClient } from "@/lib/supabase/client";
 import type { Specialty, TeamMember } from "./data";
 import { createMyProfessionalProfile, updateMyProfessionalProfile } from "./professional-profile-actions";
+import { ProfilePhotoField } from "./profile-photo-field";
 
 // Mi perfil profesional — Administrador + Odontólogo, never a role swap
 // (see task scope). selfMember comes from the real team list, matched
@@ -73,11 +73,13 @@ export function MyProfessionalProfileSection({
   specialties,
   documentTypes,
   onSaved,
+  onAvatarChange,
 }: {
   selfMember: TeamMember | null;
   specialties: Specialty[];
   documentTypes: ReferenceValue[];
   onSaved: (updated: NonNullable<TeamMember["professionalProfile"]>) => void;
+  onAvatarChange?: (avatarUrl: string | null) => void;
 }) {
   const { showToast } = useToast();
   const professionalProfile = selfMember?.professionalProfile ?? null;
@@ -218,12 +220,21 @@ export function MyProfessionalProfileSection({
       )}
 
       {selfMember && (
-        <div className="mt-4 flex items-center gap-3">
-          <UserAvatar name={selfName} initials={selfInitials || "?"} avatar_url={selfMember.avatarUrl ?? undefined} sizeClassName="size-10" />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{selfName}</p>
-            <p className="truncate text-xs text-muted-foreground">{selfMember.email}</p>
-          </div>
+        <div className="mt-4">
+          {/* Her own ONE profile photo — the same one Equipo/headers/Portal show. */}
+          <ProfilePhotoField
+            layout="row"
+            name={selfName}
+            initials={selfInitials || "?"}
+            initialAvatarUrl={selfMember.avatarUrl}
+            sizeClassName="size-16"
+            onChange={onAvatarChange}
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{selfName}</p>
+              <p className="truncate text-xs text-muted-foreground">{selfMember.email}</p>
+            </div>
+          </ProfilePhotoField>
         </div>
       )}
 

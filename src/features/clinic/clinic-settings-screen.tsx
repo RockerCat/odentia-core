@@ -102,7 +102,6 @@ export function ClinicSettingsScreen({
         serviciosOptions={ripsServiciosOptions}
       />
       <EquipoSection
-        clinicId={clinic.id}
         members={members}
         onMembersChange={setMembers}
         initialPendingInvitations={initialPendingInvitations}
@@ -115,6 +114,9 @@ export function ClinicSettingsScreen({
           setMembers((prev) =>
             prev.map((m) => (m.membershipId === selfMember?.membershipId ? { ...m, professionalProfile: updated } : m)),
           )
+        }
+        onAvatarChange={(avatarUrl) =>
+          setMembers((prev) => prev.map((m) => (m.membershipId === selfMember?.membershipId ? { ...m, avatarUrl } : m)))
         }
       />
       <ConsultoriosSection clinicId={clinic.id} initialRooms={rooms} />
@@ -605,12 +607,10 @@ function DescriptionField({
 // disabled: editing a member's own details/role is a separate, larger
 // piece of scope this task deliberately didn't include.
 function EquipoSection({
-  clinicId,
   members,
   onMembersChange,
   initialPendingInvitations,
 }: {
-  clinicId: string;
   members: TeamMember[];
   onMembersChange: (updater: (prev: TeamMember[]) => TeamMember[]) => void;
   initialPendingInvitations: PendingInvitation[];
@@ -742,16 +742,11 @@ function EquipoSection({
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  {/* Photo shown to patients in /portal/clinica ("Nuestro
-                      equipo") — every member; a professional keeps her
-                      existing professional-photo object. */}
+                  {/* That member's ONE profile photo (profiles.avatar_url) —
+                      the same one she manages herself and patients see in
+                      /portal/clinica ("Nuestro equipo"). */}
                   <MemberPhotoControls
-                    clinicId={clinicId}
-                    target={
-                      member.professionalProfile
-                        ? { kind: "professional", professionalProfileId: member.professionalProfile.id }
-                        : { kind: "member", membershipId: member.membershipId }
-                    }
+                    member={{ membershipId: member.membershipId, profileId: member.profileId }}
                     hasPhoto={Boolean(member.avatarUrl)}
                     onChange={(avatarUrl) =>
                       onMembersChange((prev) => prev.map((m) => (m.membershipId === member.membershipId ? { ...m, avatarUrl } : m)))

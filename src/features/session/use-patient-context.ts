@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolvePatientContext } from "./resolve-patient-context";
 import type { PatientContext } from "./types";
+import { onIdentityChanged } from "./identity-events";
 
 // Real display identity for the Portal shell (see
 // components/shell/portal-shell.tsx) — same "purely for display, never for
@@ -42,8 +43,19 @@ export function usePatientContextResult(): PatientContextResult {
         if (!cancelled) setResult({ state: "error" });
       });
 
+    // A photo change (identity-events.ts) re-resolves in place — a failed
+    // refresh keeps what's already shown rather than blanking the header.
+    const unsubscribe = onIdentityChanged(() => {
+      resolveOnce()
+        .then((context) => {
+          if (!cancelled) setResult({ state: "ready", context });
+        })
+        .catch(() => {});
+    });
+
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, []);
 
