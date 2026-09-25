@@ -52,14 +52,17 @@ export function teamCards(professionals: PortalProfessional[]): TeamCard[] {
   }));
 }
 
-// "Conoce nuestra clínica" — editorial composition by photo count (order
-// as stored, never reshuffled). Mobile-first: never more than 2 per row.
-// - single: one wide protagonist.
-// - pair: two equal tiles (stacked on mobile, 50/50 from sm).
-// - editorial (3–5): a full-width main photo + secondaries 2 per row on
-//   mobile/tablet; on desktop the main takes the left half (2×2) and the
-//   secondaries fill a 2×2 area on the right. An odd secondary out spans
-//   the full row so there's never an orphan gap.
+// "Conoce nuestra clínica" — composition by photo count (order as stored,
+// never reshuffled). Mobile-first:
+// - single: one wide photo.
+// - pair: both photos complete, side by side.
+// - editorial (3–5): below sm, a native horizontal swipe strip (CSS scroll
+//   snap, no library/autoplay/arrows) showing ~2.5 square photos — the cut
+//   third says "there's more". It bleeds to the screen edge through the
+//   page's own 16px gutter (-mx-4/px-4), so only the strip scrolls, never
+//   the page. From sm: the grid — a wide main photo + secondaries; on
+//   desktop the main takes the left half (2×2) and the secondaries fill a
+//   2×2 area on the right, an odd secondary out spanning the full row.
 export type GalleryLayout = "single" | "pair" | "editorial";
 
 export function galleryLayout(count: number): GalleryLayout | null {
@@ -74,33 +77,32 @@ export function galleryGridClass(layout: GalleryLayout): string {
     case "single":
       return "grid grid-cols-1";
     case "pair":
-      return "grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3";
+      return "grid grid-cols-2 gap-2 sm:gap-3";
     case "editorial":
-      return "grid grid-cols-2 gap-2 sm:gap-3 lg:h-[26rem] lg:grid-cols-4 lg:grid-rows-2";
+      return [
+        "-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-2 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        "sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-3 sm:overflow-visible sm:px-0",
+        "lg:h-[26rem] lg:grid-cols-4 lg:grid-rows-2",
+      ].join(" ");
   }
 }
 
+// Mobile strip tile: (100% − 2 gaps) / 2.5 → two full photos + half a third.
+const STRIP_TILE = "aspect-square w-[calc((100%-1rem)/2.5)] shrink-0 snap-start sm:w-full sm:shrink";
+
 export function galleryTileClass(layout: GalleryLayout, index: number, count: number): string {
-  if (layout === "single") return "aspect-[4/3] sm:aspect-[21/9]";
-  if (layout === "pair") return "aspect-[4/3]";
-  if (index === 0) return "col-span-2 aspect-[16/10] lg:row-span-2 lg:aspect-auto lg:h-full";
+  if (layout === "single") return "aspect-[4/3] w-full sm:aspect-[21/9]";
+  if (layout === "pair") return "aspect-[4/3] w-full";
+  if (index === 0) return `${STRIP_TILE} sm:col-span-2 sm:aspect-[16/10] lg:row-span-2 lg:aspect-auto lg:h-full`;
   const secondaries = count - 1;
-  // 2 secondaries (3 photos): side by side on mobile, stacked full-height
-  // halves on desktop.
-  if (secondaries === 2) return "aspect-[4/3] lg:col-span-2 lg:aspect-auto lg:h-full";
+  // 2 secondaries (3 photos): side by side from sm, stacked halves on desktop.
+  if (secondaries === 2) return `${STRIP_TILE} sm:aspect-[4/3] lg:col-span-2 lg:aspect-auto lg:h-full`;
   // 3 secondaries (4 photos): the last one closes the grid spanning 2.
-  if (secondaries === 3 && index === count - 1) return "col-span-2 aspect-[16/9] lg:aspect-auto lg:h-full";
-  return "aspect-[4/3] lg:aspect-auto lg:h-full";
+  if (secondaries === 3 && index === count - 1) return `${STRIP_TILE} sm:col-span-2 sm:aspect-[16/9] lg:aspect-auto lg:h-full`;
+  return `${STRIP_TILE} sm:aspect-[4/3] lg:aspect-auto lg:h-full`;
 }
 
-// "Nuestro equipo" — the professional's photo (or same-size initials) is
-// the protagonist. Mobile: one wide card per row, full-width square
-// portrait. "solo" (a single professional) turns into a horizontal card
-// from sm so it reads as intentional instead of a lone tile on the left;
-// "grid" grows to 2 → 3 per row (~300px cards at desktop width).
-export type TeamLayout = "solo" | "grid";
-
-export function teamLayout(count: number): TeamLayout | null {
-  if (count <= 0) return null;
-  return count === 1 ? "solo" : "grid";
-}
+// "Nuestro equipo" — compact portrait cards, never a carousel: 2 columns
+// on mobile (1 professional = one column-wide card, never stretched), 3 at
+// sm, 4 at lg.
+export const TEAM_GRID_CLASS = "grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4";

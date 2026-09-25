@@ -6,7 +6,7 @@ import { normalizeClinicDescription } from "@/features/clinic/description";
 import { initialsOf } from "@/features/dashboard/real-format";
 import type { PatientClinic } from "@/features/session/types";
 import { ClinicLocationView } from "./clinic-location-view";
-import { directionsUrl, formatClinicAddress, galleryGridClass, galleryLayout, galleryTileClass, hasUsableCoordinates, teamCards, teamLayout } from "./clinic-profile";
+import { directionsUrl, formatClinicAddress, galleryGridClass, galleryLayout, galleryTileClass, hasUsableCoordinates, teamCards, TEAM_GRID_CLASS } from "./clinic-profile";
 import type { PortalProfessional } from "./requests-data";
 
 // Same wa.me deep-link convention as the rest of the Portal — a manual
@@ -52,7 +52,6 @@ export function MyClinicScreen({
   const showMap = location !== null && hasUsableCoordinates(location);
   const directions = directionsUrl(location);
   const team = professionals.status === "ok" ? teamCards(professionals.value) : [];
-  const teamMode = teamLayout(team.length);
 
   return (
     <div className="flex flex-col gap-8 sm:gap-10">
@@ -151,7 +150,10 @@ export function MyClinicScreen({
       {layout && (
         <section className={SECTION}>
           <h2 className={SECTION_TITLE}>Conoce nuestra clínica</h2>
-          <div className={galleryGridClass(layout)}>
+          <div
+            className={galleryGridClass(layout)}
+            {...(layout === "editorial" && { role: "region", "aria-label": `Fotos de ${name}`, tabIndex: 0 })}
+          >
             {galleryPhotos.map((photo, index) => (
               // eslint-disable-next-line @next/next/no-img-element -- clinic Storage photo, not worth Next/Image's pipeline
               <img
@@ -159,7 +161,7 @@ export function MyClinicScreen({
                 src={photo.url}
                 alt={`Foto ${index + 1} de ${name}`}
                 loading="lazy"
-                className={`w-full rounded-2xl object-cover ${galleryTileClass(layout, index, galleryPhotos.length)}`}
+                className={`rounded-2xl object-cover ${galleryTileClass(layout, index, galleryPhotos.length)}`}
               />
             ))}
           </div>
@@ -177,30 +179,25 @@ export function MyClinicScreen({
           portrait (real photo, or the same-size initials via UserAvatar —
           never a stock/mock photo) leads; then name, specialty, registro,
           each optional line only when it really exists. */}
-      {teamMode && (
+      {team.length > 0 && (
         <section className={SECTION}>
           <h2 className={SECTION_TITLE}>Nuestro equipo</h2>
-          <ul className={teamMode === "solo" ? "grid grid-cols-1" : "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"}>
+          <ul className={TEAM_GRID_CLASS}>
             {team.map((member) => (
-              <li
-                key={member.id}
-                className={`flex flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-sm ${
-                  teamMode === "solo" ? "sm:max-w-2xl sm:flex-row" : ""
-                }`}
-              >
+              <li key={member.id} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-sm">
                 <UserAvatar
                   name={member.name}
                   initials={initialsOf(member.name)}
                   avatar_url={member.avatarUrl}
                   shapeClassName="rounded-none"
-                  sizeClassName={`aspect-square w-full object-top ${teamMode === "solo" ? "sm:aspect-[4/5] sm:w-60" : "sm:aspect-[4/5]"}`}
-                  textClassName="text-6xl font-semibold"
+                  sizeClassName="aspect-[4/5] w-full object-top"
+                  textClassName="text-4xl font-semibold"
                 />
-                <div className={`flex flex-col gap-1 p-5 ${teamMode === "solo" ? "sm:justify-center sm:p-8" : ""}`}>
-                  <p className="text-xl leading-snug font-semibold text-foreground">{member.name}</p>
-                  {member.specialty && <p className="text-base font-medium text-primary">{member.specialty}</p>}
+                <div className="flex min-w-0 flex-col gap-0.5 p-3 sm:p-4">
+                  <p className="line-clamp-2 text-sm leading-snug font-semibold break-words text-foreground sm:text-base">{member.name}</p>
+                  {member.specialty && <p className="line-clamp-2 text-xs font-medium break-words text-primary sm:text-sm">{member.specialty}</p>}
                   {member.licenseNumber && (
-                    <p className="mt-2 text-xs text-label-foreground">
+                    <p className="mt-1.5 text-[11px] leading-snug break-words text-label-foreground">
                       Registro profesional <span className="font-medium text-foreground/70">{member.licenseNumber}</span>
                     </p>
                   )}

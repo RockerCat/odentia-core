@@ -14,7 +14,7 @@ import {
   galleryTileClass,
   hasUsableCoordinates,
   teamCards,
-  teamLayout,
+  TEAM_GRID_CLASS,
 } from "./clinic-profile";
 import { MyClinicScreen } from "./my-clinic-screen";
 
@@ -92,7 +92,7 @@ describe("/portal/clinica sources", () => {
 
   it("sections hide without data; no invented content", () => {
     expect(code(screen)).toContain("{layout && (");
-    expect(code(screen)).toContain("{teamMode && (");
+    expect(code(screen)).toContain("{team.length > 0 && (");
     expect(code(screen)).toContain("{showMap && location && (");
     expect(code(screen)).not.toMatch(/Odontología general|placeholder|demo/i);
   });
@@ -190,19 +190,33 @@ describe("Conoce nuestra clínica — editorial gallery", () => {
     for (const n of [3, 4, 5]) expect(galleryLayout(n)).toBe("editorial");
   });
 
-  it("mobile-first: never more than 2 per row below lg; pair is 1 col on mobile, 50/50 from sm", () => {
+  it("mobile: 1 → one wide photo; 2 → both complete side by side (no strip); 3–5 → a swipe strip", () => {
     expect(galleryGridClass("single")).toBe("grid grid-cols-1");
-    expect(galleryGridClass("pair")).toMatch(/^grid grid-cols-1 .*sm:grid-cols-2/);
-    expect(galleryGridClass("editorial")).toMatch(/^grid grid-cols-2 .*lg:grid-cols-4 lg:grid-rows-2/);
+    expect(galleryGridClass("pair")).toBe("grid grid-cols-2 gap-2 sm:gap-3");
+    const strip = galleryGridClass("editorial");
+    // Native scroll snap, own overflow only (bleeds through the page's 16px gutter), hidden scrollbar.
+    expect(strip).toMatch(/^-mx-4 flex snap-x snap-mandatory .*overflow-x-auto px-4 /);
+    expect(strip).toContain("[scrollbar-width:none]");
+    // From sm it's the grid again.
+    expect(strip).toContain("sm:mx-0 sm:grid sm:grid-cols-2");
+    expect(strip).toContain("lg:grid-cols-4 lg:grid-rows-2");
+  });
+
+  it("strip tiles: ~2.5 visible, consistent square ratio, snap per photo", () => {
+    for (const [i, n] of [[0, 3], [1, 3], [2, 3], [3, 4], [4, 5]]) {
+      expect(galleryTileClass("editorial", i, n)).toMatch(/^aspect-square w-\[calc\(\(100%-1rem\)\/2\.5\)\] shrink-0 snap-start sm:w-full/);
+    }
+    expect(galleryTileClass("pair", 0, 2)).not.toContain("snap");
+    expect(galleryTileClass("single", 0, 1)).not.toContain("snap");
   });
 
   it("editorial: a wide main photo + secondaries; an odd secondary out spans the row (no orphan gap)", () => {
-    expect(galleryTileClass("editorial", 0, 5)).toContain("col-span-2");
+    expect(galleryTileClass("editorial", 0, 5)).toContain("sm:col-span-2");
     expect(galleryTileClass("editorial", 0, 5)).toContain("lg:row-span-2");
     // 3 photos: 2 secondaries side by side on mobile, stacked halves on desktop.
     expect(galleryTileClass("editorial", 1, 3)).toContain("lg:col-span-2");
     // 4 photos: the last of 3 secondaries spans 2.
-    expect(galleryTileClass("editorial", 3, 4)).toMatch(/^col-span-2/);
+    expect(galleryTileClass("editorial", 3, 4)).toContain("sm:col-span-2");
     expect(galleryTileClass("editorial", 1, 4)).not.toContain("col-span-2");
     // 5 photos: 4 secondaries fill a 2×2 area.
     for (const i of [1, 2, 3, 4]) expect(galleryTileClass("editorial", i, 5)).not.toContain("col-span");
@@ -235,20 +249,19 @@ describe("Nuestro equipo — protagonist portraits", () => {
       createElement(MyClinicScreen, { clinic: clinicRow, location: null, gallery: { status: "ok", value: [] }, professionals: { status: "ok", value: pros } }),
     );
 
-  it("layout: none → hidden, 1 → solo (horizontal from sm), 2+ → grid up to 3 per row", () => {
-    expect(teamLayout(0)).toBeNull();
-    expect(teamLayout(1)).toBe("solo");
-    expect(teamLayout(4)).toBe("grid");
+  it("2 columns on mobile (never a carousel); 1 professional stays one column-wide card", () => {
+    expect(TEAM_GRID_CLASS).toMatch(/^grid grid-cols-2 /);
+    expect(TEAM_GRID_CLASS).not.toMatch(/overflow-x|snap/);
     expect(render([])).not.toContain("Nuestro equipo");
-    expect(render([pro("1")])).toContain("sm:max-w-2xl sm:flex-row");
-    const grid = render([pro("1"), pro("2")]);
-    expect(grid).toContain("grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3");
-    expect(grid).not.toContain("sm:flex-row");
+    const one = render([pro("1")]);
+    expect(one).toContain(`class="${TEAM_GRID_CLASS}"`);
+    expect(one.match(/<li /g)?.length).toBe(1);
+    expect(one).not.toMatch(/col-span|sm:flex-row/);
   });
 
   it("a real photo is a large object-cover portrait; without one, the real initials fill the exact same box (never a mock photo)", () => {
     const html = render([pro("1", { avatarUrl: "https://x/ana.jpg" }), pro("2")]);
-    const box = "aspect-square w-full object-top sm:aspect-[4/5]";
+    const box = "aspect-[4/5] w-full object-top";
     expect(html).toMatch(new RegExp(`<img[^>]*src="https://x/ana.jpg"[^>]*class="${box.replace(/[[\]/]/g, "\\$&")} shrink-0 rounded-none object-cover"`));
     expect(html).toMatch(new RegExp(`<span class="flex ${box.replace(/[[\]/]/g, "\\$&")} [^"]*rounded-none[^"]*">A2</span>`));
     expect(html.match(/<img/g)?.length).toBe(2); // the cover + Ana 1 — no invented photo for Ana 2
